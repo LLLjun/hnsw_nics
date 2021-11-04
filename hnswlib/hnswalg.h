@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <unordered_set>
 #include <list>
+#include "config.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -243,6 +244,7 @@ namespace hnswlib {
 
         mutable std::atomic<long> metric_distance_computations;
         mutable std::atomic<long> metric_hops;
+        mutable std::atomic<long> metric_hops_L;
 
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
@@ -1005,10 +1007,14 @@ namespace hnswlib {
             // Take update lock to prevent race conditions on an element with insertion/update at the same time.
             std::unique_lock <std::mutex> lock_el_update(link_list_update_locks_[(cur_c & (max_update_element_locks - 1))]);
             std::unique_lock <std::mutex> lock_el(link_list_locks_[cur_c]);
-            int curlevel = getRandomLevel(mult_);
+            int curlevel;
+#if PLATG
+            curlevel = 0;
+#else      
+            curlevel = getRandomLevel(mult_);
             if (level > 0)
                 curlevel = level;
-
+#endif
             element_levels_[cur_c] = curlevel;
 
 
@@ -1106,6 +1112,10 @@ namespace hnswlib {
             dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
 
             for (int level = maxlevel_; level > 0; level--) {
+#if PLATG
+                printf("Error, current graph is plat\n");
+                exit(1);
+#endif
                 bool changed = true;
                 while (changed) {
                     changed = false;
@@ -1113,7 +1123,7 @@ namespace hnswlib {
 
                     data = (unsigned int *) get_linklist(currObj, level);
                     int size = getListCount(data);
-                    metric_hops++;
+                    metric_hops_L++;
                     metric_distance_computations+=size;
 
                     tableint *datal = (tableint *) (data + 1);
