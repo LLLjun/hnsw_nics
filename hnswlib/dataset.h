@@ -5,7 +5,8 @@
 
 using namespace std;
 
-void CheckDataset(const string &dataname, size_t &subset_size_milllions, 
+void CheckDataset(const string &dataname, std::map<string, size_t> &index_parameter, std::map<string, string> &index_string,
+                size_t &subset_size_milllions, 
                 size_t &vecsize, size_t &qsize, size_t &vecdim, size_t &gt_maxnum,
                 string &path_q, string &path_data , string &path_gt){
 
@@ -32,9 +33,15 @@ void CheckDataset(const string &dataname, size_t &subset_size_milllions,
             printf("error: deep size set error.\n");
             exit(1);
         }
+        index_parameter["qsize"] = 1000;
+        index_parameter["vecdim"] = 96;
+        index_parameter["gt_maxnum"] = 100;
         qsize = 1000;
         vecdim = 96;
         gt_maxnum = 100;
+        index_string["path_q"] = "dataset/deep/deep1B_queries.fvecs";
+        index_string["path_data"] = "dataset/deep/deep_base/deep_base.fvecs";
+        index_string["path_gt"] = "dataset/deep/deep_gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";      
         path_q = "dataset/deep/deep1B_queries.fvecs";
         path_data = "dataset/deep/deep_base/deep_base.fvecs";
         path_gt = "dataset/deep/deep_gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";

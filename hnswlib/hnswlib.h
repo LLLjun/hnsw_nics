@@ -50,8 +50,10 @@ namespace hnswlib {
     }
 
     template<typename MTYPE>
-    using DISTFUNC = MTYPE(*)(const void *, const void *, const void *);
+    using DISTFUNC = MTYPE(*)(const void *, const void *, const void *, const void *, const void *);
 
+    // template<typename MTYPE>
+    // using DISTFUNCFLAG = MTYPE(*)(const void *, const void *, const void *, const void *, const void *);
 
     template<typename MTYPE>
     class SpaceInterface {
@@ -60,6 +62,8 @@ namespace hnswlib {
         virtual size_t get_data_size() = 0;
 
         virtual DISTFUNC<MTYPE> get_dist_func() = 0;
+
+        // virtual DISTFUNCFLAG<MTYPE> get_dist_func_flag() = 0;
 
         virtual void *get_dist_func_param() = 0;
 
@@ -70,11 +74,11 @@ namespace hnswlib {
     class AlgorithmInterface {
     public:
         virtual void addPoint(const void *datapoint, labeltype label)=0;
-        virtual std::priority_queue<std::pair<dist_t, labeltype >> searchKnn(const void *, size_t) const = 0;
+        virtual std::priority_queue<std::pair<dist_t, labeltype >> searchKnn(const void *, size_t) = 0;
 
         // Return k nearest neighbor in the order of closer fist
         virtual std::vector<std::pair<dist_t, labeltype>>
-            searchKnnCloserFirst(const void* query_data, size_t k) const;
+            searchKnnCloserFirst(const void* query_data, size_t k) ;
 
         virtual void saveIndex(const std::string &location)=0;
         virtual ~AlgorithmInterface(){
@@ -83,7 +87,7 @@ namespace hnswlib {
 
     template<typename dist_t>
     std::vector<std::pair<dist_t, labeltype>>
-    AlgorithmInterface<dist_t>::searchKnnCloserFirst(const void* query_data, size_t k) const {
+    AlgorithmInterface<dist_t>::searchKnnCloserFirst(const void* query_data, size_t k) {
         std::vector<std::pair<dist_t, labeltype>> result;
 
         // here searchKnn returns the result in the order of further first
@@ -109,3 +113,5 @@ namespace hnswlib {
 // #include "config.h"
 #include "dataset.h"
 #include "profile.h"
+#include "cppkmeans.h"
+#include "quantization.h"

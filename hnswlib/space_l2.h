@@ -1,10 +1,11 @@
 #pragma once
 #include "hnswlib.h"
+#include "config.h"
 
 namespace hnswlib {
 
     static float
-    L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    L2Sqr(const void *pVect1v, const void *pVect2v, const void *qty_ptr, const void *pFlag1 = nullptr, const void *pFlag2 = nullptr) {
         float *pVect1 = (float *) pVect1v;
         float *pVect2 = (float *) pVect2v;
         size_t qty = *((size_t *) qty_ptr);
@@ -23,7 +24,7 @@ namespace hnswlib {
 
     // Favor using AVX if available.
     static float
-    L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr, const void *pFlag1 = nullptr, const void *pFlag2 = nullptr) {
         float *pVect1 = (float *) pVect1v;
         float *pVect2 = (float *) pVect2v;
         size_t qty = *((size_t *) qty_ptr);
@@ -58,7 +59,7 @@ namespace hnswlib {
 #elif defined(USE_SSE)
 
     static float
-    L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    L2SqrSIMD16Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr, const void *pFlag1 = nullptr, const void *pFlag2 = nullptr) {
         float *pVect1 = (float *) pVect1v;
         float *pVect2 = (float *) pVect2v;
         size_t qty = *((size_t *) qty_ptr);
@@ -108,7 +109,7 @@ namespace hnswlib {
 
 #if defined(USE_SSE) || defined(USE_AVX)
     static float
-    L2SqrSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    L2SqrSIMD16ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr, const void *pFlag1 = nullptr, const void *pFlag2 = nullptr) {
         size_t qty = *((size_t *) qty_ptr);
         size_t qty16 = qty >> 4 << 4;
         float res = L2SqrSIMD16Ext(pVect1v, pVect2v, &qty16);
@@ -124,7 +125,7 @@ namespace hnswlib {
 
 #ifdef USE_SSE
     static float
-    L2SqrSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    L2SqrSIMD4Ext(const void *pVect1v, const void *pVect2v, const void *qty_ptr, const void *pFlag1 = nullptr, const void *pFlag2 = nullptr) {
         float PORTABLE_ALIGN32 TmpRes[8];
         float *pVect1 = (float *) pVect1v;
         float *pVect2 = (float *) pVect2v;
@@ -151,7 +152,7 @@ namespace hnswlib {
     }
 
     static float
-    L2SqrSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    L2SqrSIMD4ExtResiduals(const void *pVect1v, const void *pVect2v, const void *qty_ptr, const void *pFlag1 = nullptr, const void *pFlag2 = nullptr) {
         size_t qty = *((size_t *) qty_ptr);
         size_t qty4 = qty >> 2 << 2;
 
@@ -169,6 +170,7 @@ namespace hnswlib {
     class L2Space : public SpaceInterface<float> {
 
         DISTFUNC<float> fstdistfunc_;
+        // DISTFUNCFLAG<float> xx;
         size_t data_size_;
         size_t dim_;
     public:
@@ -196,6 +198,11 @@ namespace hnswlib {
             return fstdistfunc_;
         }
 
+        // DISTFUNCFLAG<float> get_dist_func_flag() {
+        //     exit(1);
+        //     return xx;
+        // }
+
         void *get_dist_func_param() {
             return &dim_;
         }
@@ -204,7 +211,8 @@ namespace hnswlib {
     };
 
     static int
-    L2SqrI4x(const void *__restrict pVect1, const void *__restrict pVect2, const void *__restrict qty_ptr) {
+    L2SqrI4x(const void *__restrict pVect1, const void *__restrict pVect2, const void *__restrict qty_ptr,
+                const void *__restrict pFlag1 = nullptr, const void *__restrict pFlag2 = nullptr) {
 
         size_t qty = *((size_t *) qty_ptr);
         int res = 0;
@@ -230,7 +238,8 @@ namespace hnswlib {
         return (res);
     }
 
-    static int L2SqrI(const void* __restrict pVect1, const void* __restrict pVect2, const void* __restrict qty_ptr) {
+    static int L2SqrI(const void* __restrict pVect1, const void* __restrict pVect2, const void* __restrict qty_ptr,
+                        const void *__restrict pFlag1 = nullptr, const void *__restrict pFlag2 = nullptr) {
         size_t qty = *((size_t*)qty_ptr);
         int res = 0;
         unsigned char* a = (unsigned char*)pVect1;
@@ -277,5 +286,195 @@ namespace hnswlib {
         ~L2SpaceI() {}
     };
 
+
+    /*
+        SSD距离计算
+    */
+    template<typename DTval, typename DTdiff, typename DTres>
+    static DTres
+    L2SqrSSD4x(const void *__restrict pVect1, const void *__restrict pVect2, const void *__restrict qty_ptr,
+                const void *__restrict pFlag1 = nullptr, const void *__restrict pFlag2 = nullptr) {
+
+        size_t qty = *((size_t *) qty_ptr);
+        DTdiff diff = 0;
+        DTres res = 0;
+        DTval *pv1 = (DTval *) pVect1;
+        DTval *pv2 = (DTval *) pVect2;
+
+        qty = qty >> 2;
+        for (size_t i = 0; i < qty; i++) {
+            diff = (DTdiff)((DTdiff)(*pv1) - (DTdiff)(*pv2));
+            res += (DTres)((DTdiff)diff * (DTdiff)diff);
+            pv1++;
+            pv2++;
+
+            diff = (DTdiff)((DTdiff)(*pv1) - (DTdiff)(*pv2));
+            res += (DTres)((DTdiff)diff * (DTdiff)diff);
+            pv1++;
+            pv2++;
+            
+            diff = (DTdiff)((DTdiff)(*pv1) - (DTdiff)(*pv2));
+            res += (DTres)((DTdiff)diff * (DTdiff)diff);
+            pv1++;
+            pv2++;
+
+            diff = (DTdiff)((DTdiff)(*pv1) - (DTdiff)(*pv2));
+            res += (DTres)((DTdiff)diff * (DTdiff)diff);
+            pv1++;
+            pv2++;
+        }
+        return (res);
+    }
+
+    class L2SpaceSSD : public SpaceInterface<FCP64> {
+
+        DISTFUNC<FCP64> fstdistfunc_;
+        size_t data_size_;
+        size_t dim_;
+    public:
+        L2SpaceSSD(size_t dim) {
+            if(dim % 4 == 0) {
+                fstdistfunc_ = L2SqrSSD4x<FCP16, FCP32, FCP64>;
+            }
+            else {
+                printf("Error, no support\n");
+                exit(1);
+                // fstdistfunc_ = L2SqrI;
+            }
+            dim_ = dim;
+            data_size_ = dim * sizeof(DTFSSD);
+        }
+
+        size_t get_data_size() {
+            return data_size_;
+        }
+
+        DISTFUNC<FCP64> get_dist_func() {
+            return fstdistfunc_;
+        }
+
+        void *get_dist_func_param() {
+            return &dim_;
+        }
+
+        ~L2SpaceSSD() {}
+    };
+
+    /*
+        flag编解码 距离计算
+    */
+    uint8_t one_bit_to_value[8] = {128, 64, 32, 16, 8, 4, 2, 1};
+    // 已有粗粒度表格，返回比例倍数，用于计算
+    void getFactorListByFlag(size_t dims, const uint8_t *CoarseTable, FCP8 *FactorList){
+        FactorList = new FCP8[dims]();
+        for (size_t cur_pos = 0; cur_pos < dims; cur_pos++){
+            uint8_t flag_id = (uint8_t) (cur_pos / 8);
+            uint8_t bit_id = (uint8_t) (cur_pos % 8);
+            uint8_t flag_add = one_bit_to_value[bit_id];
+
+            uint8_t final_flag = CoarseTable[flag_id] & flag_add;
+
+            if (final_flag == 0){
+                FactorList[cur_pos] = 1;
+            } else if(final_flag == flag_add){
+                FactorList[cur_pos] = PORP;
+            } else {
+                printf("error in Table Id ToProportionList\n");
+                printf("table flag: %d\n", final_flag);
+                exit(1);
+            }
+        }
+    }
+
+    static FCP32
+    L2SqrIntFlag4x(const void *__restrict pVect1, const void *__restrict pVect2, const void *__restrict qty_ptr,
+                    const void *__restrict pFlag1, const void *__restrict pFlag2) {
+
+        size_t qty = *((size_t *) qty_ptr);
+        FCP16 diff = 0;
+        FCP32 res = 0;
+        FCP8 *pv1 = (FCP8 *) pVect1;
+        FCP8 *pv2 = (FCP8 *) pVect2;
+
+        FCP8 *pFactor1;
+        FCP8 *pFactor2;
+        getFactorListByFlag(qty, (uint8_t *)pFlag1, pFactor1);
+        getFactorListByFlag(qty, (uint8_t *)pFlag2, pFactor2);
+        FCP8 *pf1 = (FCP8 *) pFactor1;
+        FCP8 *pf2 = (FCP8 *) pFactor2;
+
+        qty = qty >> 2;
+        for (size_t i = 0; i < qty; i++) {
+            diff = (FCP16)((FCP16)(*pv1) * (FCP16)(*pf1) - (FCP16)(*pv2) * (FCP16)(*pf2));
+            res += (FCP32)((FCP32)diff * (FCP32)diff);
+            pv1++;
+            pv2++;
+            pf1++;
+            pf2++;
+
+            diff = (FCP16)((FCP16)(*pv1) * (FCP16)(*pf1) - (FCP16)(*pv2) * (FCP16)(*pf2));
+            res += (FCP32)((FCP32)diff * (FCP32)diff);
+            pv1++;
+            pv2++;
+            pf1++;
+            pf2++;
+
+            diff = (FCP16)((FCP16)(*pv1) * (FCP16)(*pf1) - (FCP16)(*pv2) * (FCP16)(*pf2));
+            res += (FCP32)((FCP32)diff * (FCP32)diff);
+            pv1++;
+            pv2++;
+            pf1++;
+            pf2++;
+            
+            diff = (FCP16)((FCP16)(*pv1) * (FCP16)(*pf1) - (FCP16)(*pv2) * (FCP16)(*pf2));
+            res += (FCP32)((FCP32)diff * (FCP32)diff);
+            pv1++;
+            pv2++;
+            pf1++;
+            pf2++;
+        }
+        return (res);
+    }
+
+    class L2SpaceIntFlag : public SpaceInterface<FCP32> {
+
+        // DISTFUNCFLAG<FCP32> fstdistfunc_;
+        DISTFUNC<FCP32> fstdistfunc_;
+        size_t data_size_;
+        size_t dim_;
+    public:
+        L2SpaceIntFlag(size_t dim) {
+            if(dim % 4 == 0) {
+                fstdistfunc_ = L2SqrIntFlag4x;
+                // xx = L2SqrSSD4x<FCP8, FCP16, FCP32>;
+            }
+            else {
+                printf("Error, no support\n");
+                exit(1);
+                // fstdistfunc_ = L2SqrI;
+            }
+            dim_ = dim;
+            data_size_ = dim * sizeof(FCP8);
+        }
+
+        size_t get_data_size() {
+            return data_size_;
+        }
+
+        // DISTFUNCFLAG<FCP32> get_dist_func_flag() {
+        //     return fstdistfunc_;
+        // }
+
+        DISTFUNC<FCP32> get_dist_func() {
+            // exit(1);
+            return fstdistfunc_;
+        }
+
+        void *get_dist_func_param() {
+            return &dim_;
+        }
+
+        ~L2SpaceIntFlag() {}
+    };
 
 }
