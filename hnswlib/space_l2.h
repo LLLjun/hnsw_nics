@@ -366,7 +366,7 @@ namespace hnswlib {
     uint8_t one_bit_to_value[8] = {128, 64, 32, 16, 8, 4, 2, 1};
     // 已有粗粒度表格，返回比例倍数，用于计算
     void getFactorListByFlag(size_t dims, const uint8_t *CoarseTable, FCP8 *FactorList){
-        FactorList = new FCP8[dims]();
+        
         for (size_t cur_pos = 0; cur_pos < dims; cur_pos++){
             uint8_t flag_id = (uint8_t) (cur_pos / 8);
             uint8_t bit_id = (uint8_t) (cur_pos % 8);
@@ -396,8 +396,8 @@ namespace hnswlib {
         FCP8 *pv1 = (FCP8 *) pVect1;
         FCP8 *pv2 = (FCP8 *) pVect2;
 
-        FCP8 *pFactor1;
-        FCP8 *pFactor2;
+        FCP8 *pFactor1 = new FCP8[qty]();
+        FCP8 *pFactor2 = new FCP8[qty]();
         getFactorListByFlag(qty, (uint8_t *)pFlag1, pFactor1);
         getFactorListByFlag(qty, (uint8_t *)pFlag2, pFactor2);
         FCP8 *pf1 = (FCP8 *) pFactor1;
@@ -433,6 +433,8 @@ namespace hnswlib {
             pf1++;
             pf2++;
         }
+        delete[] pFactor1;
+        delete[] pFactor2;
         return (res);
     }
 

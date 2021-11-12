@@ -29,10 +29,10 @@ void CheckDataset(const string &dataname, std::map<string, size_t> &index_parame
         path_data = "dataset/gist/gist_base.fvecs";
         path_gt = "dataset/gist/gist_groundtruth.ivecs";
     } else if (dataname == "deep"){
-        if (subset_size_milllions > 100){
-            printf("error: deep size set error.\n");
-            exit(1);
-        }
+        // if (subset_size_milllions > 100){
+        //     printf("error: deep size set error.\n");
+        //     exit(1);
+        // }
         index_parameter["qsize"] = 1000;
         index_parameter["vecdim"] = 96;
         index_parameter["gt_maxnum"] = 100;

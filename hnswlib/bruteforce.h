@@ -98,7 +98,13 @@ namespace hnswlib {
             }
             dist_t lastdist = topResults.top().first;
             for (int i = k; i < cur_element_count; i++) {
+                // if (*((labeltype *) (data_ + size_per_element_ * i + data_size_)) == 191){
+                //     printf("191\n");
+                // }
                 dist_t dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, dist_func_param_, nullptr, nullptr);
+                // if (*((labeltype *) (data_ + size_per_element_ * i + data_size_)) == 191){
+                //     printf("191\n");
+                // }
                 if (dist <= lastdist) {
                     topResults.push(std::pair<dist_t, labeltype>(dist, *((labeltype *) (data_ + size_per_element_ * i +
                                                                                         data_size_))));

@@ -22,8 +22,8 @@ typedef int64_t FCP64;
 
 #define NUM_BANKS 8
 #define NUM_PERSPNODE 10
-#define NUM_CLUSTER_TRAIN 1e6
+#define NUM_CLUSTER_TRAIN 1e5
 
 // 非均匀量化的倍数，目前需要手动给
-#define PORP 4
-#define EFS_PROP 1
+#define PORP 2
+#define EFS_PROP 0.5

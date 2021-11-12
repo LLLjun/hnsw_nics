@@ -152,10 +152,7 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
             exit(1);
         }
     } else {
-        if (mkdir(dir_clu.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", dir_clu.c_str());
-            exit(1);
-        }
+
 
         DTset *massB = new DTset[vecsize * vecdim]();
 
@@ -274,6 +271,10 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
         printf("Cluster %u banks base data: %u to graph level: %u * %u is done\n", 
                 num_banks, vecsize_ssd_per_bank, vecsize_dram_per_bank, num_perspnode);
 
+        if (mkdir(dir_clu.c_str(), S_IRWXU) != 0) {
+            printf("Error, dir %s create failed \n", dir_clu.c_str());
+            exit(1);
+        }
         WriteBinToArray<DTset>(path_clu_mass_graph, mass_graph, vecsize_dram_total, vecdim);
         WriteBinToArray<DTset>(path_clu_mass_global, mass_global, vecsize, vecdim);
         WriteBinToArray<unsigned>(path_clu_global_label_to_id, global_label_to_id, vecsize_dram_total, num_perspnode);
@@ -293,10 +294,7 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
             exit(1);
         }
     } else {
-        if (mkdir(dir_fix.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", dir_fix.c_str());
-            exit(1);
-        }
+
 
         DTset *massQ = new DTset[qsize * vecdim];
         DTset *mass_graph = new DTset[vecsize_dram_total * vecdim]();
@@ -332,14 +330,23 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
         QuantSSD->AddFullDataToFix(massQ, mass_fix_Q_ssd, qsize);
         delete[] mass_global;
 
+        // printf("compersion\n");
+        // for (size_t r = 0; r < vecdim; r++)
+        //     printf("%.3f\t", mass_global[241 * vecdim + r]);
+        // printf("\n");
+        // for (size_t r = 0; r < vecdim; r++)
+        //     printf("%d\t", mass_fix_global[241 * vecdim + r]);
+        // printf("\n");
+        // exit(1);
+
         printf("Quantization error is %.3f, quantzation number is %d, overflow number is %d\n", 
                 QuantSSD->_quant_err, QuantSSD->_quant_nums, QuantSSD->_overflow_nums);
         printf("Quantization for SSD, %d base data and %d queries.\n", vecsize, qsize);
 
         DirectQuant<DTFDRAM> *QuantDRAM = new DirectQuant<DTFDRAM>(vecdim, true, true, true, vecsize_dram_total, qsize);
         QuantDRAM->FixDataPoint(mass_graph, vecsize_dram_total, vecsize_dram_total);
-        QuantDRAM->AddFullDataToFix(mass_graph, mass_fix_graph, vecsize_dram_total);
-        QuantDRAM->AddFullDataToFix(massQ, mass_fix_Q_dram, qsize);
+        QuantDRAM->AddFullDataToFix(mass_graph, mass_fix_graph, vecsize_dram_total, 0);
+        QuantDRAM->AddFullDataToFix(massQ, mass_fix_Q_dram, qsize, 1);
         delete[] mass_graph;
         delete[] massQ;
 
@@ -347,6 +354,10 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
                 QuantDRAM->_quant_err, QuantDRAM->_quant_nums, QuantDRAM->_overflow_nums);
         printf("Quantization for DRAM, %d base data and %d queries.\n", vecsize_dram_total, qsize);
 
+        if (mkdir(dir_fix.c_str(), S_IRWXU) != 0) {
+            printf("Error, dir %s create failed \n", dir_fix.c_str());
+            exit(1);
+        }
         WriteBinToArray<DTFSSD>(path_fix_mass_global, mass_fix_global, vecsize, vecdim);
         WriteBinToArray<DTFSSD>(path_fix_mass_Q_ssd, mass_fix_Q_ssd, qsize, vecdim);
         WriteBinToArray<DTFDRAM>(path_fix_mass_graph, mass_fix_graph, vecsize_dram_total, vecdim);
@@ -365,7 +376,10 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
         printf("Index set %s is existed \n", dir_index.c_str());
         return;
     } else {
-
+        if (mkdir(dir_index.c_str(), S_IRWXU) != 0) {
+            printf("Error, dir %s create failed \n", dir_index.c_str());
+            exit(1);
+        }
         DTset *mass_graph = new DTset[vecsize_dram_total * vecdim]();
         DTFDRAM *mass_fix_graph = new DTFDRAM[vecsize_dram_total * vecdim]();
         uint8_t *flag_fix_graph = new uint8_t[vecsize_dram_total * (unsigned)ceil(vecdim / 8)]();
@@ -379,9 +393,9 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
             string path_index = path_index_prefix + to_string(bank_i) + ".bin";
             appr_alg[bank_i] = new HierarchicalNSW<DTres>(&l2space, vecsize_dram_per_bank, M, efConstruction);
 
-            DTset *massbase = mass_graph + bank_i * vecsize_dram_per_bank;
-            DTFDRAM *massfix = mass_fix_graph + bank_i * vecsize_dram_per_bank;
-            uint8_t *flagfix = flag_fix_graph + bank_i * vecsize_dram_per_bank;
+            DTset *massbase = mass_graph + bank_i * vecsize_dram_per_bank * vecdim;
+            DTFDRAM *massfix = mass_fix_graph + bank_i * vecsize_dram_per_bank * vecdim;
+            uint8_t *flagfix = flag_fix_graph + bank_i * vecsize_dram_per_bank * (unsigned)ceil(vecdim / 8);
 #if PLATG
             unsigned center_id = compArrayCenter<DTset>(massbase, vecsize_dram_per_bank, vecdim);
             appr_alg[bank_i]->addPoint((void *) (massbase + center_id * vecdim), (size_t) center_id);
@@ -396,16 +410,16 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
             size_t report_every = vecsize_dram_per_bank / 10;
 #pragma omp parallel for
             for (size_t i = 1; i < vecsize_dram_per_bank; i++) {
-#pragma omp critical
-                {
-                    j1++;
-                    if (j1 % report_every == 0) {
-                        cout << j1 / (0.01 * vecsize_dram_per_bank) << " %, "
-                            << report_every / (1000.0 * stopw.getElapsedTimes()) << " kips " << " Mem: "
-                            << getCurrentRSS() / 1000000 << " Mb \n";
-                        stopw.reset();
-                    }
-                }
+// #pragma omp critical
+//                 {
+//                     j1++;
+//                     if (j1 % report_every == 0) {
+//                         cout << j1 / (0.01 * vecsize_dram_per_bank) << " %, "
+//                             << report_every / (1000.0 * stopw.getElapsedTimes()) << " kips " << " Mem: "
+//                             << getCurrentRSS() / 1000000 << " Mb \n";
+//                         stopw.reset();
+//                     }
+//                 }
 #if PLATG
                 size_t ic;
                 if (i <= center_id)
@@ -471,14 +485,17 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
     } else {
         size_t flag_len = ceil(vecdim / 8);
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
+        // DTres *massQA_dist = new DTres[qsize * gt_maxnum];
         DTset *massQ = new DTset[qsize * vecdim];
-        DTFSSD *mass_fix_global = new DTFSSD[vecsize * vecdim]();
+        // DTFSSD *mass_fix_global = new DTFSSD[vecsize * vecdim]();
         DTFSSD *mass_fix_Q_ssd = new DTFSSD[qsize * vecdim]();
         DTFDRAM *mass_fix_Q_dram = new DTFDRAM[qsize * vecdim]();
         uint8_t *flag_fix_Q_dram = new uint8_t[qsize * flag_len]();
         unsigned *global_label_to_id = new unsigned[vecsize]();
 
         cout << "Loading GT:\n";
+        // LoadBinToArray<unsigned>(index_string["gt_id"], massQA, qsize, gt_maxnum);
+        // LoadBinToArray<DTres>(index_string["gt_dist"], massQA_dist, qsize, gt_maxnum);
         ifstream inputGT(path_gt.c_str(), ios::binary);
         for (int i = 0; i < qsize; i++) {
             int t;
@@ -515,8 +532,8 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         size_t total = 0;
         size_t len_per_query_comb = vecdim * sizeof(DTFDRAM) + flag_len;
 
-        size_t efs_bank = 60;
-        size_t efs_dram = EFS_PROP * efs_bank;
+        size_t efs_bank = 150;
+        size_t efs_dram = num_banks * efs_bank * EFS_PROP;
         
         DTFSSD *mass_brute_ssd = new DTFSSD[efs_dram * num_perspnode * vecdim]();
         unsigned *id_brute_ssd = new unsigned[efs_dram * num_perspnode]();
@@ -526,7 +543,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             char *query_comb = new char[len_per_query_comb]();
             memcpy(query_comb, mass_fix_Q_dram + q_i * vecdim, vecdim * sizeof(DTFDRAM));
             memcpy(query_comb + vecdim * sizeof(DTFDRAM), flag_fix_Q_dram + q_i * flag_len, flag_len);
-            FCP32 *thr_global;
+            FCP32 thr_global = std::numeric_limits<FCP32>::max();
             // space_l2
             char *query_repeat = new char[num_banks * len_per_query_comb]();
             std::vector<std::priority_queue<std::pair<FCP32, labeltype>>> result_bank(num_banks);
@@ -536,13 +553,13 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             omp_set_num_threads(num_banks);
 #pragma omp parallel for
             for (size_t bank_i = 0; bank_i < num_banks; bank_i++){
-                appr_alg[bank_i]->setThr(thr_global);
+                // appr_alg[bank_i]->setThr(&thr_global);
                 appr_alg[bank_i]->setEf(efs_bank);
 
                 char *query_c = query_repeat + bank_i * len_per_query_comb;
                 memcpy(query_c, query_comb, len_per_query_comb);
                 // todo 
-                result_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, k);
+                result_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, efs_bank);
 #pragma omp critical
                 {
                     // merge result
@@ -557,7 +574,34 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                     }
                 }
             }
+            // DTFSSD *fsb = new DTFSSD[vecsize * vecdim]();
+            // LoadBinToArray<DTFSSD>(path_fix_mass_global, fsb, vecsize, vecdim);
+            // for (size_t i = 0; i < vecsize; i++){
+            //     printf("%u, id %u: ", i, global_label_to_id[i]);
+            //     for (size_t j = 0; j < vecdim; j++)
+            //         printf("%d\t", fsb[i * vecdim + j]);
+            //     printf("\n");
+            // }
+            // exit(1);
 
+            // printf("----\n");
+            // for (size_t r = 0; r < gt_maxnum; r++){
+            //     printf("%u\t", massQA[q_i * gt_maxnum + r]);
+            //     // vector<labeltype> innode;
+            //     // appr_alg[0]->getIndegreeByExternal(massQA[q_i * gt_maxnum + r], innode);
+            //     // printf("%u 's indegree: %u \n", massQA[q_i * gt_maxnum + r], innode.size());
+            // }
+            // printf("\n");
+            // for (size_t r = 0; r < gt_maxnum; r++)
+            //     printf("%.4f\t", massQA_dist[q_i * gt_maxnum + r]);
+            // printf("\n\n");
+
+            // while(!result_dram.empty()){
+            //     if (result_dram.size() <= k)
+            //         printf("%u: %d\n", global_label_to_id[result_dram.top().second], result_dram.top().first);
+            //     result_dram.pop();
+            // }
+            // exit(1);
 
             // search in SSD
             size_t efs_real = std::min(efs_dram, result_dram.size());
@@ -574,7 +618,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             }
             for (size_t i = 0; i < efs_real; i++){
                 size_t pos_r = result_dram.top().second;
-                inputBS.seekg(pos_r * num_perspnode * vecdim * sizeof(DTFSSD), ios::beg);
+                inputBS.seekg(pos_r * num_perspnode * vecdim * sizeof(DTFSSD) + 2 * sizeof(unsigned), ios::beg);
                 inputBS.read((char *)(mass_brute_ssd + i * num_perspnode * vecdim), num_perspnode * vecdim * sizeof(DTFSSD));
                 result_dram.pop();
                 memcpy(id_brute_ssd + i * num_perspnode, global_label_to_id + pos_r * num_perspnode, num_perspnode * sizeof(unsigned));
@@ -584,9 +628,15 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             L2SpaceSSD l2ssd(vecdim);
             BruteforceSearch<FCP64>* brute_alg = new BruteforceSearch<FCP64>(&l2ssd, (size_t)(efs_real * num_perspnode));
             omp_set_num_threads(omp_get_num_procs());
-#pragma omp parallel for
+// #pragma omp parallel for
             for (size_t i = 0; i < (efs_real * num_perspnode); i++){
                 brute_alg->addPoint((void *) (mass_brute_ssd + i * vecdim), (size_t) id_brute_ssd[i]);
+                // for (size_t j = 0; j < gt_maxnum; j++){
+                //     if (massQA[q_i * gt_maxnum + j] == id_brute_ssd[i]){
+                //         printf("%u: %u\n", massQA[q_i * gt_maxnum + j], i);
+                //         break;
+                //     }
+                // }
             }
 
             std::priority_queue<std::pair<FCP64, labeltype >> rs = brute_alg->searchKnn(mass_fix_Q_ssd + q_i * vecdim, k);
@@ -669,6 +719,10 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 
     CheckDataset(using_dataset, index_parameter, index_string, subset_size_milllions, vecsize, qsize, vecdim, gt_maxnum,
                     path_q, path_data, path_gt);
+    
+    // index_string["gt_id"] = "/home/ljun/anns/hnsw_nics/graphindex/brute/deep/deep100k_gt_id.bin";
+    // index_string["gt_dist"] = "/home/ljun/anns/hnsw_nics/graphindex/brute/deep/deep100k_gt_dist.bin";
+    // index_parameter["gt_maxnum"] = 10;
 
     if (is_build){
         build_index<DTSET, DTVAL, DTRES>(using_dataset, index_parameter, index_string);

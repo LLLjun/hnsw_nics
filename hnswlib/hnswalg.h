@@ -142,6 +142,17 @@ namespace hnswlib {
             return return_label;
         }
 
+        inline tableint getInternalByLabel(labeltype external_id) const {
+            tableint return_id;
+            auto ss = label_lookup_.find(external_id);
+            if (ss == label_lookup_.end()){
+                throw std::runtime_error("Label not found");
+            } else {
+                return_id = ss->second;
+            }
+            return return_id;
+        }
+
         inline void setExternalLabel(tableint internal_id, labeltype label) const {
             memcpy((data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), &label, sizeof(labeltype));
         }
@@ -275,12 +286,15 @@ namespace hnswlib {
 
             visited_array[ep_id] = visited_array_tag;
 
+            bool isSyncThr = false;
+
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
 
                 // strategy 1
-                commThr(&lowerBound);
+                // if (isSyncThr)
+                //     commThr(&lowerBound);
 
                 if ((-current_node_pair.first) > lowerBound) {
                     break;
@@ -337,7 +351,9 @@ namespace hnswlib {
                                 lowerBound = top_candidates.top().first;
                             
                             if (top_candidates.size() == ef){
+                                isSyncThr = true;
                                 // strategy 2
+                                // commThr(&lowerBound);
                             }
                         }
                     }
@@ -1210,9 +1226,42 @@ namespace hnswlib {
                     max1=std::max(inbound_connections_num[i],max1);
                 }
                 std::cout << "Min inbound: " << min1 << ", Max inbound:" << max1 << "\n";
+                size_t *inb = new size_t[max1 + 1]();
+                for (int i = 0; i < cur_element_count; i++)
+                    inb[inbound_connections_num[i]]++;
+                printf("indegree num: ");
+                for (int i = 0; i <= max1; i++)
+                    printf("%u\t", inb[i]);
+                printf("\n");
             }
             std::cout << "integrity ok, checked " << connections_checked << " connections\n";
 
+        }
+        /*
+            input: labeltype
+            output: indegree and in node
+        */
+        void getIndegreeByExternal(labeltype external_id, std::vector<labeltype> &innode_list){
+            tableint internal_id = getInternalByLabel(external_id);
+            std::vector<labeltype>().swap(innode_list);
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                for(size_t l = 0; l <= element_levels_[i]; l++){
+                    linklistsizeint *ll_cur = get_linklist_at_level(i, l);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    std::unordered_set<tableint> s;
+                    for (int j = 0; j < size; j++){
+                        assert(data[j] > 0);
+                        assert(data[j] < cur_element_count);
+                        assert (data[j] != i);
+                        if (data[j] == internal_id){
+                            innode_list.push_back(getExternalLabel(i));
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         /*
@@ -1248,7 +1297,7 @@ namespace hnswlib {
                 memcpy(data_level0_memory_fix_ + inter_i * size_data_per_element_fix_ + label_offset_fix_,
                         getExternalLabeLp(inter_i), sizeof(labeltype));
                 memcpy(data_level0_memory_fix_ + inter_i * size_data_per_element_fix_ + flag_offest_fix_,
-                        fix_flag + dims * getExternalLabel(inter_i), flag_len);
+                        fix_flag + flag_len * getExternalLabel(inter_i), flag_len);
             }
 
             data_size_ = data_size_fix_;

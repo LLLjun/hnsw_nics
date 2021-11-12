@@ -293,6 +293,10 @@ public:
         return fine_quant_value;
     }
 private:
+    T round_float(float number){
+        return (number > 0.0) ? floor(number + 0.5) : ceil(number - 0.5);
+    }
+
     void GetFactor(const float *floatp, size_t nums){
         _max_real = std::numeric_limits<float>::min();
         _min_real = std::numeric_limits<float>::max();
@@ -311,7 +315,7 @@ private:
         if (_isTwoRangeQuant){
             // liujun. double factor quantization
             // todo: set _proportion_single to int, else error is very high
-            _max_fac_fine = DatasetDistrib(floatp, nums, 40, nums, 0.95);
+            _max_fac_fine = DatasetDistrib(floatp, nums, 60, nums, 0.95);
             if (_min_fac_coarse >= 0)
                 _min_fac_fine = _min_real;
             else
@@ -340,7 +344,12 @@ private:
                     min_factor = (float) min_T / _min_fac_fine;
                 _scale_factor_fine = min(max_factor, min_factor);
                 // to limit _scale_factor_fine
-                _scale_factor_fine = (unsigned)(_scale_factor_fine / _scale_factor_coarse) * _scale_factor_coarse;
+                unsigned pp = round_float(log2f32((_scale_factor_fine / _scale_factor_coarse)));
+                if (pp < 1)
+                    pp = 1;
+                _proportion_single = (T)exp2f32(pp);
+                // _scale_factor_fine = (unsigned)(_scale_factor_fine / _scale_factor_coarse) * _scale_factor_coarse;
+                _scale_factor_fine = _proportion_single * _scale_factor_coarse;
             }
         } else{ 
             // todo
@@ -363,7 +372,7 @@ private:
 
         if (_isTwoRangeQuant){
             // youwenti 0.185 7
-            _proportion_single = (T) (_scale_factor_fine / _scale_factor_coarse);
+            // _proportion_single = (T) (_scale_factor_fine / _scale_factor_coarse);
             
             printf("max T: %d, min T: %d, carose scale factor: %.3f, fine scale factor: %.3f\n", 
                     max_T, min_T, _scale_factor_coarse, _scale_factor_fine);
@@ -503,7 +512,7 @@ private:
                     _overflow_nums++;
                 }
                 else
-                    fixp[i * _vecdims + j] = (T) cur_point_T;
+                    fixp[i * _vecdims + j] = round_float(cur_point_T);
             }
         }
         printf("Fix %d nums float data to T is done\n", nums);
@@ -522,11 +531,7 @@ private:
             for (size_t j = 0; j < _vecdims; j++){
                 cur_point = floatp[i * _vecdims + j];
                 
-                if((cur_point <= _max_fac_fine) && (cur_point >= _min_fac_fine)){
-                    cur_point_T = cur_point * _scale_factor_fine;
-                } else{
-                    cur_point_T = cur_point * _scale_factor_coarse;
-                }
+                cur_point_T = cur_point * _scale_factor_coarse;
 
                 if (cur_point_T > (float) max_T){
                     fixp[i * _vecdims + j] = max_T;
@@ -537,7 +542,7 @@ private:
                     _overflow_nums++;
                 }
                 else
-                    fixp[i * _vecdims + j] = (T) cur_point_T;             
+                    fixp[i * _vecdims + j] = round_float(cur_point_T);             
             }
         }
         printf("Fix %d nums float data to T is done\n", nums);
