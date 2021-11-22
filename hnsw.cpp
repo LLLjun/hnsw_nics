@@ -235,7 +235,7 @@ void hnsw_impl(bool is_build, const string &using_dataset){
         }
     }
 
-	size_t subset_size_milllions = 10;
+	size_t subset_size_milllions = 1;
 	size_t efConstruction = 40;
 	size_t M = 16;
     size_t k = 10;

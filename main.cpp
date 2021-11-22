@@ -15,7 +15,7 @@ inline void assignToThisCore(int core_id)
 void hnsw_impl(bool is_build, const std::string &using_dataset);
 
 int main(int argc, char **argv) {
-    
+    // assignToThisCore(19);
     bool is_build;
     if (argc != 3){
         printf("Usage: ./main [stage: build or search] [dataset]\n");
