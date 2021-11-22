@@ -223,13 +223,10 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
 
 void hnsw_impl(bool is_build, const string &using_dataset){
     string prefix = "/home/ljun/anns/hnsw_nics/graphindex/";
-#if PLATG
+    // 默认采用平面图
     string label = "plat/";
-#else
-    string label = "base/";
-#endif
-    // support dataset: sift, gist, deep, glove, crawl
 
+    // support dataset: sift, gist, deep, glove, crawl
     string pre_index = prefix + label + using_dataset;
     if (access(pre_index.c_str(), R_OK|W_OK)){
         if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
@@ -239,8 +236,8 @@ void hnsw_impl(bool is_build, const string &using_dataset){
     }
 
 	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 25;
+	size_t efConstruction = 40;
+	size_t M = 16;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;
