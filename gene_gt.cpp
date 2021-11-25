@@ -11,6 +11,10 @@
 using namespace std;
 using namespace hnswlib;
 
+inline bool exists_test(const std::string &name) {
+    ifstream f(name.c_str());
+    return f.good();
+}
 
 template<typename DTset, typename DTval, typename DTres>
 void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s, size_t &efConstruction, 
@@ -65,9 +69,10 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
     } else {
         BruteforceSearch<DTres> *brute_alg = new BruteforceSearch<DTres>(&s, index);
 
-        unsigned *massQA = new unsigned[qsize * gt_maxnum];
-        DTset *massQ = new DTset[qsize * vecdim];
-        
+        unsigned *massQA = new unsigned[qsize * gt_maxnum]();
+        DTres * massQA_dist = new DTres[qsize * gt_maxnum]();
+        DTset *massQ = new DTset[qsize * vecdim]();
+
         cout << "Loading queries:\n";
         ifstream inputQ(path_q.c_str(), ios::binary);
         for (int i = 0; i < qsize; i++) {
@@ -85,10 +90,12 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         inputQ.close();
         printf("Load queries from %s done \n", path_q.c_str());
 
+#pragma omp parallel for
         for (size_t i = 0; i < qsize; i++){
-            std::priority_queue<std::pair<DTres, labeltype >> rs = brute_alg->searchKnn(massQ + i * vecdim, k);
-            size_t kk = k;
-            while (rs.empty()){
+            std::priority_queue<std::pair<DTres, labeltype >> rs = brute_alg->searchKnn(massQ + i * vecdim, gt_maxnum);
+            size_t kk = gt_maxnum;
+            while (!rs.empty()){
+                massQA_dist[i * gt_maxnum + kk - 1] = rs.top().first;
                 massQA[i * gt_maxnum + kk - 1] = rs.top().second;
                 rs.pop();
                 kk--;
@@ -99,8 +106,11 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
             }
         }
 
-        cout << "Loading GT:\n";
-        WriteBinToArray<unsigned>(path_gt, massQA, qsize, k);
+        cout << "Writing GT:\n";
+        string path_gt_id = path_gt + "id.bin";
+        string path_gt_dist = path_gt + "dist.bin";
+        WriteBinToArray<unsigned>(path_gt_id, massQA, qsize, gt_maxnum);
+        WriteBinToArray<DTres>(path_gt_dist, massQA_dist, qsize, gt_maxnum);
         printf("Write GT to %s done \n", path_gt.c_str());
 
         printf("Search index %s is succeed \n", index.c_str());
@@ -126,7 +136,7 @@ void gene_gt_impl(bool is_build, const string &using_dataset){
 	size_t subset_size_milllions = 1;
 	size_t efConstruction = 40;
 	size_t M = 16;
-    size_t k = 100;
+    size_t k = 101;
 	
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
@@ -139,7 +149,10 @@ void gene_gt_impl(bool is_build, const string &using_dataset){
 
     L2Space l2space(vecdim);
 
-
+    gt_maxnum = k;
+    path_gt = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + "m_gt_self_";
+    path_q = path_data;
+    qsize = vecsize;
 
     if (is_build){
         build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data);

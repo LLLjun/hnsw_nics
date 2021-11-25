@@ -520,7 +520,9 @@ namespace hnswlib {
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
                 tableint cur_i =  selectedNeighbors[idx];
 #endif
-
+                if (cur_i > cur_element_count)
+                    continue;
+                
                 std::unique_lock <std::mutex> lock(link_list_locks_[cur_i]);
 
                 linklistsizeint *ll_other;
@@ -1069,6 +1071,9 @@ namespace hnswlib {
             return result;
         };
 
+        unsigned *nng_id = nullptr;
+        float *nng_dist = nullptr;
+
         tableint addPoint(const void *data_point, labeltype label, int level) {
 
             tableint cur_c = 0;
@@ -1173,8 +1178,13 @@ namespace hnswlib {
                     if (level > maxlevelcopy || level < 0)  // possible?
                         throw std::runtime_error("Level error");
 
-                    std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
-                            currObj, data_point, level);
+                    // std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
+                    //         currObj, data_point, level);
+                    std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
+                    for (size_t ii = 0; ii < ef_construction_; ii++){
+                        top_candidates.emplace(std::make_pair((dist_t)nng_dist[cur_c * ef_construction_ + ii], (tableint)nng_id[cur_c * ef_construction_ + ii]));
+                    }
+
                     if (epDeleted) {
                         top_candidates.emplace(fstdistfunc_(data_point, getDataByInternalId(enterpoint_copy), dist_func_param_), enterpoint_copy);
                         if (top_candidates.size() > ef_construction_)

@@ -72,9 +72,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     for (int i = 500; i < 1500; i += 200) {
         efs.push_back(i);
     }
-    for (int i = 1500; i < 10500; i += 1000) {
-        efs.push_back(i);
-    }
+    // for (int i = 1500; i < 10500; i += 1000) {
+    //     efs.push_back(i);
+    // }
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -129,10 +129,52 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         appr_alg->graph_type = graph_type;
-        appr_alg->hit_miss = 0;
-        appr_alg->hit_total = 0;
+        // appr_alg->hit_miss = 0;
+        // appr_alg->hit_total = 0;
+
 #if PLATG
         unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
+
+        string path_nng_id = "/home/ljun/anns/hnsw_nics/graphindex/brute/deep/deep1m_gt_self_id.bin";
+        string path_nng_dist = "/home/ljun/anns/hnsw_nics/graphindex/brute/deep/deep1m_gt_self_dist.bin";
+        unsigned *nng_all_id = new unsigned[vecsize * 101]();
+        float *nng_all_dist = new float[vecsize * 101]();
+        LoadBinToArray<unsigned>(path_nng_id, nng_all_id, vecsize, 101);
+        LoadBinToArray<float>(path_nng_dist, nng_all_dist, vecsize, 101);
+        appr_alg->nng_id = new unsigned[vecsize * efConstruction]();
+        appr_alg->nng_dist = new float[vecsize * efConstruction]();
+        for (size_t i_ex = 0; i_ex < vecsize; i_ex++){
+            size_t i_in;
+            if (i_ex == center_id)
+                i_in = 0;
+            else if (i_ex < center_id)
+                i_in = i_ex + 1;
+            else
+                i_in = i_ex;
+            
+            size_t ri = 0;
+            for (size_t j = 0; j <= efConstruction; j++){
+                unsigned cur_label = nng_all_id[i_ex * 101 + j];
+                if (cur_label == i_ex)
+                    continue;
+                
+                appr_alg->nng_dist[i_in * efConstruction + ri] = nng_all_dist[i_ex * 101 + j];
+                if (cur_label == center_id)
+                    appr_alg->nng_id[i_in * efConstruction + ri] = 0;
+                else if (cur_label < center_id)
+                    appr_alg->nng_id[i_in * efConstruction + ri] = cur_label + 1;
+                else
+                    appr_alg->nng_id[i_in * efConstruction + ri] = cur_label;
+                ri++;
+            }
+            if (ri != efConstruction){
+                printf("Error, non self\n");
+                exit(1);
+            }
+        }
+        delete[] nng_all_id;
+        delete[] nng_all_dist;
+
         appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
 #else
         appr_alg->addPoint((void *) (massB), (size_t) 0);
@@ -142,7 +184,7 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         clk_get stopw = clk_get();
         clk_get stopw_full = clk_get();
         size_t report_every = vecsize / 10;
-#pragma omp parallel for
+// #pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {
 #pragma omp critical
             {
@@ -167,24 +209,26 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         }
         cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
         delete[] massB;
+        delete[] appr_alg->nng_id;
+        delete[] appr_alg->nng_dist;
         if (isSave)
             appr_alg->saveIndex(index);
 
         printf("Build index %s is succeed \n", index.c_str());
 
         // get average neighbor distance
-        // float dist_a = appr_alg->compAverageNeighDist();
-        // printf("average neighbor distance: %.3f \n", dist_a);
+        float dist_a = appr_alg->compAverageNeighDist();
+        printf("average neighbor distance: %.3f \n", dist_a);
         // float dist_b = appr_alg->compNeighborDistByDegree();
         // printf("average neighbor distance (degree = 1): %.3f \n", dist_b);
 
         // 
         appr_alg->getDegreeRelation();
 
-        // // get degree info
-        // vector<size_t> dstb_in;
-        // vector<size_t> dstb_out;
-        // appr_alg->getDegreeDistri(dstb_in, dstb_out);
+        // get degree info
+        vector<size_t> dstb_in;
+        vector<size_t> dstb_out;
+        appr_alg->getDegreeDistri(dstb_in, dstb_out);
 
         // // get her hit
         // size_t hit_miss = appr_alg->hit_miss;

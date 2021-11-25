@@ -13,6 +13,7 @@ inline void assignToThisCore(int core_id)
 }
 
 void hnsw_impl(bool is_build, const std::string &using_dataset, std::string &graph_type);
+// void gene_gt_impl(bool is_build, const std::string &using_dataset);
 
 int main(int argc, char **argv) {
     
@@ -42,6 +43,7 @@ int main(int argc, char **argv) {
     //     assignToThisCore(19);
     
     hnsw_impl(is_build, std::string(argv[2]), graph_type);
+    // gene_gt_impl(is_build, std::string(argv[2]));
 
     return 0;
 };
