@@ -63,12 +63,18 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     // for (int i = k; i < 30; i++) {
     //     efs.push_back(i);
     // }
-    for (int i = 10; i < 100; i += 10) {
+    for (int i = 40; i < 100; i += 10) {
         efs.push_back(i);
     }
-    // for (int i = 100; i < 500; i += 40) {
-    //     efs.push_back(i);
-    // }
+    for (int i = 100; i < 500; i += 40) {
+        efs.push_back(i);
+    }
+    for (int i = 500; i < 1500; i += 200) {
+        efs.push_back(i);
+    }
+    for (int i = 1500; i < 10500; i += 1000) {
+        efs.push_back(i);
+    }
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -97,7 +103,7 @@ inline bool exists_test(const std::string &name) {
 
 template<typename DTset, typename DTval, typename DTres>
 void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s, size_t &efConstruction, 
-                    size_t &M, size_t &vecsize, size_t &vecdim, string &path_data, bool isSave = true){
+                    size_t &M, size_t &vecsize, size_t &vecdim, string &path_data, string &graph_type, bool isSave = true){
     // 
     if (exists_test(index)){
         printf("Index %s is existed \n", index.c_str());
@@ -122,6 +128,9 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         inputB.close();
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
+        appr_alg->graph_type = graph_type;
+        appr_alg->hit_miss = 0;
+        appr_alg->hit_total = 0;
 #if PLATG
         unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
         appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
@@ -162,6 +171,25 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
             appr_alg->saveIndex(index);
 
         printf("Build index %s is succeed \n", index.c_str());
+
+        // get average neighbor distance
+        // float dist_a = appr_alg->compAverageNeighDist();
+        // printf("average neighbor distance: %.3f \n", dist_a);
+        // float dist_b = appr_alg->compNeighborDistByDegree();
+        // printf("average neighbor distance (degree = 1): %.3f \n", dist_b);
+
+        // 
+        appr_alg->getDegreeRelation();
+
+        // // get degree info
+        // vector<size_t> dstb_in;
+        // vector<size_t> dstb_out;
+        // appr_alg->getDegreeDistri(dstb_in, dstb_out);
+
+        // // get her hit
+        // size_t hit_miss = appr_alg->hit_miss;
+        // size_t hit_total = appr_alg->hit_total;
+        // printf("miss: %u, total: %u, prop: %.3f \n", hit_miss, hit_total, (float)hit_miss / hit_total);
     }
 }
 
@@ -217,17 +245,20 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         cout << "Comput recall: \n";
         test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
 
+        // // get degree info
+        // vector<size_t> dstb_in;
+        // vector<size_t> dstb_out;
+        // appr_alg->getDegreeDistri(dstb_in, dstb_out);
+
         printf("Search index %s is succeed \n", index.c_str());
     }
 }
 
-void hnsw_impl(bool is_build, const string &using_dataset){
+void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     string prefix = "/home/ljun/anns/hnsw_nics/graphindex/";
-#if PLATG
-    string label = "plat/";
-#else
-    string label = "base/";
-#endif
+
+    string label = "profile/graph_type/";
+
     // support dataset: sift, gist, deep, glove, crawl
 
     string pre_index = prefix + label + using_dataset;
@@ -238,9 +269,9 @@ void hnsw_impl(bool is_build, const string &using_dataset){
         }
     }
 
-	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 25;
+	size_t subset_size_milllions = 1;
+	size_t efConstruction = 40;
+	size_t M = 16;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;
@@ -248,14 +279,14 @@ void hnsw_impl(bool is_build, const string &using_dataset){
     string path_index, path_gt, path_q, path_data;
     
     string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
+                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + "_" + graph_type + ".bin";
     CheckDataset(using_dataset, subset_size_milllions, vecsize, qsize, vecdim, gt_maxnum,
                     path_q, path_data, path_gt);
 
     L2Space l2space(vecdim);
 
     if (is_build){
-        build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data);
+        build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data, graph_type);
     } else{
         search_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, k, qsize, vecdim, gt_maxnum, path_q, path_gt);
     }

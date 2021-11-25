@@ -11,3 +11,6 @@
 typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;
+
+// for profile
+#define EXI true

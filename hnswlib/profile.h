@@ -1,10 +1,32 @@
-
+#pragma once
 
 #include <iostream>
 #include <fstream>
 #include <queue>
 #include <chrono>
 
+//动态创建二维数组
+template<typename Gene_type>
+Gene_type ** gene_array(int rowsNum, int colsNum, int dims = 1){
+    Gene_type ** p = new Gene_type*[rowsNum];
+	for(int i = 0; i < rowsNum; i++){
+		p[i] = new Gene_type[colsNum * dims]();
+        if(p[i] == NULL){
+            printf("Memory allocation failed\n");
+            exit(1);
+        }
+	}
+        
+    return p;
+}
+//释放二维数组所占用的内存
+template<typename Free_type>
+void freearray(Free_type **p, int rowsNum){
+    for(int i = 0; i < rowsNum; i++){
+        delete[] p[i];
+    }
+    delete[] p;
+}
 
 class StopW {
     std::chrono::steady_clock::time_point time_begin;

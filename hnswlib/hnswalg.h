@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <list>
 #include "config.h"
+#include "profile.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -334,9 +335,12 @@ namespace hnswlib {
             return top_candidates;
         }
 
+        mutable std::atomic<long> hit_miss;
+        mutable std::atomic<long> hit_total;
+
         void getNeighborsByHeuristic2(
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
-        const size_t M) {
+        const size_t M, bool isCollect = false) {
             if (top_candidates.size() < M) {
                 return;
             }
@@ -348,6 +352,7 @@ namespace hnswlib {
                 top_candidates.pop();
             }
 
+            size_t cur_miss = 0;
             while (queue_closest.size()) {
                 if (return_list.size() >= M)
                     break;
@@ -368,9 +373,17 @@ namespace hnswlib {
                 }
                 if (good) {
                     return_list.push_back(curent_pair);
+                } else {
+                    if (isCollect){
+                        hit_miss++;
+                        cur_miss++;
+                    }
                 }
             }
-
+            if (isCollect){
+                hit_total += M;
+                // printf("%.3f\n", (float)cur_miss / M);
+            }
             for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
@@ -393,19 +406,86 @@ namespace hnswlib {
             return level == 0 ? get_linklist0(internal_id) : get_linklist(internal_id, level);
         };
 
+        std::string graph_type = "base";
+
+        bool isDggb = false;
+        unsigned *dggb_in = nullptr;
+        unsigned *dggb_out = nullptr;
+        void setGlobalDegree(bool isGlobalDegree){
+            isDggb = isGlobalDegree;
+            dggb_in = new unsigned[max_elements_]();
+            dggb_out = new unsigned[max_elements_]();
+        }
+
         tableint mutuallyConnectNewElement(const void *data_point, tableint cur_c,
                                        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         int level, bool isUpdate) {
             size_t Mcurmax = level ? maxM_ : maxM0_;
-            getNeighborsByHeuristic2(top_candidates, M_);
-            if (top_candidates.size() > M_)
-                throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
-
+#if EXI
+            std::vector<tableint> ex_list;
+            ex_list.reserve(top_candidates.size());
+#endif
             std::vector<tableint> selectedNeighbors;
-            selectedNeighbors.reserve(M_);
-            while (top_candidates.size() > 0) {
-                selectedNeighbors.push_back(top_candidates.top().second);
-                top_candidates.pop();
+            if (graph_type == "knng"){
+                selectedNeighbors.reserve(Mcurmax);
+                while (top_candidates.size() > 0) {
+                    if (top_candidates.size() <= Mcurmax)
+                        selectedNeighbors.push_back(top_candidates.top().second);
+                    top_candidates.pop();
+                }
+            } else if (graph_type == "rng") {
+                selectedNeighbors.reserve(Mcurmax);
+#if EXI
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_copy;
+                while (top_candidates.size() > 0) {
+                    top_candidates_copy.emplace(top_candidates.top());
+                    ex_list.push_back(top_candidates.top().second);
+                    top_candidates.pop();
+                }
+                getNeighborsByHeuristic2(top_candidates_copy, Mcurmax);
+                if (top_candidates_copy.size() > Mcurmax)
+                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+                while (top_candidates_copy.size() > 0) {
+                    selectedNeighbors.push_back(top_candidates_copy.top().second);
+                    top_candidates_copy.pop();
+                }
+#else
+                getNeighborsByHeuristic2(top_candidates, Mcurmax);
+                if (top_candidates.size() > Mcurmax)
+                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+                while (top_candidates.size() > 0) {
+                    selectedNeighbors.push_back(top_candidates.top().second);
+                    top_candidates.pop();
+                }
+#endif
+            } else if (graph_type == "base") {
+                selectedNeighbors.reserve(M_);
+#if EXI
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_copy;
+                while (top_candidates.size() > 0) {
+                    top_candidates_copy.emplace(top_candidates.top());
+                    ex_list.push_back(top_candidates.top().second);
+                    top_candidates.pop();
+                }
+                getNeighborsByHeuristic2(top_candidates_copy, M_);
+                if (top_candidates_copy.size() > M_)
+                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+                while (top_candidates_copy.size() > 0) {
+                    selectedNeighbors.push_back(top_candidates_copy.top().second);
+                    top_candidates_copy.pop();
+                }
+#else
+                getNeighborsByHeuristic2(top_candidates, M_);
+                if (top_candidates.size() > M_)
+                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+                while (top_candidates.size() > 0) {
+                    selectedNeighbors.push_back(top_candidates.top().second);
+                    top_candidates.pop();
+                }
+#endif
+            } else {
+                printf("Error, unknown graph type \n");
+                exit(1);
             }
 
             tableint next_closest_entry_point = selectedNeighbors.back();
@@ -433,23 +513,29 @@ namespace hnswlib {
                 }
             }
 
+#if EXI
+            for (size_t idx = 0; idx < ex_list.size(); idx++) {
+                tableint cur_i =  ex_list[idx];
+#else
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
+                tableint cur_i =  selectedNeighbors[idx];
+#endif
 
-                std::unique_lock <std::mutex> lock(link_list_locks_[selectedNeighbors[idx]]);
+                std::unique_lock <std::mutex> lock(link_list_locks_[cur_i]);
 
                 linklistsizeint *ll_other;
                 if (level == 0)
-                    ll_other = get_linklist0(selectedNeighbors[idx]);
+                    ll_other = get_linklist0(cur_i);
                 else
-                    ll_other = get_linklist(selectedNeighbors[idx], level);
+                    ll_other = get_linklist(cur_i, level);
 
                 size_t sz_link_list_other = getListCount(ll_other);
 
                 if (sz_link_list_other > Mcurmax)
                     throw std::runtime_error("Bad value of sz_link_list_other");
-                if (selectedNeighbors[idx] == cur_c)
+                if (cur_i == cur_c)
                     throw std::runtime_error("Trying to connect an element to itself");
-                if (level > element_levels_[selectedNeighbors[idx]])
+                if (level > element_levels_[cur_i])
                     throw std::runtime_error("Trying to make a link on a non-existent level");
 
                 tableint *data = (tableint *) (ll_other + 1);
@@ -464,14 +550,14 @@ namespace hnswlib {
                     }
                 }
 
-                // If cur_c is already present in the neighboring connections of `selectedNeighbors[idx]` then no need to modify any connections or run the heuristics.
+                // If cur_c is already present in the neighboring connections of `cur_i` then no need to modify any connections or run the heuristics.
                 if (!is_cur_c_present) {
-                    if (sz_link_list_other < Mcurmax) {
+                    if ((graph_type == "base") && (sz_link_list_other < Mcurmax)) {
                         data[sz_link_list_other] = cur_c;
                         setListCount(ll_other, sz_link_list_other + 1);
                     } else {
                         // finding the "weakest" element to replace it with the new one
-                        dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(selectedNeighbors[idx]),
+                        dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(cur_i),
                                                     dist_func_param_);
                         // Heuristic:
                         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
@@ -479,11 +565,21 @@ namespace hnswlib {
 
                         for (size_t j = 0; j < sz_link_list_other; j++) {
                             candidates.emplace(
-                                    fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(selectedNeighbors[idx]),
+                                    fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(cur_i),
                                                  dist_func_param_), data[j]);
                         }
-
-                        getNeighborsByHeuristic2(candidates, Mcurmax);
+                        if (graph_type == "knng"){
+                            while (candidates.size() > Mcurmax)
+                                candidates.pop();
+                        } else if (graph_type == "rng"){
+                            size_t mm = std::min(Mcurmax, sz_link_list_other + 1);
+                            getNeighborsByHeuristic2(candidates, mm);                   
+                        } else if (graph_type == "base"){
+                            getNeighborsByHeuristic2(candidates, Mcurmax);
+                        } else {
+                            printf("Error, unknown graph type \n");
+                            exit(1);
+                        }
 
                         int indx = 0;
                         while (candidates.size() > 0) {
@@ -1197,6 +1293,182 @@ namespace hnswlib {
 
         }
 
+        /*
+            input: labeltype
+            output: indegree and in node
+        */
+        void getDegreeDistri(std::vector<size_t> &dstb_in, std::vector<size_t> &dstb_out, bool isprint = false){
+            std::vector<size_t>().swap(dstb_in);
+            std::vector<size_t>().swap(dstb_out);
+            unsigned *node_in = new unsigned[cur_element_count]();
+            unsigned *node_out = new unsigned[cur_element_count]();
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                for(size_t l = 0; l <= element_levels_[i]; l++){
+                    linklistsizeint *ll_cur = get_linklist_at_level(i, l);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    
+                    node_out[i] = size;
+                    for (int j = 0; j < size; j++){
+                        assert(data[j] > 0);
+                        assert(data[j] < cur_element_count);
+                        assert (data[j] != i);
+                        node_in[data[j]]++;
+                    }
+                }
+            }
+
+            float out_total = 0;
+            for (size_t i = 0; i < cur_element_count; i++){
+                out_total += node_out[i];
+                if (dstb_in.size() < (node_in[i] + 1))
+                    dstb_in.resize((node_in[i] + 1), 0);
+                dstb_in[node_in[i]]++;
+                if (dstb_out.size() < (node_out[i] + 1))
+                    dstb_out.resize((node_out[i] + 1), 0);
+                dstb_out[node_out[i]]++;
+            }
+            delete[] node_in;
+            delete[] node_out;
+            // printf
+            if (isprint){
+                printf("In Degree:\n");
+                for (size_t i = 0; i < dstb_in.size(); i++)
+                    printf("%u\n", dstb_in[i]);
+                printf("Out Degree\n");
+                for (size_t i = 0; i < dstb_out.size(); i++)
+                    printf("%u\n", dstb_out[i]);
+            }
+            printf("average outdegree: %.3f \n", (out_total / cur_element_count));
+        }
+
+        /*
+            input: graph
+            output: indegree and outdegree relation [out * in]
+        */
+        void getDegreeRelation(){
+            unsigned **matrix_dg = gene_array<unsigned>(maxM0_ + 1, maxM0_ + 1);
+            unsigned *node_in = new unsigned[cur_element_count]();
+            unsigned *node_out = new unsigned[cur_element_count]();
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                for(size_t l = 0; l <= element_levels_[i]; l++){
+                    linklistsizeint *ll_cur = get_linklist_at_level(i, l);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    
+                    node_out[i] = size;
+                    for (int j = 0; j < size; j++){
+                        assert(data[j] > 0);
+                        assert(data[j] < cur_element_count);
+                        assert(data[j] != i);
+                        node_in[data[j]]++;
+                    }
+                }
+            }
+            for (size_t i = 0; i < cur_element_count; i++){
+                unsigned row_id = node_out[i];
+                unsigned col_id = node_in[i] > maxM0_ ? maxM0_ : node_in[i];
+                matrix_dg[row_id][col_id]++;
+            }
+
+            printf("relation matrix for out * in degree: \n");
+            unsigned n_val = 0;
+            for (size_t i = 0; i <= maxM0_; i++){
+                for (size_t j = 0; j<= maxM0_; j++){
+                    printf("%u\t", matrix_dg[i][j]);
+                    n_val += matrix_dg[i][j];
+                }
+                printf("\n");
+            }
+            if (n_val != cur_element_count){
+                printf("Error, n_val: %u \n", n_val);
+                exit(1);
+            }
+
+            freearray<unsigned>(matrix_dg, maxM0_ + 1);
+            printf("gene degree relation matrix done.\n");
+        }
+
+        /*
+            comput average neighbor distance
+        */
+        float compAverageNeighDist(){
+            float dist_average = 0;
+#pragma omp parallel for
+            for (size_t it_i = 0; it_i < cur_element_count; it_i++){
+                linklistsizeint *ll_cur = get_linklist0(it_i);
+                int ll_size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+
+                float dist_cur = 0;
+                for (size_t ng_i = 0; ng_i < ll_size; ng_i++){
+                    dist_cur += fstdistfunc_(getDataByInternalId(it_i), getDataByInternalId(data[ng_i]), dist_func_param_);
+                }
+                dist_cur /= ll_size;
+#pragma omp critical
+                {
+                    dist_average += dist_cur;
+                }
+            }
+            return (dist_average / cur_element_count);
+        }
+
+        /*
+            input: graph
+            output: specical point average neighbor distance
+        */
+        float compNeighborDistByDegree(){
+            unsigned *node_in = new unsigned[cur_element_count]();
+            unsigned *node_out = new unsigned[cur_element_count]();
+            std::vector<tableint> need_comp;
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                for(size_t l = 0; l <= element_levels_[i]; l++){
+                    linklistsizeint *ll_cur = get_linklist_at_level(i, l);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    
+                    node_out[i] = size;
+                    for (int j = 0; j < size; j++){
+                        assert(data[j] > 0);
+                        assert(data[j] < cur_element_count);
+                        assert(data[j] != i);
+                        node_in[data[j]]++;
+                    }
+                }
+            }
+            for (size_t i = 0; i < cur_element_count; i++){
+                unsigned row_id = node_out[i];
+                unsigned col_id = node_in[i] > maxM0_ ? maxM0_ : node_in[i];
+                if (col_id < 3)
+                    need_comp.push_back(i);
+            }
+            printf("num: %u \n", need_comp.size());
+            delete[] node_in;
+            delete[] node_out;
+
+            float dist_average = 0;
+#pragma omp parallel for
+            for (size_t i = 0; i < need_comp.size(); i++){
+                tableint it_i = need_comp[i];
+                linklistsizeint *ll_cur = get_linklist0(it_i);
+                int ll_size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+
+                float dist_cur = 0;
+                for (size_t ng_i = 0; ng_i < ll_size; ng_i++){
+                    dist_cur += fstdistfunc_(getDataByInternalId(it_i), getDataByInternalId(data[ng_i]), dist_func_param_);
+                }
+                dist_cur /= ll_size;
+#pragma omp critical
+                {
+                    dist_average += dist_cur;
+                }
+            }
+            return (dist_average / need_comp.size());
+        }
     };
 
 }
