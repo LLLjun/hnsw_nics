@@ -72,9 +72,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     for (int i = 500; i < 1500; i += 200) {
         efs.push_back(i);
     }
-    for (int i = 1500; i < 10500; i += 1000) {
-        efs.push_back(i);
-    }
+    // for (int i = 1500; i < 10500; i += 1000) {
+    //     efs.push_back(i);
+    // }
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -179,12 +179,12 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         // printf("average neighbor distance (degree = 1): %.3f \n", dist_b);
 
         // 
-        appr_alg->getDegreeRelation();
+        // appr_alg->getDegreeRelation();
 
-        // // get degree info
-        // vector<size_t> dstb_in;
-        // vector<size_t> dstb_out;
-        // appr_alg->getDegreeDistri(dstb_in, dstb_out);
+        // get degree info
+        vector<size_t> dstb_in;
+        vector<size_t> dstb_out;
+        appr_alg->getDegreeDistri(dstb_in, dstb_out);
 
         // // get her hit
         // size_t hit_miss = appr_alg->hit_miss;
@@ -269,17 +269,22 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
         }
     }
 
-	size_t subset_size_milllions = 1;
-	size_t efConstruction = 40;
-	size_t M = 16;
+	size_t subset_size_milllions = 10;
+	size_t efConstruction = 60;
+	size_t M = 20;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
     
+#if EXI
+    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
+                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + "_" + graph_type + "_exi.bin";
+#else
     string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + "_" + graph_type + ".bin";
+#endif
     CheckDataset(using_dataset, subset_size_milllions, vecsize, qsize, vecdim, gt_maxnum,
                     path_q, path_data, path_gt);
 
