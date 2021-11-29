@@ -109,3 +109,4 @@ namespace hnswlib {
 // #include "config.h"
 #include "dataset.h"
 #include "profile.h"
+#include "cppkmeans.h"

@@ -127,6 +127,28 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         }
         inputB.close();
 
+        // 聚类 备高层点用
+        size_t hiesize = 1e4;
+        unsigned *hielist = new unsigned[hiesize]();
+        string path_kmeans = index + "_km" + to_string(hiesize) + ".bin";
+        if (exists_test(path_kmeans)){
+            LoadBinToArray<unsigned>(path_kmeans, hielist, hiesize, 1);
+        } else {
+            std::vector<uint32_t> data_id_list;
+            K_means<DTset, DTres> *kmeans_alg = new K_means<DTset, DTres>(&s, vecdim);
+            kmeans_alg->train_cluster(hiesize, vecsize, (2 * vecsize / hiesize), 20, data_id_list, massB, false);
+            for (size_t i = 0; i < hiesize; i++){
+                hielist[i] = kmeans_alg->cluster_center_id[i];
+            }
+            kmeans_alg->~K_means();
+            WriteBinToArray<unsigned>(path_kmeans, hielist, hiesize, 1);
+        }
+        unordered_set<unsigned> hienode;
+        for (size_t i = 0; i < hiesize; i++)
+            hienode.insert(hielist[i]);
+        delete[] hielist;
+        int level = 0;
+
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         appr_alg->graph_type = graph_type;
         appr_alg->hit_miss = 0;
@@ -135,7 +157,10 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
         appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
 #else
-        appr_alg->addPoint((void *) (massB), (size_t) 0);
+        // if (hienode.find(0) != hienode.end())
+        //     level = appr_alg->getRandomLevel(appr_alg->mult_) + 1;
+        appr_alg->addPoint((void *) (massB), (size_t) 0, level);
+        // level = 0;
 #endif
         cout << "Building index:\n";
         int j1 = 0;
@@ -162,15 +187,25 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
                 ic = i;
             appr_alg->addPoint((void *) (massB + ic * vecdim), ic);
 #else
-            appr_alg->addPoint((void *) (massB + i * vecdim), i);
+            // if (hienode.find(i) != hienode.end())
+            //     level = appr_alg->getRandomLevel(appr_alg->mult_) + 1;
+            appr_alg->addPoint((void *) (massB + i * vecdim), i, level);
+            // level = 0;
 #endif
         }
         cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
         delete[] massB;
+        // appr_alg->reSelectHieLayer();
         if (isSave)
             appr_alg->saveIndex(index);
 
         printf("Build index %s is succeed \n", index.c_str());
+
+        // re construct
+        // string index_reh = index + "_reh.bin";
+        // appr_alg->reSelectHieLayer(hiesize, hielist);
+        // if (isSave)
+        //     appr_alg->saveIndex(index_reh);
 
         // get average neighbor distance
         // float dist_a = appr_alg->compAverageNeighDist();
@@ -182,9 +217,9 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         // appr_alg->getDegreeRelation();
 
         // get degree info
-        vector<size_t> dstb_in;
-        vector<size_t> dstb_out;
-        appr_alg->getDegreeDistri(dstb_in, dstb_out);
+        // vector<size_t> dstb_in;
+        // vector<size_t> dstb_out;
+        // appr_alg->getDegreeDistri(dstb_in, dstb_out);
 
         // // get her hit
         // size_t hit_miss = appr_alg->hit_miss;
@@ -236,8 +271,13 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         inputQ.close();
         printf("Load queries from %s done \n", path_q.c_str());
 
+        // string index_reh = index + "_reh.bin";
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
-    
+        // appr_alg->reSelectHieLayer();
+        // string indexxx = index + "reh";
+        // appr_alg->saveIndex(indexxx);
+        // exit(0);
+
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
@@ -257,7 +297,7 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
 void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     string prefix = "/home/ljun/anns/hnsw_nics/graphindex/";
 
-    string label = "profile/graph_type/";
+    string label = "hie/";
 
     // support dataset: sift, gist, deep, glove, crawl
 
@@ -269,15 +309,17 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
         }
     }
 
-	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 20;
+	size_t subset_size_milllions = 1;
+	size_t efConstruction = 40;
+	size_t M = 16;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
     
+
+
 #if EXI
     string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + "_" + graph_type + "_exi.bin";

@@ -38,8 +38,8 @@ int main(int argc, char **argv) {
             exit(1);
         }
     }
-    // if (!is_build)
-    //     assignToThisCore(19);
+    if (!is_build)
+        assignToThisCore(19);
     
     hnsw_impl(is_build, std::string(argv[2]), graph_type);
 

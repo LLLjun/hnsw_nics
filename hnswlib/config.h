@@ -1,7 +1,7 @@
 // For multi experiment
 // #define DIR(A) #A
 
-#define PLATG true
+#define PLATG false
 
 #define MODE base
 
@@ -13,4 +13,4 @@ typedef float DTVAL;
 typedef float DTRES;
 
 // for profile
-#define EXI true
+#define EXI false

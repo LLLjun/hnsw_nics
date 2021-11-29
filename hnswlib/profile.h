@@ -21,7 +21,7 @@ Gene_type ** gene_array(int rowsNum, int colsNum, int dims = 1){
 }
 //释放二维数组所占用的内存
 template<typename Free_type>
-void freearray(Free_type **p, int rowsNum){
+void free_array(Free_type **p, int rowsNum){
     for(int i = 0; i < rowsNum; i++){
         delete[] p[i];
     }

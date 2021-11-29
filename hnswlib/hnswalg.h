@@ -1199,6 +1199,115 @@ namespace hnswlib {
             return cur_c;
         };
 
+        void initHierarchy(){
+            for (tableint i = 0; i < cur_element_count; i++){
+                if (element_levels_[i] > 0)
+                    free(linkLists_[i]);
+                element_levels_[i] = 0;
+            }
+            enterpoint_node_ = -1;
+            maxlevel_ = -1;
+        }
+
+
+        void addPointHierarchy(const tableint cur_c, int level) {
+
+            // tableint cur_c = 0;
+
+            // Take update lock to prevent race conditions on an element with insertion/update at the same time.
+            std::unique_lock <std::mutex> lock_el_update(link_list_update_locks_[(cur_c & (max_update_element_locks - 1))]);
+            std::unique_lock <std::mutex> lock_el(link_list_locks_[cur_c]);
+            int curlevel;
+  
+            curlevel = getRandomLevel(mult_) + 1;
+            if (level > 0)
+                curlevel = level;
+
+            element_levels_[cur_c] = curlevel;
+
+            std::unique_lock <std::mutex> templock(global);
+            int maxlevelcopy = maxlevel_;
+            if (curlevel <= maxlevelcopy)
+                templock.unlock();
+            tableint currObj = enterpoint_node_;
+            tableint enterpoint_copy = enterpoint_node_;
+
+
+            // memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0, size_data_per_element_);
+
+            // Initialisation of the data and label
+            // memcpy(getExternalLabeLp(cur_c), &label, sizeof(labeltype));
+            // memcpy(getDataByInternalId(cur_c), data_point, data_size_);
+
+
+            if (curlevel) {
+                linkLists_[cur_c] = (char *) malloc(size_links_per_element_ * curlevel + 1);
+                if (linkLists_[cur_c] == nullptr)
+                    throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
+                memset(linkLists_[cur_c], 0, size_links_per_element_ * curlevel + 1);
+            }
+
+            if ((signed)currObj != -1) {
+
+                if (curlevel < maxlevelcopy) {
+
+                    dist_t curdist = fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(currObj), dist_func_param_);
+                    for (int level = maxlevelcopy; level > curlevel; level--) {
+                        bool changed = true;
+                        while (changed) {
+                            changed = false;
+                            unsigned int *data;
+                            std::unique_lock <std::mutex> lock(link_list_locks_[currObj]);
+                            data = get_linklist(currObj,level);
+                            int size = getListCount(data);
+
+                            tableint *datal = (tableint *) (data + 1);
+                            for (int i = 0; i < size; i++) {
+                                tableint cand = datal[i];
+                                if (cand < 0 || cand > max_elements_)
+                                    throw std::runtime_error("cand error");
+                                dist_t d = fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(cand), dist_func_param_);
+                                if (d < curdist) {
+                                    curdist = d;
+                                    currObj = cand;
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                bool epDeleted = isMarkedDeleted(enterpoint_copy);
+                for (int level = std::min(curlevel, maxlevelcopy); level >= 1; level--) {
+                    if (level > maxlevelcopy || level < 1)  // possible?
+                        throw std::runtime_error("Level error");
+
+                    std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
+                            currObj, getDataByInternalId(cur_c), level);
+                    if (epDeleted) {
+                        top_candidates.emplace(fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(enterpoint_copy), dist_func_param_), enterpoint_copy);
+                        if (top_candidates.size() > ef_construction_)
+                            top_candidates.pop();
+                    }
+                    currObj = mutuallyConnectNewElement(getDataByInternalId(cur_c), cur_c, top_candidates, level, false);
+                }
+
+
+            } else {
+                // Do nothing for the first element
+                enterpoint_node_ = cur_c;
+                maxlevel_ = curlevel;
+
+            }
+
+            //Releasing lock for the maximum level
+            if (curlevel > maxlevelcopy) {
+                enterpoint_node_ = cur_c;
+                maxlevel_ = curlevel;
+            }
+            // return cur_c;
+        };
+
         std::priority_queue<std::pair<dist_t, labeltype >>
         searchKnn(const void *query_data, size_t k) const {
             std::priority_queue<std::pair<dist_t, labeltype >> result;
@@ -1259,6 +1368,95 @@ namespace hnswlib {
             return result;
         };
 
+        void getDegreeLayer0(std::vector<std::queue<tableint>> &dstb_in, std::vector<std::queue<tableint>> &dstb_out){
+            std::vector<std::queue<tableint>>().swap(dstb_in);
+            std::vector<std::queue<tableint>>().swap(dstb_out);
+            unsigned *node_in = new unsigned[cur_element_count]();
+            unsigned *node_out = new unsigned[cur_element_count]();
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                linklistsizeint *ll_cur = get_linklist0(i);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+                
+                node_out[i] = size;
+                for (int j = 0; j < size; j++){
+                    assert(data[j] > 0);
+                    assert(data[j] < cur_element_count);
+                    assert (data[j] != i);
+                    node_in[data[j]]++;
+                }
+            }
+
+            for (tableint i = 0; i < cur_element_count; i++){
+
+                if (dstb_in.size() < (node_in[i] + 1))
+                    dstb_in.resize(node_in[i] + 1);
+                dstb_in[node_in[i]].emplace(i);
+
+                if (dstb_out.size() < (node_out[i] + 1))
+                    dstb_out.resize(node_out[i] + 1);
+                dstb_out[node_out[i]].emplace(i);
+            }
+            delete[] node_in;
+            delete[] node_out;
+        }
+
+        /*
+            input: constructed graph
+            output: reconstruct hierarchy graph
+        */
+        void reSelectHieLayer(size_t resize, unsigned *relist){
+            size_t num_reselect;
+            tableint *node_select = nullptr;
+
+            if (resize == 0){
+                num_reselect = cur_element_count / M_;
+                printf("reselect %u node for hierarchy graph \n", num_reselect);
+                // only get 0 layer outdegree
+                node_select = new tableint[num_reselect]();
+                // std::vector<tableint> node_select(num_reselect, 0);
+
+                std::vector<std::queue<tableint>> idg_list;
+                std::vector<std::queue<tableint>> odg_list;
+                getDegreeLayer0(idg_list, odg_list);
+                // for (size_t i = 0; i < cur_element_count; i++){
+                //     linklistsizeint *ll_cur = get_linklist0(i);
+                //     int size = getListCount(ll_cur);
+                //     odg_list[size].emplace(i);
+                // }
+                size_t ci = 0;
+                size_t degree_range = odg_list.size() - 1;
+                for (int dd = degree_range; dd > 0; dd--){
+                    while (!odg_list[dd].empty()){
+                        node_select[ci] = odg_list[dd].front();
+                        // node_select.push_back(odg_list[dd].front());
+                        odg_list[dd].pop();
+                        ci++;
+                        if (ci == num_reselect){
+                            printf("using min out degree: %d \n", dd);
+                            break;
+                        }
+                    }
+                    if (ci == num_reselect)
+                        break;
+                }
+            } else {
+                num_reselect = resize;
+                printf("reselect %u node for hierarchy graph \n", num_reselect);
+                node_select = new tableint[num_reselect]();
+                memcpy(node_select, relist, num_reselect * sizeof(unsigned));
+            }
+
+            // construct hierarchy structure
+            initHierarchy();
+            for (size_t i = 0; i < num_reselect; i++){
+                tableint cur_c = node_select[i];
+                addPointHierarchy(cur_c, -1);
+            }
+            printf("Reconstruct hierarchy is done.\n");
+        }
+
         void checkIntegrity(){
             int connections_checked=0;
             std::vector <int > inbound_connections_num(cur_element_count,0);
@@ -1309,7 +1507,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
@@ -1387,7 +1585,7 @@ namespace hnswlib {
                 exit(1);
             }
 
-            freearray<unsigned>(matrix_dg, maxM0_ + 1);
+            free_array<unsigned>(matrix_dg, maxM0_ + 1);
             printf("gene degree relation matrix done.\n");
         }
 
