@@ -100,6 +100,28 @@ namespace hnswlib {
         return result;
     }
 
+    struct Node_Connect_Info{
+        labeltype node_self;
+        float dist_self_query;
+        float dist_self_start;
+        std::vector<labeltype> node_parent;
+        std::vector<float> dist_parent_query;
+        std::vector<float> dist_parent_start;
+    };
+
+    struct Lstm_Feature{
+        unsigned q_id;
+        unsigned cycle;
+
+        float dist_candi_top;
+        float dist_result_k;
+        float dist_result_1;
+        float dist_div_top_k;
+        float dist_div_k_1;
+        float isinter;
+        // float 
+    };
+
 }
 
 #include "space_l2.h"

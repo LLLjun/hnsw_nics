@@ -111,6 +111,21 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
 }
 
 template<typename data_T>
+void WriteTxtToArray(std::string& file_path, const data_T *data_m, uint32_t nums, uint32_t dims){
+    std::ofstream file_writer(file_path.c_str(), ios::trunc);
+    // file_writer << describ << endl;
+    for (size_t i = 0; i < nums; i++){
+        for (size_t j = 0; j < dims; j++){
+            // file_writer << "id: " << i << "\t" << data_m[i * dims + j];
+            file_writer << data_m[i * dims + j];
+        }
+        file_writer << endl;
+    }
+    file_writer.close();
+    printf("Write %u * %u data to %s done.\n", nums, dims, file_path.c_str());
+}
+
+template<typename data_T>
 uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     cout << "Comput the center point: \n";
     float *sum_m = new float[dims]();
@@ -143,3 +158,5 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     cout << center_pt_id << "\n";
     return center_pt_id;
 }
+
+// float comp
