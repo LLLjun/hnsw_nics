@@ -113,13 +113,18 @@ namespace hnswlib {
         unsigned q_id;
         unsigned cycle;
 
+        // for AdaptNN
+        // float dist_start;
         float dist_candi_top;
         float dist_result_k;
         float dist_result_1;
-        float dist_div_top_k;
-        float dist_div_k_1;
-        float isinter;
-        // float 
+        float diff_top;
+        float diff_top_k;
+        float diff_k_1;
+        float div_top_1;
+        float div_k_1;
+
+        // unsigned iscontinue;
     };
 
 }

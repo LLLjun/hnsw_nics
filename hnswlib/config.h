@@ -14,9 +14,8 @@ typedef float DTRES;
 
 // for profile
 #define EXI true
-#define GETMINEFS false
-#define ANAYQ false
-#define GETPERHOP false
 
+// for lstm
 #define USESAMQ false
+#define GETMINSTEP false
 #define CREATESF true
