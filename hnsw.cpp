@@ -11,10 +11,12 @@
 using namespace std;
 using namespace hnswlib;
 
-size_t efs_max = 300;
-string path_root = "/home/ljun/anns/hnsw_nics/experiment/aware/for_train/";
-string path_aware = path_root + "target_" + to_string(efs_max) + "/";
-
+#if (USESAMQ || CREATESF)
+string path_aware = "/home/ljun/anns/hnsw_nics/experiment/aware/other_sample/";
+#else
+// string path_aware = "/home/ljun/anns/hnsw_nics/experiment/aware/exi/efc40m16/";
+string path_aware = "/home/ljun/anns/hnsw_nics/experiment/aware/other_sample/test_gt/";
+#endif
 
 template<typename DTres>
 void handleIndegree(HierarchicalNSW<DTres> &appr_alg, unsigned qi, const void *query, vector<labeltype> &gt_list, string &flag){
@@ -65,18 +67,33 @@ template<typename DTval, typename DTres>
 static float
 test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
             vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, 
-            vector<vector<float>> &hops){
-
+#if GETPERHOP
+            unsigned *hops){
+#else
+            float *recall_cur = nullptr, float *gt_mean = nullptr, float *gt_sdev = nullptr) {
+#endif
     size_t correct = 0;
     size_t total = 0;
+    vector<float> dist_c;
     //uncomment to test in parallel mode:
     //#pragma omp parallel for
+#if ANAYQ
+    {
+        int i = 160;
+        vector<labeltype> gt_true;
+        vector<labeltype> gt_false;
 
+#else
     for (int i = 0; i < qsize; i++) {
-        vector<float>().swap(hops[i]);
-        // if (i == 449)
-        //     continue;
-
+#endif
+#if GETMINEFS
+        if (i == 449)
+            continue;
+#endif
+        size_t cor_i = 0;
+#if GETPERHOP
+        appr_alg.metric_hops = 0;
+#endif
         std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
         std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
         unordered_set<labeltype> g;
@@ -87,53 +104,90 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
             gt.pop();
         }
 
+#if GETMINEFS
+            vector<float>().swap(dist_c);
+#endif
+
         while (result.size()) {
             if (g.find(result.top().second) != g.end()) {
                 correct++;
+                cor_i++;
+#if ANAYQ
+                gt_true.push_back(result.top().second);
+            } else {}
+                // gt_false.push_back(result.top().second);
+#else
             }
+#endif
+#if GETMINEFS
+            dist_c.push_back(result.top().first);
+#endif
             result.pop();
         }
+#if GETMINEFS
+        if (recall_cur != nullptr)
+            recall_cur[i] = (float)cor_i / k;
 
-        for (float ten: appr_alg.res_tenth)
-            hops[i].push_back(ten);
+        if (gt_mean != nullptr){
+            float tt = 0;
+            for (float dd: dist_c)
+                tt += dd;
+            gt_mean[i] = tt / dist_c.size();
+            float ss = 0;
+            for (float dd: dist_c)
+                ss += (dd - gt_mean[i]) * (dd - gt_mean[i]);
+            gt_sdev[i] = sqrtf32(ss);
+        }
+#endif
+
+#if ANAYQ
+        string flag;
+        if (!gt_true.empty()){
+            flag = "true";
+            handleIndegree<DTres>(appr_alg, i, massQ + vecdim * i, gt_true, flag);
+        }
+        string path_search_dist = path_aware + "query" + to_string(i) + "_efs" + to_string(appr_alg.ef_) + "_dist.log";
+        ofstream file_dist(path_search_dist.c_str());
+        file_dist << "candicate top" << endl;
+        for (float cat: appr_alg.candi_top)
+            file_dist << cat << endl;
+        file_dist << endl;
+        file_dist << "bound" << endl;
+        for (float cat: appr_alg.bound)
+            file_dist << cat << endl;
+        file_dist << endl;
+        file_dist << "result first" << endl;
+        for (float cat: appr_alg.res_first)
+            file_dist << cat << endl;
+        file_dist << endl;
+        file_dist << "result tenth" << endl;
+        for (float cat: appr_alg.res_tenth)
+            file_dist << cat << endl;
+        file_dist.close();
+
+        exit(0);
+#endif
+#if GETPERHOP
+        hops[i] = appr_alg.metric_hops;
+#endif
+
     }
     return 1.0f * correct / total;
 }
 
 /*
-    input: defferent query's saerch result
+    input: defferent efs's saerch result
     output: 0 is done, 1 need continue
 */
-void getEveryQueryMinStep(size_t &qsize, vector<vector<float>> &dist_per_step_per_query, string &path_min_step,
-                            size_t &step_target, string &path_recall_loss){
-    unsigned *min_step = new unsigned[qsize]();
-    unsigned *all_step = new unsigned[qsize]();
-    unsigned *res_loss = new unsigned[qsize]();
+void getEveryQueryMinEfs(size_t &k, size_t &qsize, unsigned *mp_total, float *recall_target, unordered_set<size_t> &fixed, size_t &efs_last, float *recall_cur){
     for (size_t i = 0; i < qsize; i++){
-        all_step[i] = dist_per_step_per_query[i].size();
-        float all_dist = dist_per_step_per_query[i].back();
-        float cur_dist = dist_per_step_per_query[i].back();
-        for (int j = all_step[i] - 1; j >= 0; j--){
-            if (dist_per_step_per_query[i][j] > all_dist){
-                min_step[i] = j + 1;
-                break;
-            }
-        }
-
-        for (int j = all_step[i] - 1; j >= step_target; j--){
-            if (dist_per_step_per_query[i][j] > cur_dist){
-                res_loss[i]++;
-                cur_dist = dist_per_step_per_query[i][j];
+        if (fixed.find(i) == fixed.end()){
+            if (recall_cur[i] < recall_target[i]){
+                fixed.insert(i);
+                mp_total[i] = efs_last;
             }
         }
     }
-    string path_all_step = path_min_step + "_all_step.txt";
-    WriteTxtToArray<unsigned>(path_all_step, all_step, qsize, 1);
-    WriteTxtToArray<unsigned>(path_min_step, min_step, qsize, 1);
-    WriteTxtToArray<unsigned>(path_recall_loss, res_loss, qsize, 1);
-    printf("Generate per query min search step to %s done.\n", path_min_step.c_str());
-    delete[] min_step;
-    delete[] all_step;
 }
 
 template<typename DTval, typename DTres>
@@ -141,30 +195,105 @@ static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
+    // for (int i = k; i < 30; i++) {
+    //     efs.push_back(i);
+    // }
     
-    efs.push_back(efs_max);
-    size_t step_target = 70;
-    vector<vector<float>> dist_per_step_per_query(qsize);
-    string path_min_step = path_aware + "min_step.txt";
-    string path_recall_loss = path_aware + "recall_loss_" + to_string(step_target) + ".txt";
+#if GETMINEFS
+    // for (int i = 1; i < 10; i++) {
+    //     efs.push_back(i);
+    // }
+    // for (int i = 10; i < 100; i += 10) {
+    //     efs.push_back(i);
+    // }
+    // for (int i = 100; i < 500; i += 40) {
+    //     efs.push_back(i);
+    // }
+    // for (int i = 500; i < 1500; i += 200) {
+    //     efs.push_back(i);
+    // }
+    for (int i = 10; i <= 300; i += 3) {
+        efs.push_back(i);
+    }
+    
+    unsigned *mp_total = new unsigned[qsize]();
+    float *recall_target = new float[qsize]();
+    float *dist_gt_mean = new float[qsize]();
+    float *dist_gt_sdev = new float[qsize]();
+
+    float *recall_cur = new float[qsize]();
+    unordered_set<size_t> fixed;
+    for (size_t i = 0; i < qsize; i++)
+        mp_total[i] = efs[0];
+    
+    for (int i = efs.size() - 1; i >= 0; i--){
+        size_t ef = efs[i];
+#elif (ANAYQ || GETPERHOP)
+    efs.push_back(1500);
+    unsigned *hops = new unsigned[qsize]();
+    for (size_t ef : efs) {
+#else
+    for (int i = 40; i < 100; i += 10) {
+        efs.push_back(i);
+    }
+    for (int i = 100; i < 500; i += 40) {
+        efs.push_back(i);
+    }
+    for (int i = 500; i < 1500; i += 200) {
+        efs.push_back(i);
+    }
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
-
+#endif
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         clk_get stopw = clk_get();
 
-        float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k, dist_per_step_per_query);
-
+#if GETMINEFS
+        float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k, recall_cur, dist_gt_mean, dist_gt_sdev);
+#elif GETPERHOP
+        float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k, hops);
+#else
+        float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
+#endif
         float time_us_per_query = stopw.getElapsedTimeus() / qsize;
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
+
+#if GETMINEFS
+        if (i == (efs.size() - 1)){
+            memcpy(recall_target, recall_cur, qsize * sizeof(float));
+            string path_gt_mean = path_aware + "recall@" + to_string(k) + "_gt_mean.log";
+            string path_gt_sdev = path_aware + "recall@" + to_string(k) + "_gt_sdev.log";
+            WriteTxtToArray<float>(path_gt_mean, dist_gt_mean, qsize, 1);
+            WriteTxtToArray<float>(path_gt_sdev, dist_gt_sdev, qsize, 1);
+            delete[] dist_gt_mean;
+            delete[] dist_gt_sdev;
+            dist_gt_mean = nullptr;
+            dist_gt_sdev = nullptr;
+        } else {
+            getEveryQueryMinEfs(k, qsize, mp_total, recall_target, fixed, efs[i+1], recall_cur);
+        }
+
+        cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t" 
+        << avg_hop_0 << "\t" << avg_hop_L << "\t" << fixed.size() << "\n";
+
+        if ((fixed.size() == qsize) || (i == 0)){
+            printf("All queries get its min efs: %u.\n", ef);
+            string path_recall_value = path_aware + "recall@" + to_string(k) + "_value.log";
+            string path_min_efs = path_aware + "recall@" + to_string(k) + "_min_efs.log";
+            WriteTxtToArray<float>(path_recall_value, recall_target, qsize, 1);
+            WriteTxtToArray<unsigned>(path_min_efs, mp_total, qsize, 1);
+            break;
+        }
+#elif GETPERHOP
+        string path_hop = path_aware + "perhop_efs" + to_string(ef) + ".bin";
+        WriteTxtToArray<unsigned>(path_hop, hops, qsize, 1);
+#else
         cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
-
-        // 生成每个query的最小步数，也就是label
-        getEveryQueryMinStep(qsize, dist_per_step_per_query, path_min_step, step_target, path_recall_loss);
+#endif
 
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
@@ -278,12 +407,6 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         printf("Error, index %s is unexisted \n", index.c_str());
         exit(1);
     } else {
-        if (access(path_aware.c_str(), R_OK|W_OK)){
-            if (mkdir(path_aware.c_str(), S_IRWXU) != 0) {
-                printf("Error, dir %s create failed \n", path_aware.c_str());
-                exit(1);
-            }
-        }
 
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
         DTset *massQ = new DTset[qsize * vecdim];
@@ -335,7 +458,7 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
 
 #if CREATESF
         size_t iter_start = 30;
-        size_t iter_len = 40;
+        size_t iter_len = 50;
 #if USESAMQ
         string path_train = path_aware + "train_" + to_string(iter_start) + "_" + to_string(iter_len) + ".txt";
 #else
@@ -344,39 +467,35 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         ofstream train_data(path_train.c_str(), ios::trunc);
         vector<Lstm_Feature> SeqFeature;
 
-        appr_alg->setEf(efs_max);
+        appr_alg->setEf(300);
         for (size_t i = 0; i < qsize; i++){
-            // if (i == 449)
-            //     continue;
+            if (i == 449)
+                continue;
             appr_alg->createSequenceFeature(i, (massQ + i * vecdim), SeqFeature, k, iter_start, iter_len);
             for (Lstm_Feature fea_cur: SeqFeature){
-                // if (i > 449)
-                //     train_data << (fea_cur.q_id - 1) << "\t";
-                // else
-                train_data << fea_cur.q_id << "\t";
+                if (i > 449)
+                    train_data << (fea_cur.q_id - 1) << "\t";
+                else
+                    train_data << fea_cur.q_id << "\t";
                 train_data << fea_cur.cycle << "\t";
-
                 train_data << fea_cur.dist_candi_top << "\t";
                 train_data << fea_cur.dist_result_k << "\t";
                 train_data << fea_cur.dist_result_1 << "\t";
-
-                train_data << fea_cur.diff_top << "\t";
-                train_data << fea_cur.diff_top_k << "\t";
-                train_data << fea_cur.diff_k_1 << "\t";
-
-                train_data << fea_cur.div_top_1 << "\t";
-                train_data << fea_cur.div_k_1 << endl;
+                train_data << fea_cur.dist_div_top_k << "\t";
+                train_data << fea_cur.dist_div_k_1 << endl;
+                // train_data << fea_cur.isinter << endl;
             }
-            // train_data << SeqFeature[0].iscontinue << endl;
         }
         train_data.close();
         printf("Create train data to %s done \n", path_train.c_str());
-#endif
-
-#if GETMINSTEP
-        cout << "Comput recall and generate min step: \n";
+#else
+        cout << "Comput recall: \n";
         test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
 #endif
+        // // get degree info
+        // vector<size_t> dstb_in;
+        // vector<size_t> dstb_out;
+        // appr_alg->getDegreeDistri(dstb_in, dstb_out);
 
         printf("Search index %s is succeed \n", index.c_str());
     }
