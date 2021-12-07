@@ -247,11 +247,12 @@ namespace hnswlib {
         mutable std::atomic<long> metric_hops;
         mutable std::atomic<long> metric_hops_L;
 
-#if (ANAYQ || CREATESF)
+#if (GETMINSTEP || CREATESF)
         mutable std::vector<float> candi_top;
         mutable std::vector<float> bound;
         mutable std::vector<float> res_first;
         mutable std::vector<float> res_tenth;
+        mutable float dist_start_query;
 #endif
 
         template <bool has_deletions, bool collect_metrics=false>
@@ -263,7 +264,7 @@ namespace hnswlib {
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
-#if (ANAYQ || CREATESF)
+#if (GETMINSTEP || CREATESF)
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_ten;
             std::vector<float>().swap(candi_top);
             std::vector<float>().swap(bound);
@@ -280,7 +281,9 @@ namespace hnswlib {
                 lowerBound = std::numeric_limits<dist_t>::max();
                 candidate_set.emplace(-lowerBound, ep_id);
             }
-
+#if (GETMINSTEP || CREATESF)
+            dist_start_query = lowerBound;
+#endif
             visited_array[ep_id] = visited_array_tag;
 
             while (!candidate_set.empty()) {
@@ -291,7 +294,7 @@ namespace hnswlib {
                     break;
                 }
                 candidate_set.pop();
-#if (ANAYQ || CREATESF)
+#if (GETMINSTEP || CREATESF)
                 candi_top.push_back(-current_node_pair.first);
                 bound.push_back(lowerBound);
                 if (res_first.empty())
@@ -347,7 +350,7 @@ namespace hnswlib {
 
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
-#if (ANAYQ || CREATESF)
+#if (GETMINSTEP || CREATESF)
                             top_candidates_ten.emplace(dist, candidate_id);
                             if (top_candidates_ten.size() > 10)
                                 top_candidates_ten.pop();
@@ -357,7 +360,7 @@ namespace hnswlib {
                         }
                     }
                 }
-#if (ANAYQ || CREATESF)
+#if (GETMINSTEP || CREATESF)
                 if (!top_candidates_ten.empty())
                     res_tenth.push_back(top_candidates_ten.top().first);
 #endif
@@ -1577,6 +1580,28 @@ namespace hnswlib {
 
 #if CREATESF
         /*
+            comput average and stdv
+        */
+        void getStdv(std::vector<float> &data_l, std::vector<float> &res){
+            std::vector<float>().swap(res);
+            res.resize(2);
+            if (!data_l.empty()) {
+                float sum = 0;
+                for (float d: data_l)
+                    sum += d;
+                float aver = sum / data_l.size();
+                res[0] = aver;
+                sum = 0;
+                for (float d: data_l)
+                    sum += (aver - d) * (aver - d);
+                res[1] = sqrtf32(sum / data_l.size());
+            }
+        }
+        /*
+            曲线是否平滑
+        */
+
+        /*
             input: (train or test)query
             output: fixed vector
         */
@@ -1589,32 +1614,61 @@ namespace hnswlib {
             size_t expect_len = (iter_len + iter_start) < candi_top.size()? iter_len: candi_top.size();
             std::vector<Lstm_Feature>().swap(SeqFeatrue);
             SeqFeatrue.resize(expect_len);
+            // std::vector<float> diff_top(iter_len);
             for (size_t i = 0; i < iter_len; i++){
+                size_t iter_c = iter_start + i;
                 cur_featrue.cycle = i;
 
-                cur_featrue.dist_candi_top = candi_top[iter_start + i];
-                cur_featrue.dist_result_k = res_tenth[iter_start + i];
-                cur_featrue.dist_result_1 = res_first[iter_start + i];
-                cur_featrue.dist_div_top_k = cur_featrue.dist_candi_top - cur_featrue.dist_result_k;
-                cur_featrue.dist_div_k_1 = cur_featrue.dist_result_k - cur_featrue.dist_result_1;
+                cur_featrue.dist_candi_top = candi_top[iter_c];
+                cur_featrue.dist_result_k = res_tenth[iter_c];
+                cur_featrue.dist_result_1 = res_first[iter_c];
 
-                // if (cur_featrue.dist_result_k != 0)
-                //     cur_featrue.dist_div_top_k = cur_featrue.dist_candi_top / cur_featrue.dist_result_k;
-                // else
-                //     cur_featrue.dist_div_top_k = 0;
-                
-                // if (cur_featrue.dist_result_1 != 0)
-                //     cur_featrue.dist_div_k_1 = cur_featrue.dist_result_k / cur_featrue.dist_result_1;
-                // else
-                //     cur_featrue.dist_div_k_1 = 0;
-                
-                if ((cur_featrue.dist_candi_top - cur_featrue.dist_result_k) < 0)
-                    cur_featrue.isinter = 1;
+                if (iter_c == 0)
+                    cur_featrue.diff_top = 0;
                 else
-                    cur_featrue.isinter = 0;
+                    cur_featrue.diff_top = candi_top[iter_c] - candi_top[iter_c - 1];
+                cur_featrue.diff_top_k = candi_top[iter_c] - res_tenth[iter_c];
+                cur_featrue.diff_k_1 = res_tenth[iter_c] - res_first[iter_c];
+
+                if (res_first[iter_c] == 0){
+                    cur_featrue.div_top_1 = 0;
+                    cur_featrue.div_k_1 = 0;
+                }
+                else{
+                    cur_featrue.div_top_1 = candi_top[iter_c] / res_first[iter_c];
+                    cur_featrue.div_k_1 = res_tenth[iter_c] / res_first[iter_c];
+                }
 
                 SeqFeatrue[i] = cur_featrue;
             }
+
+            // float thre_smooth = 0.03;
+            // unsigned thre_exceed = 3;
+            // // 满足任意两种情况之一，则输出0，否则1
+            // std::vector<float> av_st(2);
+            // getStdv(diff_top, av_st);
+            // unsigned num_exceed = 0;
+            // for (Lstm_Feature lf: SeqFeatrue){
+            //     if ((lf.dist_candi_top - lf.dist_result_k) <= (lf.dist_result_k - lf.dist_result_1))
+            //         num_exceed++;
+            // }
+            // if (av_st[1] < thre_smooth)
+            //     SeqFeatrue[0].iscontinue = 0;
+            // else if (num_exceed <= thre_exceed)
+            //     SeqFeatrue[0].iscontinue = 0;
+            // else
+            //     SeqFeatrue[0].iscontinue = 1;
+            
+            // if ((q_id == 53) || (q_id == 86) || (q_id == 108)){
+            //     if (SeqFeatrue[0].iscontinue != 0){
+            //         printf("%d none\n", q_id);
+            //     }
+            // }
+            // if ((q_id == 57) || (q_id == 122) || (q_id == 160)){
+            //     if (SeqFeatrue[0].iscontinue != 1){
+            //         printf("%d none\n", q_id);
+            //     }
+            // }
         }
 #endif
     };
