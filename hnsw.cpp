@@ -143,10 +143,15 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     vector<size_t> efs;// = { 10,10,10,10,10 };
     
     efs.push_back(efs_max);
-    size_t step_target = 70;
+    size_t step_target = (ITST + ITLE);
     vector<vector<float>> dist_per_step_per_query(qsize);
-    string path_min_step = path_aware + "min_step.txt";
-    string path_recall_loss = path_aware + "recall_loss_" + to_string(step_target) + ".txt";
+#if USESAMQ
+    string path_min_step = path_aware + "train_min_step.txt";
+    string path_recall_loss = path_aware + "train_recall_loss_" + to_string(step_target) + ".txt";
+#else
+    string path_min_step = path_aware + "test_min_step.txt";
+    string path_recall_loss = path_aware + "test_recall_loss_" + to_string(step_target) + ".txt";
+#endif
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
 
@@ -334,12 +339,16 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
 #if CREATESF
-        size_t iter_start = 30;
-        size_t iter_len = 40;
+        size_t iter_start = ITST;
+        size_t iter_len = ITLE;
+        size_t ovlp_len = OLLE;
+        size_t num_stage = NMSG;
 #if USESAMQ
-        string path_train = path_aware + "train_" + to_string(iter_start) + "_" + to_string(iter_len) + ".txt";
+        string path_train = path_aware + "train_" + to_string(iter_start) + "_" + to_string(iter_len) + 
+                            "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".txt";
 #else
-        string path_train = path_aware + "test_" + to_string(iter_start) + "_" + to_string(iter_len) + ".txt";
+        string path_train = path_aware + "test_" + to_string(iter_start) + "_" + to_string(iter_len) + 
+                            "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".txt";
 #endif
         ofstream train_data(path_train.c_str(), ios::trunc);
         vector<Lstm_Feature> SeqFeature;
@@ -348,14 +357,16 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         for (size_t i = 0; i < qsize; i++){
             // if (i == 449)
             //     continue;
-            appr_alg->createSequenceFeature(i, (massQ + i * vecdim), SeqFeature, k, iter_start, iter_len);
+            appr_alg->createSequenceFeature(i, (massQ + i * vecdim), SeqFeature, k, iter_start, iter_len, ovlp_len, num_stage);
             for (Lstm_Feature fea_cur: SeqFeature){
                 // if (i > 449)
                 //     train_data << (fea_cur.q_id - 1) << "\t";
                 // else
                 train_data << fea_cur.q_id << "\t";
+                train_data << fea_cur.stage << "\t";
                 train_data << fea_cur.cycle << "\t";
 
+                train_data << fea_cur.dist_bound << "\t";
                 train_data << fea_cur.dist_candi_top << "\t";
                 train_data << fea_cur.dist_result_k << "\t";
                 train_data << fea_cur.dist_result_1 << "\t";
@@ -365,7 +376,9 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
                 train_data << fea_cur.diff_k_1 << "\t";
 
                 train_data << fea_cur.div_top_1 << "\t";
-                train_data << fea_cur.div_k_1 << endl;
+                // train_data << fea_cur.div_k_1 << endl;
+                train_data << fea_cur.div_k_1 << "\t";
+                train_data << fea_cur.inter << endl;
             }
             // train_data << SeqFeature[0].iscontinue << endl;
         }
@@ -419,7 +432,7 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     L2Space l2space(vecdim);
 
 #if USESAMQ
-    size_t qsize_kilo = 100;
+    size_t qsize_kilo = 10;
     qsize = qsize_kilo * 1000;
     string path_lstm = "/home/ljun/anns/hnsw_nics/graphindex/lstm";
     string path_sample = path_lstm + "/" + using_dataset + "/" + 

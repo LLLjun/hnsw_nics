@@ -19,3 +19,8 @@ typedef float DTRES;
 #define USESAMQ false
 #define GETMINSTEP false
 #define CREATESF true
+
+#define ITST 20
+#define ITLE 30
+#define OLLE 10
+#define NMSG 12

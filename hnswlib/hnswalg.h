@@ -1605,41 +1605,60 @@ namespace hnswlib {
             input: (train or test)query
             output: fixed vector
         */
-        void createSequenceFeature(size_t &q_id, const void *query, std::vector<Lstm_Feature> &SeqFeatrue, size_t k, size_t iter_start = 0, size_t iter_len = 30){
+        void createSequenceFeature(size_t &q_id, const void *query, std::vector<Lstm_Feature> &SeqFeatrue, size_t k, 
+                                    size_t iter_start, size_t iter_len, size_t overlap, size_t num_stage){
             // search
             std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
 
+            size_t real_stage = unsigned((candi_top.size() - iter_start - iter_len) / (iter_len - overlap)) + 1;
+            if (real_stage < num_stage){
+                printf("No support, num_stage need decrease\n");
+                exit(1);
+            }
+            real_stage = std::min(real_stage, num_stage);
+
             Lstm_Feature cur_featrue;
             cur_featrue.q_id = q_id;
-            size_t expect_len = (iter_len + iter_start) < candi_top.size()? iter_len: candi_top.size();
+            size_t expect_len = real_stage * iter_len;
             std::vector<Lstm_Feature>().swap(SeqFeatrue);
             SeqFeatrue.resize(expect_len);
-            // std::vector<float> diff_top(iter_len);
-            for (size_t i = 0; i < iter_len; i++){
-                size_t iter_c = iter_start + i;
-                cur_featrue.cycle = i;
 
-                cur_featrue.dist_candi_top = candi_top[iter_c];
-                cur_featrue.dist_result_k = res_tenth[iter_c];
-                cur_featrue.dist_result_1 = res_first[iter_c];
+            for (size_t st_i = 0; st_i < real_stage; st_i++){
+                cur_featrue.stage = st_i;
+                size_t start_st = iter_start + st_i * (iter_len - overlap);
 
-                if (iter_c == 0)
-                    cur_featrue.diff_top = 0;
-                else
-                    cur_featrue.diff_top = candi_top[iter_c] - candi_top[iter_c - 1];
-                cur_featrue.diff_top_k = candi_top[iter_c] - res_tenth[iter_c];
-                cur_featrue.diff_k_1 = res_tenth[iter_c] - res_first[iter_c];
+                for (size_t i = 0; i < iter_len; i++){
+                    size_t iter_c = start_st + i;
+                    cur_featrue.cycle = iter_c;
 
-                if (res_first[iter_c] == 0){
-                    cur_featrue.div_top_1 = 0;
-                    cur_featrue.div_k_1 = 0;
+                    cur_featrue.dist_bound = bound[iter_c];
+                    cur_featrue.dist_candi_top = candi_top[iter_c];
+                    cur_featrue.dist_result_k = res_tenth[iter_c];
+                    cur_featrue.dist_result_1 = res_first[iter_c];
+
+                    if (iter_c == 0)
+                        cur_featrue.diff_top = 0;
+                    else
+                        cur_featrue.diff_top = candi_top[iter_c] - candi_top[iter_c - 1];
+                    cur_featrue.diff_top_k = candi_top[iter_c] - res_tenth[iter_c];
+                    cur_featrue.diff_k_1 = res_tenth[iter_c] - res_first[iter_c];
+
+                    if (res_first[iter_c] == 0){
+                        cur_featrue.div_top_1 = 0;
+                        cur_featrue.div_k_1 = 0;
+                    }
+                    else{
+                        cur_featrue.div_top_1 = candi_top[iter_c] / res_first[iter_c];
+                        cur_featrue.div_k_1 = res_tenth[iter_c] / res_first[iter_c];
+                    }
+
+                    if (cur_featrue.diff_top_k <= 0)
+                        cur_featrue.inter = 1;
+                    else
+                        cur_featrue.inter = 0;
+
+                    SeqFeatrue[st_i * iter_len + i] = cur_featrue;
                 }
-                else{
-                    cur_featrue.div_top_1 = candi_top[iter_c] / res_first[iter_c];
-                    cur_featrue.div_k_1 = res_tenth[iter_c] / res_first[iter_c];
-                }
-
-                SeqFeatrue[i] = cur_featrue;
             }
 
             // float thre_smooth = 0.03;
