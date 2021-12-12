@@ -11,3 +11,7 @@ experiment/
 graphindex/
 dataset/
 .vscode/
+
+FC_model/__pycache__/
+FC_model/output/
+*.pkl

@@ -111,13 +111,16 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
 }
 
 template<typename data_T>
-void WriteTxtToArray(std::string& file_path, const data_T *data_m, uint32_t nums, uint32_t dims){
+void WriteTxtToArray(std::string& file_path, const data_T *data_m, uint32_t nums, uint32_t dims, bool setindex=false){
     std::ofstream file_writer(file_path.c_str(), ios::trunc);
     // file_writer << describ << endl;
     for (size_t i = 0; i < nums; i++){
         for (size_t j = 0; j < dims; j++){
-            // file_writer << "id: " << i << "\t" << data_m[i * dims + j];
+            if (setindex)
+                file_writer << i << "\t";
             file_writer << data_m[i * dims + j];
+            if (j != (dims - 1))
+                file_writer << "\t";
         }
         file_writer << endl;
     }

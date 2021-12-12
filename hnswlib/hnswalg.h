@@ -255,6 +255,12 @@ namespace hnswlib {
         mutable float dist_start_query;
 #endif
 
+#if RESFEAT
+        mutable std::vector<tableint> root_res_wd;
+        size_t hops_res_wd = ITST;
+        mutable std::vector<float> res_tenth;
+#endif
+
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
@@ -264,6 +270,18 @@ namespace hnswlib {
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
+#if RESFEAT
+            std::vector<tableint>().swap(root_res_wd);
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_wide;
+            size_t hops_cur = 0;
+            size_t steps_keep = 0;
+            dist_t dist_res_wide = 0;
+            bool feat_done = false;
+
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_ten;
+            std::vector<float>().swap(res_tenth);
+#endif
+
 #if (GETMINSTEP || CREATESF)
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_ten;
             std::vector<float>().swap(candi_top);
@@ -350,6 +368,18 @@ namespace hnswlib {
 
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
+
+#if RESFEAT
+                            top_candidates_wide.emplace(dist, candidate_id);
+                            if (top_candidates_wide.size() > RESWIDE){
+                                top_candidates_wide.pop();
+                            }
+
+                            top_candidates_ten.emplace(dist, candidate_id);
+                            if (top_candidates_ten.size() > 10)
+                                top_candidates_ten.pop();
+#endif
+
 #if (GETMINSTEP || CREATESF)
                             top_candidates_ten.emplace(dist, candidate_id);
                             if (top_candidates_ten.size() > 10)
@@ -360,11 +390,32 @@ namespace hnswlib {
                         }
                     }
                 }
+#if RESFEAT
+                if (!feat_done){
+                    if ((hops_cur >= hops_res_wd) && (steps_keep >= 0)){
+                        while (!top_candidates_wide.empty()){
+                            root_res_wd.push_back(top_candidates_wide.top().second);
+                            top_candidates_wide.pop();
+                        }
+                        feat_done = true;
+                    }
+
+                    hops_cur++;
+                    if (dist_res_wide > top_candidates_wide.top().first)
+                        steps_keep = 0;
+                    else
+                        steps_keep++;
+                    dist_res_wide = top_candidates_wide.top().first;
+                }
+                if (!top_candidates_ten.empty())
+                    res_tenth.push_back(top_candidates_ten.top().first);
+#endif
+
 #if (GETMINSTEP || CREATESF)
                 if (!top_candidates_ten.empty())
                     res_tenth.push_back(top_candidates_ten.top().first);
 #endif
-            }
+            } // while
 
             visited_list_pool_->releaseVisitedList(vl);
             return top_candidates;
@@ -1578,6 +1629,201 @@ namespace hnswlib {
             printf("Success get query's parent distribution \n");
         }
 
+#if ANAYRES
+        void initIndegreeVector(std::vector<std::vector<tableint>> &table_indegre){
+            std::vector<std::vector<tableint>>().swap(table_indegre);
+            table_indegre.resize(cur_element_count);
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                linklistsizeint *ll_cur = get_linklist0(i);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+
+                for (int j = 0; j < size; j++){
+                    assert(data[j] > 0);
+                    assert(data[j] < cur_element_count);
+                    assert(data[j] != i);
+                    table_indegre[data[j]].push_back(i);
+                }
+            }
+            printf("Generate table indegree done.\n");
+        }
+
+        /*
+            get certion node's degree node
+        */
+        void getDegreeByLabelLayer0(std::vector<labeltype> &q_node, std::vector<labeltype> &res_node, size_t range){
+            if (range > 1){
+                printf("Error, range invalid \n");
+                exit(1);
+            }
+            size_t num_q = q_node.size();
+            std::vector<labeltype>().swap(res_node);
+            std::vector<tableint> q_node_internal;
+            for (labeltype q: q_node)
+                q_node_internal.push_back(getInternalByLabel(q));
+            
+            // out
+            if (range == 0 || range == 1){
+                for (size_t q_i = 0; q_i < num_q; q_i++){
+                    linklistsizeint *ll_cur = get_linklist0(q_node_internal[q_i]);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    for (size_t i = 0; i < size; i++){
+                        res_node.push_back(getExternalLabel(data[i]));
+                    }
+                }
+            }
+        }
+
+        /*
+            get the node connect node and evaluate
+        */
+        void getRelationNode(unsigned *res_gt, unsigned *num_can_search, size_t qsize, size_t k, size_t res_wide, size_t res_deep, size_t res_range){
+            std::vector<std::vector<tableint>> table_indegree;
+            if (res_range == 0 || res_range == 2)
+                initIndegreeVector(table_indegree);
+
+            for (size_t qi = 0; qi < qsize; qi++){
+                std::unordered_set<labeltype> can_search;
+                std::vector<labeltype> q_node;
+                std::vector<labeltype> res_node;
+
+                for (size_t di = 0; di < res_deep; di++){
+                    if (di == 0){
+                        for (size_t i = 0; i < res_wide; i++)
+                            q_node.push_back(res_gt[qi * k + i]);
+                    } else {
+                        q_node.swap(res_node);
+                        std::vector<labeltype>().swap(res_node);
+                    }
+
+                    if (res_range == 0 || res_range == 1){
+                        getDegreeByLabelLayer0(q_node, res_node, res_range);
+                    }
+                    if (res_range == 0 || res_range == 2){
+                        for (labeltype qn: q_node){
+                            tableint qn_internal = getInternalByLabel(qn);
+                            for (tableint qn_inter_connect: table_indegree[qn_internal])
+                                res_node.push_back(getExternalLabel(qn_inter_connect));
+                        }
+                    }
+
+                    for (labeltype res_n: res_node){
+                        if (can_search.find(res_n) == can_search.end())
+                            can_search.insert(res_n);
+                    } 
+                }
+
+                size_t ncs = 0;
+                for (size_t i = 0; i < k; i++){
+                    labeltype gt_i = res_gt[qi * k + i];
+                    if (can_search.find(gt_i) != can_search.end())
+                        ncs++;
+                }
+                num_can_search[qi] = ncs;
+            }
+        }
+#endif
+
+#if RESFEAT
+        /*
+            get certion node's degree node
+        */
+        void getDegreeByInternalLayer0(std::vector<tableint> &q_node, std::vector<tableint> &res_node){
+            size_t num_q = q_node.size();
+            std::vector<tableint>().swap(res_node);
+            
+            // out
+            for (tableint q: q_node){
+                linklistsizeint *ll_cur = get_linklist0(q);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+                for (size_t i = 0; i < size; i++){
+                    res_node.push_back(data[i]);
+                }
+            }
+        }
+
+        /*
+            input: massQ
+            output: static feature for all queries
+        */
+        void createStaticFeature(float *massQ, float *res_feat, size_t k, size_t qsize, size_t vecdim, 
+                                    size_t dim_feat, size_t res_wide, size_t res_deep, size_t res_range){
+
+            for (size_t qi = 0; qi < qsize; qi++){
+                // search
+                float *query = massQ + qi * vecdim;
+                std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
+
+                std::unordered_set<tableint> can_search;
+                std::vector<tableint> q_node;
+                std::vector<tableint> res_node;
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates_set_sf;
+
+                float dist_min_to_query = std::numeric_limits<float>::max();
+                for (tableint root_n: root_res_wd){
+                    float dist = fstdistfunc_(query, getDataByInternalId(root_n), dist_func_param_);
+                    if (dist < dist_min_to_query)
+                        dist_min_to_query = dist;
+                }
+
+                for (size_t di = 0; di < res_deep; di++){
+                    if (di == 0){
+                        root_res_wd.swap(q_node);
+                    } else {
+                        q_node.swap(res_node);
+                        std::vector<tableint>().swap(res_node);
+                    }
+
+                    if (res_range == 0 || res_range == 1){
+                        getDegreeByInternalLayer0(q_node, res_node);
+                    }
+                }
+
+                for (tableint res_n: res_node){
+                    if (can_search.find(res_n) == can_search.end())
+                        can_search.insert(res_n);
+                }
+
+                for (tableint res_n: can_search){
+                    float dist = fstdistfunc_(query, getDataByInternalId(res_n), dist_func_param_);
+                    candidates_set_sf.emplace(-dist, res_n);
+                }
+
+                for (size_t i = 0; i < dim_feat; i++){
+                    if (!candidates_set_sf.empty()){
+                        if (dist_min_to_query != 0)
+                            res_feat[qi * (dim_feat + 1) + i] = (-candidates_set_sf.top().first) / dist_min_to_query;
+                        else
+                            res_feat[qi * (dim_feat + 1) + i] = 0;
+                        candidates_set_sf.pop();
+                    } else {
+                        res_feat[qi * (dim_feat + 1) + i] = 0;
+                    }
+                }
+
+                size_t min_step = 0;
+                size_t all_step = res_tenth.size();
+                float all_dist = res_tenth.back();
+                float cur_dist = res_tenth.back();
+                for (int j = all_step - 1; j >= 0; j--){
+                    if (res_tenth[j] > all_dist){
+                        min_step = j + 1;
+                        break;
+                    }
+                }
+
+                if (min_step > ITST)
+                    res_feat[qi * (dim_feat + 1) + dim_feat] = 1;
+                else
+                    res_feat[qi * (dim_feat + 1) + dim_feat] = 0;
+            }
+        }
+
+#endif
+
 #if CREATESF
         /*
             comput average and stdv
@@ -1660,34 +1906,6 @@ namespace hnswlib {
                     SeqFeatrue[st_i * iter_len + i] = cur_featrue;
                 }
             }
-
-            // float thre_smooth = 0.03;
-            // unsigned thre_exceed = 3;
-            // // 满足任意两种情况之一，则输出0，否则1
-            // std::vector<float> av_st(2);
-            // getStdv(diff_top, av_st);
-            // unsigned num_exceed = 0;
-            // for (Lstm_Feature lf: SeqFeatrue){
-            //     if ((lf.dist_candi_top - lf.dist_result_k) <= (lf.dist_result_k - lf.dist_result_1))
-            //         num_exceed++;
-            // }
-            // if (av_st[1] < thre_smooth)
-            //     SeqFeatrue[0].iscontinue = 0;
-            // else if (num_exceed <= thre_exceed)
-            //     SeqFeatrue[0].iscontinue = 0;
-            // else
-            //     SeqFeatrue[0].iscontinue = 1;
-            
-            // if ((q_id == 53) || (q_id == 86) || (q_id == 108)){
-            //     if (SeqFeatrue[0].iscontinue != 0){
-            //         printf("%d none\n", q_id);
-            //     }
-            // }
-            // if ((q_id == 57) || (q_id == 122) || (q_id == 160)){
-            //     if (SeqFeatrue[0].iscontinue != 1){
-            //         printf("%d none\n", q_id);
-            //     }
-            // }
         }
 #endif
     };

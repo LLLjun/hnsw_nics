@@ -15,12 +15,21 @@ typedef float DTRES;
 // for profile
 #define EXI true
 
+#define USESAMQ true
 // for lstm
-#define USESAMQ false
 #define GETMINSTEP false
-#define CREATESF true
+#define CREATESF false
 
-#define ITST 20
-#define ITLE 30
-#define OLLE 10
-#define NMSG 12
+#define ITST 49
+// #define ITLE 30
+// #define OLLE 10
+// #define NMSG 12
+
+// for static connect
+#define ANAYRES false
+#define RESFEAT true
+
+#define RESWIDE 10
+#define RESDEEP 1
+// 0:all 1:out only 2in only
+#define RESRANGE 1

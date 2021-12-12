@@ -12,7 +12,7 @@ using namespace std;
 using namespace hnswlib;
 
 size_t efs_max = 300;
-string path_root = "/home/ljun/anns/hnsw_nics/experiment/aware/for_train/";
+string path_root = "/home/ljun/anns/hnsw_nics/experiment/aware/static/";
 string path_aware = path_root + "target_" + to_string(efs_max) + "/";
 
 
@@ -143,7 +143,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     vector<size_t> efs;// = { 10,10,10,10,10 };
     
     efs.push_back(efs_max);
-    size_t step_target = (ITST + ITLE);
+    size_t step_target = ITST;
     vector<vector<float>> dist_per_step_per_query(qsize);
 #if USESAMQ
     string path_min_step = path_aware + "train_min_step.txt";
@@ -337,6 +337,51 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
+
+#if (ANAYRES || RESFEAT)
+        size_t res_wide = RESWIDE;
+        size_t res_deep = RESDEEP;
+        size_t res_range = RESRANGE;
+#endif
+
+#if ANAYRES
+        string path_analyis = path_root + "relation";
+        string file_analyis = path_analyis + "/w" + to_string(res_wide) + "_d" + to_string(res_deep) + "_r" + to_string(res_range) + ".txt";
+        unsigned *res_gt = new unsigned[qsize * k]();
+        unsigned *num_can_search = new unsigned[qsize]();
+        for (size_t i = 0; i < qsize; i++){
+            memcpy(res_gt + i * k, massQA + i * gt_maxnum, k * sizeof(unsigned));
+        }
+        appr_alg->getRelationNode(res_gt, num_can_search, qsize, k, res_wide, res_deep, res_range);
+        WriteTxtToArray<unsigned>(file_analyis, num_can_search, qsize, 1, true);
+#endif
+
+#if RESFEAT
+        string path_feat = path_aware + "d" + to_string(res_deep) + "_w" + to_string(res_wide) + "_r" + to_string(res_range);
+        if (access(path_feat.c_str(), R_OK|W_OK)){
+            if (mkdir(path_feat.c_str(), S_IRWXU) != 0) {
+                printf("Error, dir %s create failed \n", path_feat.c_str());
+                exit(1);
+            }
+        }
+        size_t iter_start = ITST;
+#if USESAMQ
+        string path_train = path_feat + "/train_" + to_string(iter_start) + ".txt";
+#else
+        string path_train = path_feat + "/test_" + to_string(iter_start) + ".txt";
+#endif
+        // 特征：按照距离从小到大，空位补充0
+        size_t dim_feat = res_wide * pow(appr_alg->maxM0_, res_deep);
+        float *feat_train = new float [qsize * (dim_feat + 1)]();
+
+        appr_alg->setEf(efs_max);
+        appr_alg->createStaticFeature(massQ, feat_train, k, qsize, vecdim, dim_feat, res_wide, res_deep, res_range);
+        WriteTxtToArray<float>(path_train, feat_train, qsize, (dim_feat + 1));
+        delete[] feat_train;
+
+        printf("Create static feature data to %s done \n", path_train.c_str());
+#endif
+
 
 #if CREATESF
         size_t iter_start = ITST;
