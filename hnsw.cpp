@@ -128,6 +128,9 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         inputB.close();
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
+        appr_alg->testSortMultiadd();
+        exit(0);
+        
         appr_alg->graph_type = graph_type;
         appr_alg->hit_miss = 0;
         appr_alg->hit_total = 0;
@@ -257,7 +260,7 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
 void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     string prefix = "/home/ljun/anns/hnsw_nics/graphindex/";
 
-    string label = "profile/graph_type/";
+    string label = "sort/";
 
     // support dataset: sift, gist, deep, glove, crawl
 
@@ -269,9 +272,9 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
         }
     }
 
-	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 20;
+	size_t subset_size_milllions = 1;
+	size_t efConstruction = 40;
+	size_t M = 16;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;

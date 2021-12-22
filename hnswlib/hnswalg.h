@@ -340,7 +340,7 @@ namespace hnswlib {
 
         void getNeighborsByHeuristic2(
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
-        const size_t M, bool isCollect = false) {
+        const size_t M, tableint insert_node=0, bool isCollect = false) {
             if (top_candidates.size() < M) {
                 return;
             }
@@ -351,7 +351,51 @@ namespace hnswlib {
                 queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
                 top_candidates.pop();
             }
+#if SORTRNG
+            std::unordered_set<size_t> g;
 
+            size_t vdim = *((size_t *)dist_func_param_);
+            float *diffData = new float[vdim]();
+            float *vec_o = (float *)getDataByInternalId(insert_node);
+
+            while (queue_closest.size()){
+                if (return_list.size() >= M)
+                    break;
+
+                std::pair<dist_t, tableint> curent_pair = queue_closest.top();
+                queue_closest.pop();
+                float *vec_n = (float *)getDataByInternalId(curent_pair.second);
+
+                std::priority_queue<std::pair<float, size_t>, std::vector<std::pair<float, size_t>>, GreaterByFirst> set_sort;
+
+                for (size_t j = 0; j < vdim; j++){
+                    diffData[j] = vec_n[j] - vec_o[j];
+                    if (set_sort.size() < 1)
+                        set_sort.emplace(std::abs(diffData[j]), j * 10 + signf(diffData[j]));
+                    else {
+                        if (std::abs(diffData[j]) > set_sort.top().first){
+                            set_sort.pop();
+                            set_sort.emplace(std::abs(diffData[j]), j * 10 + signf(diffData[j]));
+                        }
+                    }
+                }
+                
+                size_t kk = 0;
+                size_t rr = 1;
+                while (!set_sort.empty()){
+                    kk += set_sort.top().second * rr;
+                    set_sort.pop();
+                    rr *= 10000;
+                }
+                
+                if (g.find(kk) == g.end()){
+                    g.insert(kk);
+                    return_list.push_back(curent_pair);
+                }
+            }
+            delete[] diffData;
+
+#else
             size_t cur_miss = 0;
             while (queue_closest.size()) {
                 if (return_list.size() >= M)
@@ -380,6 +424,7 @@ namespace hnswlib {
                     }
                 }
             }
+#endif
             if (isCollect){
                 hit_total += M;
                 // printf("%.3f\n", (float)cur_miss / M);
@@ -467,7 +512,7 @@ namespace hnswlib {
                     ex_list.push_back(top_candidates.top().second);
                     top_candidates.pop();
                 }
-                getNeighborsByHeuristic2(top_candidates_copy, M_);
+                getNeighborsByHeuristic2(top_candidates_copy, M_, cur_c);
                 if (top_candidates_copy.size() > M_)
                     throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
                 while (top_candidates_copy.size() > 0) {
@@ -575,7 +620,7 @@ namespace hnswlib {
                             size_t mm = std::min(Mcurmax, sz_link_list_other + 1);
                             getNeighborsByHeuristic2(candidates, mm);                   
                         } else if (graph_type == "base"){
-                            getNeighborsByHeuristic2(candidates, Mcurmax);
+                            getNeighborsByHeuristic2(candidates, Mcurmax, cur_i);
                         } else {
                             printf("Error, unknown graph type \n");
                             exit(1);
@@ -1469,6 +1514,151 @@ namespace hnswlib {
             }
             return (dist_average / need_comp.size());
         }
+
+        /*
+            test sort and multi-add
+        */
+        int Partition(std::vector<float>& arr, int low, int high){
+            float tmp = arr[low];
+            while (low<high){
+                while(high>low&&arr[high]>=tmp)
+                    high--;
+                arr[low]=arr[high];
+                while(low<high&&arr[low]<=tmp)
+                    low++;
+                arr[high]=arr[low];
+            }
+            arr[high]=tmp;
+            return high;
+        }
+        void TopK_Qsort(std::vector<float>& arr, int k){
+            if(arr.empty()||arr.size()<=k)
+                return;
+            int pos=Partition(arr, 0, arr.size()-1);
+            int addr=arr.size()-1-k+1;
+            while(pos!=addr)
+            {
+                if(pos<addr)
+                {
+                    pos=Partition(arr,pos+1,addr);//当前区间过大，将旧区间减1后再在其中找分界点
+                }
+                else
+                {
+                    pos=Partition(arr,addr,pos-1);//当前区间过小，将pos-1后再在其中找分界点
+                }
+            }
+            // for(int i=0;i<arr.size();i++)
+            //     printf("%.3f\t", arr[i]);
+            // printf("\n");
+        }
+
+        struct GreaterByFirst {
+            constexpr bool operator()(std::pair<float, size_t> const &a,
+                                      std::pair<float, size_t> const &b) const noexcept {
+                return a.first > b.first;
+            }
+        };
+        void heap_sort_topk(std::vector<std::pair<float, size_t>> &set_unsort, size_t nums){
+            size_t nums_all = set_unsort.size();
+            if (nums_all < nums){
+                printf("Error, the set size must larger than %u \n", nums);
+                exit(1);
+            }
+            std::make_heap(set_unsort.begin(), set_unsort.begin() + nums);
+            for (size_t i = nums; i < nums_all; i++){
+                if (set_unsort[i].first > set_unsort[0].first){
+                    set_unsort[0].first = set_unsort[i].first;
+                    std::make_heap(set_unsort.begin(), set_unsort.begin() + nums);
+                }
+            }
+            std::sort_heap(set_unsort.begin(), set_unsort.begin() + nums);
+            // set_res.assign(set_unsort.begin(), set_unsort.begin() + nums);
+            // for(int i=0; i<set_unsort.size();i++)
+            //     printf("%.3f\t", set_unsort[i]);
+            // printf("\n");
+        }
+        inline int signf(float &pf){
+            if (pf > 0)
+                return 1;
+            else
+                return 0;
+        }
+
+        void testSortMultiadd(){
+            clk_get stopc = clk_get();
+
+            size_t vsize = 5000;
+            size_t vdim = *((size_t *)dist_func_param_);
+            float *massA = new float[vsize * vdim]();
+            float *massB = new float[vsize * vdim]();
+            for (size_t i = 0; i < vsize; i++){
+                for (size_t j = 0; j < vdim; j++){
+                    massA[i * vdim + j] = ((float) rand() / RAND_MAX);
+                    massB[i * vdim + j] = ((float) rand() / RAND_MAX);
+                }
+            }
+            printf("Test with mass: %u * %u \n", vsize, vdim);
+
+            // multi add
+            stopc.reset();
+            for (size_t i = 0; i < vsize; i++){
+                float *vecA = massA + i * vdim;
+                float *vecB = massB + i * vdim;
+                volatile float d = 0;
+                // d = fstdistfunc_(vecA, vecB, dist_func_param_);
+                for (size_t j = 0; j < vdim; j++){
+                    d += (vecA[j] - vecB[j]) * (vecA[j] - vecB[j]);
+                }
+            }
+            float t_mul = stopc.getElapsedTimeus();
+            printf("Comput time per vector: %.3f \n", (t_mul / vsize));
+
+            // sort
+            stopc.reset();
+            for (size_t i = 0; i < vsize; i++){
+                float *vecA = massA + i * vdim;
+                float *vecB = massB + i * vdim;
+
+                // use heap sort
+                std::priority_queue<std::pair<float, size_t>, std::vector<std::pair<float, size_t>>, GreaterByFirst> set_sort;
+                for (size_t j = 0; j < vdim; j++){
+                    vecA[j] -= vecB[j];
+                    if (set_sort.size() < 2)
+                        set_sort.emplace(std::abs(vecA[j]), j * 10 + signf(vecA[j]));
+                    else {
+                        if (std::abs(vecA[j]) > set_sort.top().first){
+                            set_sort.pop();
+                            set_sort.emplace(std::abs(vecA[j]), j * 10 + signf(vecA[j]));
+                        }
+                    }
+                }
+                std::unordered_set<size_t> g;
+                size_t kk = 0;
+                size_t rr = 1;
+                while (!set_sort.empty()){
+                    kk += set_sort.top().second * rr;
+                    rr *= 10000;
+                    // printf("%.3f, %u \n", set_sort.top().first, set_sort.top().second);
+                    set_sort.pop();
+                }
+                g.insert(kk);
+                // printf("%u \n", kk);
+
+                // use max for 1
+                // for (size_t j = 0; j < vdim; j++){
+                //     vecA[j] -= vecB[j];
+                //     vecB[j] = std::abs(vecA[j]);
+                // }
+                // int pos = std::max_element(vecB, vecB + vdim) - vecB;
+                // size_t kk = pos * 10 + signf(vecA[pos]);
+                // std::unordered_set<size_t> g;
+                // g.insert(kk);
+                // // printf("%u \n", kk);
+            }
+            float t_sort = stopc.getElapsedTimeus();
+            printf("Comput time per vector: %.3f \n", (t_sort / vsize));
+        }
+
     };
 
 }
