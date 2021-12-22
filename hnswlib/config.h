@@ -21,6 +21,6 @@ typedef float DTRES;
 #define CREATESF true
 
 #define ITST 20
-#define ITLE 30
-#define OLLE 10
-#define NMSG 12
+#define ITLE 20
+#define OLLE 0
+#define NMSG 1

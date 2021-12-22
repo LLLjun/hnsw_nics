@@ -352,8 +352,24 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
 #endif
         ofstream train_data(path_train.c_str(), ios::trunc);
         vector<Lstm_Feature> SeqFeature;
-
         appr_alg->setEf(efs_max);
+
+        train_data  << "q_id" << "\t" 
+                    << "stage" << "\t"
+                    << "cycle" << "\t"
+                    << "dist_bound" << "\t"
+                    << "dist_candi_top" << "\t"
+                    << "dist_result_k" << "\t"
+                    << "dist_result_1" << "\t"
+                    << "diff_top" << "\t"
+                    << "diff_top_k" << "\t"
+                    << "diff_k_1" << "\t"
+                    << "div_top_1" << "\t"
+                    << "div_k_1" << "\t"
+                    << "inter" << "\t"
+                    << "remain_step" << endl;
+
+        qsize = 100;
         for (size_t i = 0; i < qsize; i++){
             // if (i == 449)
             //     continue;
@@ -378,7 +394,9 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
                 train_data << fea_cur.div_top_1 << "\t";
                 // train_data << fea_cur.div_k_1 << endl;
                 train_data << fea_cur.div_k_1 << "\t";
-                train_data << fea_cur.inter << endl;
+                train_data << fea_cur.inter << "\t";
+
+                train_data << fea_cur.remain_step << endl;
             }
             // train_data << SeqFeature[0].iscontinue << endl;
         }

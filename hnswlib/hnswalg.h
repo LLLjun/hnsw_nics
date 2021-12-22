@@ -1609,6 +1609,17 @@ namespace hnswlib {
                                     size_t iter_start, size_t iter_len, size_t overlap, size_t num_stage){
             // search
             std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
+            unsigned min_step = 0;
+            {
+                size_t all_step = res_tenth.size();
+                float cur_dist = res_tenth.back();
+                for (int j = all_step - 1; j >= 0; j--){
+                    if (res_tenth[j] > cur_dist){
+                        min_step = j + 1;
+                        break;
+                    }
+                }
+            }
 
             size_t real_stage = unsigned((candi_top.size() - iter_start - iter_len) / (iter_len - overlap)) + 1;
             if (real_stage < num_stage){
@@ -1656,6 +1667,10 @@ namespace hnswlib {
                         cur_featrue.inter = 1;
                     else
                         cur_featrue.inter = 0;
+
+                    int remain = min_step - iter_c;
+                    remain = remain > 0 ? remain : 0;
+                    cur_featrue.remain_step = remain;
 
                     SeqFeatrue[st_i * iter_len + i] = cur_featrue;
                 }

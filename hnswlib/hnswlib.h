@@ -127,6 +127,8 @@ namespace hnswlib {
         float div_k_1;
         float inter;
 
+        int remain_step;
+
         // unsigned iscontinue;
     };
 
