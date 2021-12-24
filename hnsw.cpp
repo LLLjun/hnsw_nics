@@ -142,7 +142,7 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         clk_get stopw = clk_get();
         clk_get stopw_full = clk_get();
         size_t report_every = vecsize / 10;
-#pragma omp parallel for
+// #pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {
 #pragma omp critical
             {
@@ -166,6 +166,10 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
 #endif
         }
         cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
+#if PROFILESORT
+        float t_se = appr_alg->t_select_neig;
+        cout << "Select time:" << (t_se / 1e6) << "  seconds\n";
+#endif
         delete[] massB;
         if (isSave)
             appr_alg->saveIndex(index);
@@ -269,9 +273,9 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
         }
     }
 
-	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 20;
+	size_t subset_size_milllions = 1;
+	size_t efConstruction = 100;
+	size_t M = 16;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;

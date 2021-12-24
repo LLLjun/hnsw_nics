@@ -338,6 +338,10 @@ namespace hnswlib {
         mutable std::atomic<long> hit_miss;
         mutable std::atomic<long> hit_total;
 
+#if PROFILESORT
+        mutable float t_select_neig = 0;
+        clk_get stop_select_neig = clk_get();
+#endif
         void getNeighborsByHeuristic2(
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         const size_t M, bool isCollect = false) {
@@ -467,7 +471,13 @@ namespace hnswlib {
                     ex_list.push_back(top_candidates.top().second);
                     top_candidates.pop();
                 }
+#if PROFILESORT
+                stop_select_neig.reset();
                 getNeighborsByHeuristic2(top_candidates_copy, M_);
+                t_select_neig += stop_select_neig.getElapsedTimeus();
+#else
+                getNeighborsByHeuristic2(top_candidates_copy, M_);
+#endif
                 if (top_candidates_copy.size() > M_)
                     throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
                 while (top_candidates_copy.size() > 0) {
@@ -575,7 +585,13 @@ namespace hnswlib {
                             size_t mm = std::min(Mcurmax, sz_link_list_other + 1);
                             getNeighborsByHeuristic2(candidates, mm);                   
                         } else if (graph_type == "base"){
+#if PROFILESORT
+                            stop_select_neig.reset();
                             getNeighborsByHeuristic2(candidates, Mcurmax);
+                            t_select_neig += stop_select_neig.getElapsedTimeus();
+#else
+                            getNeighborsByHeuristic2(candidates, Mcurmax);
+#endif
                         } else {
                             printf("Error, unknown graph type \n");
                             exit(1);

@@ -18,6 +18,7 @@ int main(int argc, char **argv) {
     
     bool is_build;
     std::string graph_type = "base";
+    assignToThisCore(19);
 
     if (argc != 4){
         printf("Usage: ./main [stage: build or search] [dataset]\n");
