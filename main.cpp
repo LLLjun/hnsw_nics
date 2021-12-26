@@ -12,12 +12,12 @@ inline void assignToThisCore(int core_id)
     sched_setaffinity(0, sizeof(mask), &mask);
 }
 
-void hnsw_impl(bool is_build, const std::string &using_dataset, std::string &graph_type);
+void gene_gt_impl(bool is_build, const std::string &using_dataset, size_t &M_size);
 
 int main(int argc, char **argv) {
     
     bool is_build;
-    std::string graph_type = "base";
+    size_t M_size;
 
     if (argc != 4){
         printf("Usage: ./main [stage: build or search] [dataset]\n");
@@ -31,17 +31,11 @@ int main(int argc, char **argv) {
             printf("[stage: build or search]\n");
             exit(1);
         }
-        
-        graph_type = std::string(argv[3]);
-        if ((graph_type != "knng") && (graph_type != "rng") && (graph_type != "base")) {
-            printf("[graph type: knng, rng or base]\n");
-            exit(1);
-        }
+
+        M_size = atol(argv[3]);
     }
-    // if (!is_build)
-    //     assignToThisCore(19);
-    
-    hnsw_impl(is_build, std::string(argv[2]), graph_type);
+
+    gene_gt_impl(is_build, std::string(argv[2]), M_size);
 
     return 0;
 };

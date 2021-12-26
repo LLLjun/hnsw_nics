@@ -7,7 +7,7 @@ include_directories("${PROJECT_BINARY_DIR}")
 
 set(SOURCE_EXE main.cpp)           
 
-set(SOURCE_LIB hnsw.cpp)
+set(SOURCE_LIB gene_gt.cpp)
 
 add_library(sift_test STATIC ${SOURCE_LIB})
 

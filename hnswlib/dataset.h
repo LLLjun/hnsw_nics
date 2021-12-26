@@ -2,6 +2,7 @@
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 using namespace std;
 
@@ -32,7 +33,7 @@ void CheckDataset(const string &dataname, size_t &subset_size_milllions,
             printf("error: deep size set error.\n");
             exit(1);
         }
-        qsize = 1000;
+        qsize = 10000;
         vecdim = 96;
         gt_maxnum = 100;
         path_q = "dataset/deep/deep1B_queries.fvecs";
@@ -130,7 +131,7 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     for (size_t i = 0; i < nums; i++){
         float tmp_sum = 0;
         for (size_t j = 0; j < dims; j++){
-            tmp_sum += powf32((data_m[i * dims + j] - avg_m[j]), 2);
+            tmp_sum += powf((data_m[i * dims + j] - avg_m[j]), 2);
         }
 #pragma omp cratical
         {

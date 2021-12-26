@@ -11,6 +11,10 @@
 using namespace std;
 using namespace hnswlib;
 
+inline bool exists_test(const std::string &name) {
+    ifstream f(name.c_str());
+    return f.good();
+}
 
 template<typename DTset, typename DTval, typename DTres>
 void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s, size_t &efConstruction, 
@@ -20,6 +24,24 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         printf("Index %s is existed \n", index.c_str());
         return;
     } else {
+        // edit size
+        // {
+        //     DTset *massB = new DTset[vecsize * vecdim]();
+        //     if (massB == nullptr){
+        //         printf("Error, failed to allo mmeory\n");
+        //         exit(1);
+        //     }
+
+        //     std::ifstream file_reader(path_data.c_str(), ios::binary);
+        //     uint32_t nums_r, dims_r;
+        //     file_reader.read((char *) &nums_r, sizeof(uint32_t));
+        //     file_reader.read((char *) &dims_r, sizeof(uint32_t));
+        //     file_reader.read((char *) massB, vecsize * vecdim * sizeof(DTset));
+        //     file_reader.close();
+        //     WriteBinToArray<DTset>(path_data, massB, vecsize, vecdim);
+        //     exit(0);
+        // }
+
         DTset *massB = new DTset[vecsize * vecdim]();
         if (massB == nullptr){
             printf("Error, failed to allo mmeory\n");
@@ -27,19 +49,7 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         }
 
         cout << "Loading base data:\n";
-        ifstream inputB(path_data.c_str(), ios::binary);
-        for (size_t i = 0; i < vecsize; i++){
-            int expect_in;
-            if (dataname == "sift" || dataname == "gist" || dataname == "deep"){
-                inputB.read((char *) &expect_in, 4);
-                if (expect_in != vecdim) {
-                    cout << "file error";
-                    exit(1);
-                }
-            }
-            inputB.read((char *) (massB + i * vecdim), vecdim * sizeof(DTset));
-        }
-        inputB.close();
+        LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
 
         cout << "Building index:\n";
         BruteforceSearch<DTres>* brute_alg = new BruteforceSearch<DTres>(&s, vecsize);
@@ -69,26 +79,13 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         DTset *massQ = new DTset[qsize * vecdim];
         
         cout << "Loading queries:\n";
-        ifstream inputQ(path_q.c_str(), ios::binary);
-        for (int i = 0; i < qsize; i++) {
-            if (dataname == "sift" || dataname == "gist" || dataname == "deep"){
-                int in = 0;
-                inputQ.read((char *) &in, 4);
-                if (in != vecdim) {
-                    cout << "file error" << vecdim << endl;
-                    exit(1);
-                }
-            }
-            // glove的queries没有维度信息
-            inputQ.read((char *) (massQ + i * vecdim), vecdim * sizeof(DTset));
-        }
-        inputQ.close();
+        LoadBinToArray<DTset>(path_q, massQ, qsize, vecdim);
         printf("Load queries from %s done \n", path_q.c_str());
 
         for (size_t i = 0; i < qsize; i++){
             std::priority_queue<std::pair<DTres, labeltype >> rs = brute_alg->searchKnn(massQ + i * vecdim, k);
             size_t kk = k;
-            while (rs.empty()){
+            while (!rs.empty()){
                 massQA[i * gt_maxnum + kk - 1] = rs.top().second;
                 rs.pop();
                 kk--;
@@ -99,7 +96,7 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
             }
         }
 
-        cout << "Loading GT:\n";
+        cout << "Writing GT:\n";
         WriteBinToArray<unsigned>(path_gt, massQA, qsize, k);
         printf("Write GT to %s done \n", path_gt.c_str());
 
@@ -108,14 +105,12 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
     } 
 }
 
-void gene_gt_impl(bool is_build, const string &using_dataset){
-    string prefix = "/home/ljun/anns/hnsw_nics/graphindex/";
-    string label = "brute/";
-    // if ()
-    // support dataset: sift, gist, deep, glove, crawl
-    // string using_dataset = "deep";
+void gene_gt_impl(bool is_build, const string &using_dataset, size_t &M_size){
+    string prefix = "/home/usr-xkIJigVq/DataSet/" + using_dataset + "/";
+    string label = "brute_index/";
 
-    string pre_index = prefix + label + using_dataset;
+    string pre_index = prefix + label;
+    string pre_output = prefix + using_dataset + to_string(M_size) + "m/";
     if (access(pre_index.c_str(), R_OK|W_OK)){
         if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
             printf("Error, dir %s create failed \n", pre_index.c_str());
@@ -123,7 +118,7 @@ void gene_gt_impl(bool is_build, const string &using_dataset){
         }
     }
 
-	size_t subset_size_milllions = 1;
+	size_t subset_size_milllions = M_size;
 	size_t efConstruction = 40;
 	size_t M = 16;
     size_t k = 100;
@@ -132,14 +127,15 @@ void gene_gt_impl(bool is_build, const string &using_dataset){
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
     
-    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
-                        "m_brute.bin";
     CheckDataset(using_dataset, subset_size_milllions, vecsize, qsize, vecdim, gt_maxnum,
                     path_q, path_data, path_gt);
 
     L2Space l2space(vecdim);
 
-
+    string hnsw_index = pre_index + using_dataset + to_string(M_size) + "m_brute.bin";
+    path_data = pre_output + "base." + to_string(M_size) + "m.fbin";
+    path_q = prefix + "query.public.10K.fbin";
+    path_gt = pre_output + "groundtruth." + to_string(M_size) + "m.bin";
 
     if (is_build){
         build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data);

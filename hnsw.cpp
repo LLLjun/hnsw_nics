@@ -262,16 +262,16 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     // support dataset: sift, gist, deep, glove, crawl
 
     string pre_index = prefix + label + using_dataset;
-    if (access(pre_index.c_str(), R_OK|W_OK)){
-        if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", pre_index.c_str());
-            exit(1);
-        }
-    }
+    // if (access(pre_index.c_str(), R_OK|W_OK)){
+    //     if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
+    //         printf("Error, dir %s create failed \n", pre_index.c_str());
+    //         exit(1);
+    //     }
+    // }
 
-	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 20;
+	size_t subset_size_milllions = 1;
+	size_t efConstruction = 40;
+	size_t M = 16;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;
@@ -289,6 +289,9 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
                     path_q, path_data, path_gt);
 
     L2Space l2space(vecdim);
+    hnsw_index = "/home/usr-xkIJigVq/hnsw/deep1m_ef40m16_base_exi.bin";
+    path_q = "/home/usr-xkIJigVq/hnsw/deep1B_queries.fvecs";
+    path_gt = "/home/usr-xkIJigVq/hnsw/idx_1M.ivecs";
 
     if (is_build){
         build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data, graph_type);
