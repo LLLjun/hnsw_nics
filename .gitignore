@@ -13,3 +13,5 @@ dataset/
 .vscode/
 
 FC_model/
+output/
+dataset

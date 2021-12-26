@@ -5,53 +5,54 @@
 
 using namespace std;
 
-void CheckDataset(const string &dataname, size_t &subset_size_milllions, 
-                size_t &vecsize, size_t &qsize, size_t &vecdim, size_t &gt_maxnum,
-                string &path_q, string &path_data , string &path_gt){
+void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
+
+    size_t subset_size_milllions = index_parameter["subset_size_milllions"];
+    string path_dataset = "dataset/" + dataname + "/";
 
     if (dataname == "sift"){
-        qsize = 10000;
-        vecdim = 128;
-        gt_maxnum = 1000;
-        path_q = "dataset/bigann/bigann_query.bvecs";
-        path_data = "dataset/bigann/bigann_base.bvecs";
-        path_gt = "dataset/bigann/gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
+        index_parameter["qsize"] = 10000;
+        index_parameter["vecdim"] = 128;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = "dataset/bigann/bigann_query.bvecs";
+        index_string["path_data"] = "dataset/bigann/bigann_base.bvecs";
+        index_string["path_gt"] = "dataset/bigann/gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
     } else if (dataname == "gist"){
         if (subset_size_milllions > 1){
             printf("error: gist size set error.\n");
             exit(1);
         }
-        qsize = 1000;
-        vecdim = 960;
-        gt_maxnum = 100;
-        path_q = "dataset/gist/gist_query.fvecs";
-        path_data = "dataset/gist/gist_base.fvecs";
-        path_gt = "dataset/gist/gist_groundtruth.ivecs";
+        index_parameter["qsize"] = 1000;
+        index_parameter["vecdim"] = 960;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = "dataset/gist/gist_query.fvecs";
+        index_string["path_data"] = "dataset/gist/gist_base.fvecs";
+        index_string["path_gt"] = "dataset/gist/gist_groundtruth.ivecs";
     } else if (dataname == "deep"){
         if (subset_size_milllions > 100){
             printf("error: deep size set error.\n");
             exit(1);
         }
-        qsize = 1000;
-        vecdim = 96;
-        gt_maxnum = 100;
-        path_q = "dataset/deep/deep1B_queries.fvecs";
-        path_data = "dataset/deep/deep_base/deep_base.fvecs";
-        path_gt = "dataset/deep/deep_gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
+        index_parameter["qsize"] = 10000;
+        index_parameter["vecdim"] = 96;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = path_dataset + "query.public.10K.fbin";
+        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else if (dataname == "glove"){
         if (subset_size_milllions > 1){
             printf("error: glove size set error.\n");
             exit(1);
         }
         // 1193515 1193517
-        vecsize = 1193515;
-        qsize = 10000;
+        index_parameter["vecsize"] = 1193515;
+        index_parameter["qsize"] = 10000;
         // (25) 50 100 200
-        vecdim = 25;
-        gt_maxnum = 100;
-        path_q = "glove/glove" + to_string(vecdim) + "d_query.fvecs";
-        path_data = "glove/glove_base/glove" + to_string(vecdim) + "d_base.fvecs";
-        path_gt = dataname + "/gnd/idx_" + to_string(vecdim) + "d.ivecs";
+        index_parameter["vecdim"] = 25;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = "glove/glove" + to_string(index_parameter["vecdim"]) + "d_query.fvecs";
+        index_string["path_data"] = "glove/glove_base/glove" + to_string(index_parameter["vecdim"]) + "d_base.fvecs";
+        index_string["path_gt"] = dataname + "/gnd/idx_" + to_string(index_parameter["vecdim"]) + "d.ivecs";
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
         exit(1);
@@ -64,16 +65,16 @@ void CheckDataset(const string &dataname, size_t &subset_size_milllions,
     //     // 42 840
     //     int tokens = 42;
     //     if (tokens == 42){
-    //         vecsize = 1917495;
+    //         index_parameter["vecsize"] = 1917495;
     //     } else if(tokens == 840){
-    //         vecsize = 2196018;
+    //         index_parameter["vecsize"] = 2196018;
     //     }
-    //     qsize = 10000;
+    //     index_parameter["qsize"] = 10000;
     //     vecdim = 300;
-    //     gt_maxnum = 100;
-    //     sprintf(path_q, "crawl/crawl%dt_query.fvecs", tokens);
-    //     sprintf(path_data, "crawl/crawl_base/crawl%dt_base.fvecs", tokens);
-    //     sprintf(path_gt, "crawl/gnd/idx_%dt.ivecs", tokens);
+    //     index_parameter["gt_maxnum"] = 100;
+    //     sprintf(index_string["path_q"], "crawl/crawl%dt_query.fvecs", tokens);
+    //     sprintf(index_string["path_data"], "crawl/crawl_base/crawl%dt_base.fvecs", tokens);
+    //     sprintf(index_string["path_gt"], "crawl/gnd/idx_%dt.ivecs", tokens);
     // }
 }
 
@@ -130,7 +131,7 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     for (size_t i = 0; i < nums; i++){
         float tmp_sum = 0;
         for (size_t j = 0; j < dims; j++){
-            tmp_sum += powf32((data_m[i * dims + j] - avg_m[j]), 2);
+            tmp_sum += powf((data_m[i * dims + j] - avg_m[j]), 2);
         }
 #pragma omp cratical
         {
