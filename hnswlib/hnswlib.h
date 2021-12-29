@@ -112,7 +112,7 @@ namespace hnswlib {
     struct Lstm_Feature{
         unsigned q_id;
         unsigned stage;
-        unsigned cycle;
+        float cycle;
 
         // for AdaptNN
         // float dist_start;

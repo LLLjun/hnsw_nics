@@ -17,10 +17,13 @@ typedef float DTRES;
 
 // for lstm
 #define USESAMQ false
-#define GETMINSTEP false
-#define CREATESF true
+#define CREATESF false
 
 #define ITST 20
-#define ITLE 20
+#define ITLE 30
 #define OLLE 0
 #define NMSG 1
+#define EFS_MAX 300
+
+#define MANUAL false
+#define MANUALRUN true
