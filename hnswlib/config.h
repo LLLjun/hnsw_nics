@@ -8,5 +8,7 @@ typedef float DTVAL;
 typedef float DTRES;
 
 // for profile
-#define EXI false
+#define EXI true
 #define SORTRNG false
+
+#define EXPC1 false

@@ -26,9 +26,9 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_parameter["qsize"] = 1000;
         index_parameter["vecdim"] = 960;
         index_parameter["gt_maxnum"] = 100;
-        index_string["path_q"] = path_dataset + "query.public.10K.fbin";
-        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
-        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+        index_string["path_q"] = path_dataset + "gist_query.fvecs";
+        index_string["path_data"] = path_dataset + "gist_base.fvecs";
+        index_string["path_gt"] = path_dataset + "gist_groundtruth.ivecs";
     } else if (dataname == "deep"){
         if (subset_size_milllions > 100){
             printf("error: deep size set error.\n");
@@ -40,43 +40,21 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_string["path_q"] = path_dataset + "query.public.10K.fbin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
-    } else if (dataname == "glove"){
-        if (subset_size_milllions > 1){
-            printf("error: glove size set error.\n");
+    } else if (dataname == "turing"){
+        if (subset_size_milllions > 100){
+            printf("error: turing size set error.\n");
             exit(1);
         }
-        // 1193515 1193517
-        index_parameter["vecsize"] = 1193515;
-        index_parameter["qsize"] = 10000;
-        // (25) 50 100 200
-        index_parameter["vecdim"] = 25;
+        index_parameter["qsize"] = 100000;
+        index_parameter["vecdim"] = 100;
         index_parameter["gt_maxnum"] = 100;
-        index_string["path_q"] = "glove/glove" + to_string(index_parameter["vecdim"]) + "d_query.fvecs";
-        index_string["path_data"] = "glove/glove_base/glove" + to_string(index_parameter["vecdim"]) + "d_base.fvecs";
-        index_string["path_gt"] = dataname + "/gnd/idx_" + to_string(index_parameter["vecdim"]) + "d.ivecs";
+        index_string["path_q"] = path_dataset + "query.100K.fbin";
+        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
         exit(1);
     }
-    // else if (dataname == "crawl"){
-    //     if (subset_size_milllions > 2){
-    //         printf("error: glove size set error.\n");
-    //         exit(1);
-    //     }
-    //     // 42 840
-    //     int tokens = 42;
-    //     if (tokens == 42){
-    //         index_parameter["vecsize"] = 1917495;
-    //     } else if(tokens == 840){
-    //         index_parameter["vecsize"] = 2196018;
-    //     }
-    //     index_parameter["qsize"] = 10000;
-    //     vecdim = 300;
-    //     index_parameter["gt_maxnum"] = 100;
-    //     sprintf(index_string["path_q"], "crawl/crawl%dt_query.fvecs", tokens);
-    //     sprintf(index_string["path_data"], "crawl/crawl_base/crawl%dt_base.fvecs", tokens);
-    //     sprintf(index_string["path_gt"], "crawl/gnd/idx_%dt.ivecs", tokens);
-    // }
 }
 
 // load file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.
@@ -113,6 +91,22 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
 }
 
 template<typename data_T>
+void LoadVecsToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint32_t dims){
+    std::ifstream file_reader(file_path.c_str(), ios::binary);
+    for (size_t i = 0; i < nums; i++){
+        uint32_t dims_r;
+        file_reader.read((char *) &dims_r, sizeof(uint32_t));
+        if (dims != dims_r){
+            printf("Error, file size is error, dims_r: %u\n", dims_r);
+            exit(1);
+        }
+        file_reader.read((char *) (data_m + i * dims), dims * sizeof(data_T));
+    }
+    file_reader.close();
+    printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
+}
+
+template<typename data_T>
 void TransIntToFloat(float *dest, data_T *src, size_t &nums, size_t &dims){
     for (size_t i = 0; i < nums; i++){
         for (size_t j = 0; j < dims; j++){
@@ -137,13 +131,13 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
 
     float cur_max = std::numeric_limits<float>::max();
     uint32_t center_pt_id = 0;
-#pragma omp parallel for
+// #pragma omp parallel for
     for (size_t i = 0; i < nums; i++){
         float tmp_sum = 0;
         for (size_t j = 0; j < dims; j++){
             tmp_sum += powf((data_m[i * dims + j] - avg_m[j]), 2);
         }
-#pragma omp cratical
+// #pragma omp cratical
         {
             if (tmp_sum < cur_max){
                 cur_max = tmp_sum;

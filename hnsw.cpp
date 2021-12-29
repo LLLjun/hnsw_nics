@@ -65,12 +65,35 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
     return 1.0f * correct / total;
 }
 
+template<typename DTres>
+float comput_recall(std::vector<std::vector<unsigned>> &res, 
+                vector<std::priority_queue<std::pair<DTres, labeltype >>> answers, size_t &qsize, size_t &k){
+  size_t correct = 0;
+  size_t total = 0;
+  
+  for (size_t qi = 0; qi < qsize; qi++){
+    std::unordered_set<unsigned> g;
+    while (answers[qi].size()){
+        g.insert(answers[qi].top().second);
+        answers[qi].pop();
+    }
+    total += res[qi].size();
+
+    for (unsigned res_i : res[qi]){
+      if (g.find(res_i) != g.end()){
+        correct++;
+      }
+    }
+  }
+  return (float)correct / total;
+}
+
 template<typename DTval, typename DTres>
 static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    for (int i = k; i < 40; i += 5) {
+    for (int i = 20; i < 40; i += 5) {
         efs.push_back(i);
     }
     for (int i = 40; i < 100; i += 10) {
@@ -79,12 +102,8 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     for (int i = 100; i <= 500; i += 100) {
         efs.push_back(i);
     }
-    // for (int i = 500; i < 1500; i += 200) {
-    //     efs.push_back(i);
-    // }
 
     ofstream log_writer(log_file.c_str(), ios::trunc);
-    // log_writer << "ef\t" << "R@" << k << "\tqps" << endl;
     log_writer << "R@" << k << ",qps" << endl;
 
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
@@ -92,21 +111,32 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
-        clk_get stopw = clk_get();
 
-        float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
-        float time_us_per_query = stopw.getElapsedTimeus() / qsize;
+        std::vector<std::vector<unsigned>> res(qsize);
+
+        auto s = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < qsize; i++) {
+            std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+            while (result.size()){
+                res[i].push_back(result.top().second);
+                result.pop();
+            }
+        }
+        auto e = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = e - s;
+        double time_us_per_query = diff.count() / qsize;
+
+        float recall = comput_recall(res, answers, qsize, k);
+
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
 
-        cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t" 
+        cout << ef << "\t" << recall << "\t" << (1.0 / time_us_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
-        // log_writer << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << endl;
-        log_writer << recall << "," << 1e6 / time_us_per_query << endl;
+        log_writer << recall << "," << (1.0 / time_us_per_query) << endl;
 
-        if (recall > 1.0) {
-            cout << recall << "\t" << time_us_per_query << " us\n";
+        if (recall > 0.99) {
             break;
         }
     }
@@ -137,7 +167,9 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         DTval *massB = new DTval[vecsize * vecdim]();
 
         cout << "Loading base data:\n";
-        if (format == "float"){
+        if (dataname == "gist"){
+            LoadVecsToArray<float>(path_data, massB, vecsize, vecdim);
+        } else if (format == "float"){
             LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
         } else if (format == "uint8"){
             DTset *massB_int = new DTset[vecsize * vecdim]();
@@ -237,15 +269,54 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         exit(1);
     } else {
 
+        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
+
+#if EXPC1
+        ofstream log_writer(log_file.c_str(), ios::trunc);
+        // log_writer << "R@" << k << ",qps" << endl;
+        
+        size_t M = index_parameter["M"];
+        unsigned **matrix_dg = appr_alg->getDegreeRelation();
+        for (unsigned in_i = 0; in_i <= 2 * M; in_i++){
+            unsigned in_dg = 0;
+            for (unsigned out_i = 0; out_i <= 2 * M; out_i++){
+                in_dg += matrix_dg[out_i][in_i];
+            }
+            log_writer << in_dg << endl;
+        }
+        freearray<unsigned>(matrix_dg, 2 * M + 1);
+        log_writer.close();
+        exit(0);
+
+        // for (int n_out = 32; n_out > 0; n_out--){
+        //     appr_alg->resetEdge(n_out);
+
+        //     vector<size_t> dstb_in;
+        //     vector<size_t> dstb_out;
+        //     appr_alg->getDegreeDistri(dstb_in, dstb_out);
+
+        //     string path_index_i = index + "_out" + to_string(n_out) + ".bin"; 
+        //     appr_alg->saveIndex(path_index_i);
+        //     printf("save: %u \n", n_out);
+        // }
+        // exit(0);
+#endif
+
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
         DTval *massQ = new DTval[qsize * vecdim];
 
         cout << "Loading GT:\n";
-        LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
+        if (dataname == "gist"){
+            LoadVecsToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
+        } else {
+            LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
+        }
         printf("Load GT from %s done \n", path_gt.c_str());
         
         cout << "Loading queries:\n";
-        if (format == "float"){
+        if (dataname == "gist"){
+            LoadVecsToArray<float>(path_q, massQ, qsize, vecdim);
+        } else if (format == "float"){
             LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
         } else if (format == "uint8"){
             DTset *massQ_int = new DTset[qsize * vecdim]();
@@ -256,10 +327,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
             printf("Error, unsupport format \n");
             exit(1);
         }
-
         printf("Load queries from %s done \n", path_q.c_str());
-
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
     
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
@@ -283,7 +351,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
-    string label = "hnsw/";
+    string label = "exper_C1/";
 
     // support dataset: sift, gist, deep, glove, crawl
 
@@ -316,8 +384,10 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     
 #if EXI
     string hnsw_index = pre_index + "/" + unique_name + "_exi.bin";
+    string path_csv = pre_output + "/" + unique_name + "_exi.csv";
 #else
     string hnsw_index = pre_index + "/" + unique_name + ".bin";
+    string path_csv = pre_output + "/" + unique_name + ".csv";
 #endif
 
     map<string, size_t> index_parameter;
@@ -331,7 +401,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_string["using_dataset"] = using_dataset;
     index_string["format"] = format;
     index_string["hnsw_index"] = hnsw_index;
-    index_string["log_output"] = pre_output + "/" + unique_name + ".csv";
+    index_string["log_output"] = path_csv;
 
     CheckDataset(using_dataset, index_parameter, index_string);
     
@@ -346,7 +416,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     }
     
     if (stage == 1 || stage == 2){
-        assignToThisCore(17);
+        assignToThisCore(27);
         if (format == "float")
             search_index<float, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
         else if (format == "uint8")

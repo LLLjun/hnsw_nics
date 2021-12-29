@@ -454,14 +454,18 @@ namespace hnswlib {
                                        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         int level, bool isUpdate) {
             size_t Mcurmax = level ? maxM_ : maxM0_;
-
+#if EXI
+            std::vector<tableint> ex_list;
+            ex_list.reserve(top_candidates.size());
+#endif
             std::vector<tableint> selectedNeighbors;
             selectedNeighbors.reserve(M_);
 #if EXI
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_copy;
             while (top_candidates.size() > 0) {
                 top_candidates_copy.emplace(top_candidates.top());
-                ex_list.push_back(top_candidates.top().second);
+                if (top_candidates.size() < maxM0_)
+                    ex_list.push_back(top_candidates.top().second);
                 top_candidates.pop();
             }
             getNeighborsByHeuristic2(top_candidates_copy, M_, cur_c);
@@ -507,8 +511,16 @@ namespace hnswlib {
             }
 
 #if EXI
+            for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
+                ex_list.push_back(selectedNeighbors[idx]);
+            }
+            std::unordered_set<tableint> rever_node;
             for (size_t idx = 0; idx < ex_list.size(); idx++) {
                 tableint cur_i =  ex_list[idx];
+                if (rever_node.find(cur_i) != rever_node.end()){
+                    continue;
+                }
+                rever_node.insert(cur_i);
 #else
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
                 tableint cur_i =  selectedNeighbors[idx];
@@ -1340,7 +1352,7 @@ namespace hnswlib {
             input: graph
             output: indegree and outdegree relation [out * in]
         */
-        void getDegreeRelation(){
+        unsigned ** getDegreeRelation(){
             unsigned **matrix_dg = gene_array<unsigned>(maxM0_ + 1, maxM0_ + 1);
             unsigned *node_in = new unsigned[cur_element_count]();
             unsigned *node_out = new unsigned[cur_element_count]();
@@ -1380,8 +1392,9 @@ namespace hnswlib {
                 exit(1);
             }
 
-            freearray<unsigned>(matrix_dg, maxM0_ + 1);
+            // freearray<unsigned>(matrix_dg, maxM0_ + 1);
             printf("gene degree relation matrix done.\n");
+            return matrix_dg;
         }
 
         /*
@@ -1462,6 +1475,38 @@ namespace hnswlib {
             }
             return (dist_average / need_comp.size());
         }
+
+
+#if EXPC1
+
+        void resetEdge(int n_out) {
+#pragma omp parallel for
+            for (size_t i = 0; i < cur_element_count; i++){
+                linklistsizeint *ll_cur = get_linklist0(i);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+                
+                int n_real = std::min<int>(size, n_out);
+
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
+                for (size_t j = 0; j < size; j++) {
+                    candidates.emplace(
+                            fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(i),
+                                            dist_func_param_), data[j]);
+                }
+                getNeighborsByHeuristic2(candidates, n_real);
+
+                int indx = 0;
+                while (candidates.size() > 0) {
+                    data[indx] = candidates.top().second;
+                    candidates.pop();
+                    indx++;
+                }
+
+                setListCount(ll_cur, indx);
+            }
+        }
+#endif
 
         /*
             test sort and multi-add
