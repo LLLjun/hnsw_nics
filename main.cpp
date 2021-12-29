@@ -4,45 +4,40 @@
 #include <stdlib.h>
 #include <string>
 
-cpu_set_t  mask;
-inline void assignToThisCore(int core_id)
-{
-    CPU_ZERO(&mask);
-    CPU_SET(core_id, &mask);
-    sched_setaffinity(0, sizeof(mask), &mask);
-}
+using namespace std;
 
-void hnsw_impl(bool is_build, const std::string &using_dataset, std::string &graph_type);
+// cpu_set_t  mask;
+// inline void assignToThisCore(int core_id){
+//     CPU_ZERO(&mask);
+//     CPU_SET(core_id, &mask);
+//     sched_setaffinity(0, sizeof(mask), &mask);
+// }
+
+void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res);
 
 int main(int argc, char **argv) {
     
-    bool is_build;
-    std::string graph_type = "base";
-    // assignToThisCore(19);
+    int stage;
 
-    if (argc != 4){
-        printf("Usage: ./main [stage: build or search] [dataset]\n");
+    if (std::string(argv[1]) == "build")
+        stage = 0;
+    else if (std::string(argv[1]) == "search")
+        stage = 1;
+    else if (std::string(argv[1]) == "both")
+        stage = 2;
+    else {
+        printf("Usage: ./main [stage: search] [format] [dataset] [M_size] [efc] [M] [k]\n");
         exit(1);
-    } else {
-        if (std::string(argv[1]) == "build")
-            is_build = true;
-        else if (std::string(argv[1]) == "search")
-            is_build = false;
-        else {
-            printf("[stage: build or search]\n");
-            exit(1);
-        }
-        
-        graph_type = std::string(argv[3]);
-        if ((graph_type != "knng") && (graph_type != "rng") && (graph_type != "base")) {
-            printf("[graph type: knng, rng or base]\n");
-            exit(1);
-        }
     }
-    if (!is_build)
-        assignToThisCore(19);
+
+    string using_dataset = string(argv[2]);
+    string format = string(argv[3]);
+    size_t M_size = atol(argv[4]);
+    size_t efc = atol(argv[5]);
+    size_t neibor = atol(argv[6]);
+    size_t k_res = atol(argv[7]);
     
-    hnsw_impl(is_build, std::string(argv[2]), graph_type);
+    hnsw_impl(stage, using_dataset, format, M_size, efc, neibor, k_res);
 
     return 0;
 };

@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#include <sched.h>
 #include <iostream>
 #include <fstream>
 #include <queue>
@@ -11,6 +13,13 @@
 
 using namespace std;
 using namespace hnswlib;
+
+cpu_set_t  mask;
+inline void assignToThisCore(int core_id){
+    CPU_ZERO(&mask);
+    CPU_SET(core_id, &mask);
+    sched_setaffinity(0, sizeof(mask), &mask);
+}
 
 template<typename DTres>
 static void
@@ -59,23 +68,25 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 template<typename DTval, typename DTres>
 static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
-               vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
+               vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    // for (int i = k; i < 30; i++) {
-    //     efs.push_back(i);
-    // }
+    for (int i = k; i < 40; i += 5) {
+        efs.push_back(i);
+    }
     for (int i = 40; i < 100; i += 10) {
         efs.push_back(i);
     }
-    for (int i = 100; i < 500; i += 40) {
+    for (int i = 100; i <= 500; i += 100) {
         efs.push_back(i);
     }
-    for (int i = 500; i < 1500; i += 200) {
-        efs.push_back(i);
-    }
-    // for (int i = 1500; i < 10500; i += 1000) {
+    // for (int i = 500; i < 1500; i += 200) {
     //     efs.push_back(i);
     // }
+
+    ofstream log_writer(log_file.c_str(), ios::trunc);
+    // log_writer << "ef\t" << "R@" << k << "\tqps" << endl;
+    log_writer << "R@" << k << ",qps" << endl;
+
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -90,6 +101,10 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
+
+        // log_writer << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << endl;
+        log_writer << recall << "," << 1e6 / time_us_per_query << endl;
+
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
             break;
@@ -112,27 +127,35 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
     size_t vecsize = index_parameter["vecsize"];
     size_t vecdim = index_parameter["vecdim"];
     string path_data = index_string["path_data"];
-    string graph_type = "base";
+    string format = index_string["format"];
 
     if (exists_test(index)){
         printf("Index %s is existed \n", index.c_str());
         return;
     } else {
 
-        DTset *massB = new DTset[vecsize * vecdim]();
+        DTval *massB = new DTval[vecsize * vecdim]();
 
         cout << "Loading base data:\n";
-        LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
+        if (format == "float"){
+            LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
+        } else if (format == "uint8"){
+            DTset *massB_int = new DTset[vecsize * vecdim]();
+            LoadBinToArray<DTset>(path_data, massB_int, vecsize, vecdim);
+            TransIntToFloat<DTset>(massB, massB_int, vecsize, vecdim);
+            delete[] massB_int;
+        } else {
+            printf("Error, unsupport format \n");
+            exit(1);
+        }
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         // appr_alg->testSortMultiadd();
         // exit(0);
         
-        appr_alg->graph_type = graph_type;
-        appr_alg->hit_miss = 0;
-        appr_alg->hit_total = 0;
+
 #if PLATG
-        unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
+        unsigned center_id = compArrayCenter<DTval>(massB, vecsize, vecdim);
         appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
 #else
         appr_alg->addPoint((void *) (massB), (size_t) 0);
@@ -205,6 +228,9 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
     size_t k = index_parameter["k"];
     size_t qsize = index_parameter["qsize"];
     size_t gt_maxnum = index_parameter["gt_maxnum"];
+    string format = index_string["format"];
+
+    string log_file = index_string["log_output"];
 
     if (!exists_test(index)){
         printf("Error, index %s is unexisted \n", index.c_str());
@@ -212,14 +238,25 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
     } else {
 
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
-        DTset *massQ = new DTset[qsize * vecdim];
+        DTval *massQ = new DTval[qsize * vecdim];
 
         cout << "Loading GT:\n";
         LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
         printf("Load GT from %s done \n", path_gt.c_str());
         
         cout << "Loading queries:\n";
-        LoadBinToArray<DTset>(path_q, massQ, qsize, vecdim);
+        if (format == "float"){
+            LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
+        } else if (format == "uint8"){
+            DTset *massQ_int = new DTset[qsize * vecdim]();
+            LoadBinToArray<DTset>(path_q, massQ_int, qsize, vecdim);
+            TransIntToFloat<DTset>(massQ, massQ_int, qsize, vecdim);
+            delete[] massQ_int;
+        } else {
+            printf("Error, unsupport format \n");
+            exit(1);
+        }
+
         printf("Load queries from %s done \n", path_q.c_str());
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
@@ -229,7 +266,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
         cout << "Comput recall: \n";
-        test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
+        test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k, log_file);
 
         // // get degree info
         // vector<size_t> dstb_in;
@@ -242,7 +279,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
     }
 }
 
-void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
+void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res){
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
@@ -265,21 +302,22 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
         }
     }
 
-	size_t subset_size_milllions = 1;
-	size_t efConstruction = 40;
-	size_t M = 16;
-    size_t k = 10;
+	size_t subset_size_milllions = M_size;
+	size_t efConstruction = efc;
+	size_t M = neibor;
+    size_t k = k_res;
+
+    string unique_name = using_dataset + to_string(subset_size_milllions) + 
+                        "m_ef" + to_string(efConstruction) + "_M" + to_string(M) + "_k" + to_string(k);
 	
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
     
 #if EXI
-    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + "_" + graph_type + "_exi.bin";
+    string hnsw_index = pre_index + "/" + unique_name + "_exi.bin";
 #else
-    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + "_" + graph_type + ".bin";
+    string hnsw_index = pre_index + "/" + unique_name + ".bin";
 #endif
 
     map<string, size_t> index_parameter;
@@ -291,19 +329,28 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
 
     map<string, string> index_string;
     index_string["using_dataset"] = using_dataset;
+    index_string["format"] = format;
     index_string["hnsw_index"] = hnsw_index;
-    index_string["log_output"] = pre_output + "/" + using_dataset + to_string(subset_size_milllions) + "m.log";
+    index_string["log_output"] = pre_output + "/" + unique_name + ".csv";
 
     CheckDataset(using_dataset, index_parameter, index_string);
     
     L2Space l2space(index_parameter["vecdim"]);
 
-    printf("%s\n", index_string["path_data"].c_str());
 
-    if (is_build){
-        build_index<DTSET, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
-    } else{
-        search_index<DTSET, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
+    if (stage == 0 || stage == 2){
+        if (format == "float")
+            build_index<float, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
+        else if (format == "uint8")
+            build_index<uint8_t, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
+    }
+    
+    if (stage == 1 || stage == 2){
+        assignToThisCore(17);
+        if (format == "float")
+            search_index<float, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
+        else if (format == "uint8")
+            search_index<uint8_t, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
     }
     return;
 }

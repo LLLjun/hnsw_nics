@@ -335,9 +335,6 @@ namespace hnswlib {
             return top_candidates;
         }
 
-        mutable std::atomic<long> hit_miss;
-        mutable std::atomic<long> hit_total;
-
         void getNeighborsByHeuristic2(
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         const size_t M, tableint insert_node=0, bool isCollect = false) {
@@ -417,18 +414,9 @@ namespace hnswlib {
                 }
                 if (good) {
                     return_list.push_back(curent_pair);
-                } else {
-                    if (isCollect){
-                        hit_miss++;
-                        cur_miss++;
-                    }
                 }
             }
 #endif
-            if (isCollect){
-                hit_total += M;
-                // printf("%.3f\n", (float)cur_miss / M);
-            }
             for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
@@ -466,72 +454,32 @@ namespace hnswlib {
                                        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         int level, bool isUpdate) {
             size_t Mcurmax = level ? maxM_ : maxM0_;
-#if EXI
-            std::vector<tableint> ex_list;
-            ex_list.reserve(top_candidates.size());
-#endif
+
             std::vector<tableint> selectedNeighbors;
-            if (graph_type == "knng"){
-                selectedNeighbors.reserve(Mcurmax);
-                while (top_candidates.size() > 0) {
-                    if (top_candidates.size() <= Mcurmax)
-                        selectedNeighbors.push_back(top_candidates.top().second);
-                    top_candidates.pop();
-                }
-            } else if (graph_type == "rng") {
-                selectedNeighbors.reserve(Mcurmax);
+            selectedNeighbors.reserve(M_);
 #if EXI
-                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_copy;
-                while (top_candidates.size() > 0) {
-                    top_candidates_copy.emplace(top_candidates.top());
-                    ex_list.push_back(top_candidates.top().second);
-                    top_candidates.pop();
-                }
-                getNeighborsByHeuristic2(top_candidates_copy, Mcurmax);
-                if (top_candidates_copy.size() > Mcurmax)
-                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
-                while (top_candidates_copy.size() > 0) {
-                    selectedNeighbors.push_back(top_candidates_copy.top().second);
-                    top_candidates_copy.pop();
-                }
-#else
-                getNeighborsByHeuristic2(top_candidates, Mcurmax);
-                if (top_candidates.size() > Mcurmax)
-                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
-                while (top_candidates.size() > 0) {
-                    selectedNeighbors.push_back(top_candidates.top().second);
-                    top_candidates.pop();
-                }
-#endif
-            } else if (graph_type == "base") {
-                selectedNeighbors.reserve(M_);
-#if EXI
-                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_copy;
-                while (top_candidates.size() > 0) {
-                    top_candidates_copy.emplace(top_candidates.top());
-                    ex_list.push_back(top_candidates.top().second);
-                    top_candidates.pop();
-                }
-                getNeighborsByHeuristic2(top_candidates_copy, M_, cur_c);
-                if (top_candidates_copy.size() > M_)
-                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
-                while (top_candidates_copy.size() > 0) {
-                    selectedNeighbors.push_back(top_candidates_copy.top().second);
-                    top_candidates_copy.pop();
-                }
-#else
-                getNeighborsByHeuristic2(top_candidates, M_);
-                if (top_candidates.size() > M_)
-                    throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
-                while (top_candidates.size() > 0) {
-                    selectedNeighbors.push_back(top_candidates.top().second);
-                    top_candidates.pop();
-                }
-#endif
-            } else {
-                printf("Error, unknown graph type \n");
-                exit(1);
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_copy;
+            while (top_candidates.size() > 0) {
+                top_candidates_copy.emplace(top_candidates.top());
+                ex_list.push_back(top_candidates.top().second);
+                top_candidates.pop();
             }
+            getNeighborsByHeuristic2(top_candidates_copy, M_, cur_c);
+            if (top_candidates_copy.size() > M_)
+                throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+            while (top_candidates_copy.size() > 0) {
+                selectedNeighbors.push_back(top_candidates_copy.top().second);
+                top_candidates_copy.pop();
+            }
+#else
+            getNeighborsByHeuristic2(top_candidates, M_);
+            if (top_candidates.size() > M_)
+                throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
+            while (top_candidates.size() > 0) {
+                selectedNeighbors.push_back(top_candidates.top().second);
+                top_candidates.pop();
+            }
+#endif
 
             tableint next_closest_entry_point = selectedNeighbors.back();
 
