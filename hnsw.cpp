@@ -136,7 +136,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         log_writer << recall << "," << (1.0 / time_us_per_query) << endl;
 
-        if (recall > 0.99) {
+        if (recall > 0.98) {
             break;
         }
     }
@@ -167,9 +167,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         DTval *massB = new DTval[vecsize * vecdim]();
 
         cout << "Loading base data:\n";
-        if (dataname == "gist"){
-            LoadVecsToArray<float>(path_data, massB, vecsize, vecdim);
-        } else if (format == "float"){
+        if (format == "float"){
             LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
         } else if (format == "uint8"){
             DTset *massB_int = new DTset[vecsize * vecdim]();
@@ -271,52 +269,15 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
 
-#if EXPC1
-        ofstream log_writer(log_file.c_str(), ios::trunc);
-        // log_writer << "R@" << k << ",qps" << endl;
-        
-        size_t M = index_parameter["M"];
-        unsigned **matrix_dg = appr_alg->getDegreeRelation();
-        for (unsigned in_i = 0; in_i <= 2 * M; in_i++){
-            unsigned in_dg = 0;
-            for (unsigned out_i = 0; out_i <= 2 * M; out_i++){
-                in_dg += matrix_dg[out_i][in_i];
-            }
-            log_writer << in_dg << endl;
-        }
-        freearray<unsigned>(matrix_dg, 2 * M + 1);
-        log_writer.close();
-        exit(0);
-
-        // for (int n_out = 32; n_out > 0; n_out--){
-        //     appr_alg->resetEdge(n_out);
-
-        //     vector<size_t> dstb_in;
-        //     vector<size_t> dstb_out;
-        //     appr_alg->getDegreeDistri(dstb_in, dstb_out);
-
-        //     string path_index_i = index + "_out" + to_string(n_out) + ".bin"; 
-        //     appr_alg->saveIndex(path_index_i);
-        //     printf("save: %u \n", n_out);
-        // }
-        // exit(0);
-#endif
-
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
         DTval *massQ = new DTval[qsize * vecdim];
 
         cout << "Loading GT:\n";
-        if (dataname == "gist"){
-            LoadVecsToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
-        } else {
-            LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
-        }
+        LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
         printf("Load GT from %s done \n", path_gt.c_str());
         
         cout << "Loading queries:\n";
-        if (dataname == "gist"){
-            LoadVecsToArray<float>(path_q, massQ, qsize, vecdim);
-        } else if (format == "float"){
+        if (format == "float"){
             LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
         } else if (format == "uint8"){
             DTset *massQ_int = new DTset[qsize * vecdim]();
@@ -351,7 +312,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
-    string label = "exper_C1/";
+    string label = "flat/";
 
     // support dataset: sift, gist, deep, glove, crawl
 
