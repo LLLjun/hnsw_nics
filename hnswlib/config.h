@@ -13,17 +13,17 @@ typedef float DTVAL;
 typedef float DTRES;
 
 // for profile
-#define EXI true
+#define EXI false
 
 // for lstm
-#define USESAMQ false
-#define CREATESF false
+#define USESAMQ true
+#define CREATESF true
 
-#define ITST 20
-#define ITLE 30
+#define ITST 15
+#define ITLE 40
 #define OLLE 0
 #define NMSG 1
 #define EFS_MAX 300
 
 #define MANUAL false
-#define MANUALRUN true
+#define MANUALRUN false

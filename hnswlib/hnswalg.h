@@ -249,6 +249,7 @@ namespace hnswlib {
 
 #if (CREATESF || MANUAL)
         mutable std::vector<float> candi_top;
+        mutable std::vector<std::vector<float>> candi_top_neig;
         mutable std::vector<float> bound;
         mutable std::vector<float> res_first;
         mutable std::vector<float> res_tenth;
@@ -270,6 +271,8 @@ namespace hnswlib {
 
 #if (CREATESF || MANUAL)
             std::vector<float>().swap(candi_top);
+            std::vector<std::vector<float>>().swap(candi_top_neig);
+            
             std::vector<float>().swap(bound);
             std::vector<float>().swap(res_first);
             std::vector<float>().swap(res_tenth);
@@ -319,6 +322,7 @@ namespace hnswlib {
                 }
                 candidate_set.pop();
 #if (CREATESF || MANUAL)
+                std::vector<float> top_neig(maxM0_, -1);
                 bound.push_back(lowerBound);
                 candi_top.push_back(-current_node_pair.first);
                 if (res_first.empty())
@@ -359,6 +363,11 @@ namespace hnswlib {
                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                                  _MM_HINT_T0);////////////
 #endif
+
+#if (CREATESF || MANUAL)
+                    top_neig[j-1] = fstdistfunc_(data_point, getDataByInternalId(candidate_id), dist_func_param_);
+#endif
+
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
 
                         visited_array[candidate_id] = visited_array_tag;
@@ -407,6 +416,7 @@ namespace hnswlib {
                     }
                 }
 #if (CREATESF || MANUAL)
+                candi_top_neig.push_back(top_neig);
                 if (!top_candidates_ten.empty())
                     res_tenth.push_back(top_candidates_ten.top().first);
 #elif MANUALRUN
@@ -1873,14 +1883,16 @@ namespace hnswlib {
                                     size_t iter_start, size_t iter_len, size_t overlap, size_t num_stage){
             // search
             std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
-            unsigned min_step = 0;
+            std::vector<int> min_step_list;
             {
                 size_t all_step = res_tenth.size();
                 float cur_dist = res_tenth.back();
                 for (int j = all_step - 1; j >= 0; j--){
                     if (res_tenth[j] > cur_dist){
-                        min_step = j + 1;
-                        break;
+                        cur_dist = res_tenth[j];
+                        min_step_list.push_back(j + 1);
+                        if (min_step_list.size() >= k)
+                            break;
                     }
                 }
             }
@@ -1907,7 +1919,7 @@ namespace hnswlib {
                             keep_k = -1;
                         }
                         if (keep_k >= len_observe){
-                            iter_start = si - keep_k + 1;
+                            iter_start = std::max<size_t>(si - keep_k + 1, iter_start);
                             is_find_k = true;
                         }
                     }
@@ -1927,9 +1939,13 @@ namespace hnswlib {
             std::vector<Lstm_Feature>().swap(SeqFeatrue);
             SeqFeatrue.resize(expect_len);
 
+            cur_featrue.dist_candi_top_neig.resize(maxM0_);
+
             for (size_t st_i = 0; st_i < real_stage; st_i++){
                 cur_featrue.stage = st_i;
                 size_t start_st = iter_start + st_i * (iter_len - overlap);
+                
+                start_st -= 10;
 
                 for (size_t i = 0; i < iter_len; i++){
                     size_t iter_c = start_st + i;
@@ -1961,10 +1977,17 @@ namespace hnswlib {
                     else
                         cur_featrue.inter = 0;
 
-                    int remain = min_step - iter_c;
-                    remain = remain > 0 ? 1 : 0;
-                    // cur_featrue.remain_step = (float)remain / EFS_MAX;
-                    cur_featrue.remain_step = remain;
+                    cur_featrue.dist_candi_top_neig.swap(candi_top_neig[iter_c]);
+
+                    int loss = 0;
+                    for (int change: min_step_list){
+                        if (change > iter_c)
+                            loss++;
+                        else
+                            break;
+                    }
+
+                    cur_featrue.remain_step = (float) loss / k;
 
                     SeqFeatrue[st_i * iter_len + i] = cur_featrue;
                 }

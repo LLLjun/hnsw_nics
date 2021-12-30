@@ -368,33 +368,36 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         size_t num_stage = NMSG;
 #if USESAMQ
         string path_train = path_aware + "train_" + to_string(iter_start) + "_" + to_string(iter_len) + 
-                            "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".txt";
+                            "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".csv";
 #else
         string path_train = path_aware + "test_" + to_string(iter_start) + "_" + to_string(iter_len) + 
-                            "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".txt";
+                            "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".csv";
 #endif
         ofstream train_data(path_train.c_str(), ios::trunc);
         vector<Lstm_Feature> SeqFeature;
         appr_alg->setEf(efs_max);
 
-        train_data  << "q_id" << "\t" 
-                    << "stage" << "\t"
-                    << "cycle" << "\t"
+        train_data  << "q_id" << "," 
+                    << "stage" << ","
+                    << "cycle" << ","
 
-                    // << "dist_bound" << "\t"
-                    << "dist_candi_top" << "\t"
-                    << "dist_result_k" << "\t"
-                    << "dist_result_1" << "\t"
+                    // << "dist_bound" << ","
+                    << "dist_candi_top" << ","
+                    << "dist_result_k" << ","
+                    << "dist_result_1" << ","
 
-                    << "diff_top" << "\t"
-                    << "diff_top_k" << "\t"
-                    << "diff_k_1" << "\t"
+                    << "diff_top" << ","
+                    << "diff_top_k" << ","
+                    << "diff_k_1" << ",";
 
-                    // << "div_top_1" << "\t"
-                    // << "div_k_1" << "\t"
-                    // << "inter" << "\t"
+                    // << "div_top_1" << ","
+                    // << "div_k_1" << ","
+                    // << "inter" << ","
 
-                    << "remain_step" << endl;
+                    for (size_t ii = 0; ii < appr_alg->maxM0_; ii++)
+                        train_data << "ng_" + to_string(ii) << ",";
+
+                    train_data << "remain_step" << endl;
 
         // qsize = 1000;
         for (size_t i = 0; i < qsize; i++){
@@ -403,24 +406,27 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
             appr_alg->createSequenceFeature(i, (massQ + i * vecdim), SeqFeature, k, iter_start, iter_len, ovlp_len, num_stage);
             for (Lstm_Feature fea_cur: SeqFeature){
                 // if (i > 449)
-                //     train_data << (fea_cur.q_id - 1) << "\t";
+                //     train_data << (fea_cur.q_id - 1) << ",";
                 // else
-                train_data << fea_cur.q_id << "\t";
-                train_data << fea_cur.stage << "\t";
-                train_data << fea_cur.cycle << "\t";
+                train_data << fea_cur.q_id << ",";
+                train_data << fea_cur.stage << ",";
+                train_data << fea_cur.cycle << ",";
 
-                // train_data << fea_cur.dist_bound << "\t";
-                train_data << fea_cur.dist_candi_top << "\t";
-                train_data << fea_cur.dist_result_k << "\t";
-                train_data << fea_cur.dist_result_1 << "\t";
+                // train_data << fea_cur.dist_bound << ",";
+                train_data << fea_cur.dist_candi_top << ",";
+                train_data << fea_cur.dist_result_k << ",";
+                train_data << fea_cur.dist_result_1 << ",";
 
-                train_data << fea_cur.diff_top << "\t";
-                train_data << fea_cur.diff_top_k << "\t";
-                train_data << fea_cur.diff_k_1 << "\t";
+                train_data << fea_cur.diff_top << ",";
+                train_data << fea_cur.diff_top_k << ",";
+                train_data << fea_cur.diff_k_1 << ",";
 
-                // train_data << fea_cur.div_top_1 << "\t";
-                // train_data << fea_cur.div_k_1 << "\t";
-                // train_data << fea_cur.inter << "\t";
+                // train_data << fea_cur.div_top_1 << ",";
+                // train_data << fea_cur.div_k_1 << ",";
+                // train_data << fea_cur.inter << ",";
+
+                for (size_t ii = 0; ii < appr_alg->maxM0_; ii++)
+                    train_data << fea_cur.dist_candi_top_neig[ii] << ",";
 
                 train_data << fea_cur.remain_step << endl;
             }
@@ -452,7 +458,7 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     }
 
 	size_t subset_size_milllions = 1;
-	size_t efConstruction = 40;
+	size_t efConstruction = 100;
 	size_t M = 16;
     size_t k = 10;
 	

@@ -127,7 +127,9 @@ namespace hnswlib {
         float div_k_1;
         float inter;
 
-        int remain_step;
+        std::vector<float> dist_candi_top_neig;
+
+        float remain_step;
 
         // unsigned iscontinue;
     };
