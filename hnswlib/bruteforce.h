@@ -49,8 +49,6 @@ namespace hnswlib {
             {
                 std::unique_lock<std::mutex> lock(index_lock);
 
-
-
                 auto search=dict_external_to_internal.find(label);
                 if (search != dict_external_to_internal.end()) {
                     idx=search->second;

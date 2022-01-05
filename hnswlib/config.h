@@ -5,9 +5,8 @@
 
 #define MODE base
 
+// SIFT use above
 // typedef unsigned char DTSET;
-// typedef unsigned char DTVAL;
-// typedef int DTRES;
 typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;

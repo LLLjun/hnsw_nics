@@ -9,14 +9,16 @@ using namespace std;
 void CheckDataset(const string &dataname, size_t &subset_size_milllions, 
                 size_t &vecsize, size_t &qsize, size_t &vecdim, size_t &gt_maxnum,
                 string &path_q, string &path_data , string &path_gt){
+    
+    string path_dataset = "/home/usr-xkIJigVq/DataSet/" + dataname + "/";
 
     if (dataname == "sift"){
         qsize = 10000;
         vecdim = 128;
-        gt_maxnum = 1000;
-        path_q = "dataset/bigann/bigann_query.bvecs";
-        path_data = "dataset/bigann/bigann_base.bvecs";
-        path_gt = "dataset/bigann/gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
+        gt_maxnum = 100;
+        path_q = path_dataset + "query.public.10K.u8bin";
+        path_data = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.u8bin";
+        path_gt = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else if (dataname == "gist"){
         if (subset_size_milllions > 1){
             printf("error: gist size set error.\n");
@@ -25,9 +27,9 @@ void CheckDataset(const string &dataname, size_t &subset_size_milllions,
         qsize = 1000;
         vecdim = 960;
         gt_maxnum = 100;
-        path_q = "dataset/gist/gist_query.fvecs";
-        path_data = "dataset/gist/gist_base.fvecs";
-        path_gt = "dataset/gist/gist_groundtruth.ivecs";
+        path_q = path_dataset + "gist_query.fvecs";
+        path_data = path_dataset + "gist_base.fvecs";
+        path_gt = path_dataset + "gist_groundtruth.ivecs";
     } else if (dataname == "deep"){
         if (subset_size_milllions > 100){
             printf("error: deep size set error.\n");
@@ -36,23 +38,20 @@ void CheckDataset(const string &dataname, size_t &subset_size_milllions,
         qsize = 10000;
         vecdim = 96;
         gt_maxnum = 100;
-        path_q = "dataset/deep/deep1B_queries.fvecs";
-        path_data = "dataset/deep/deep_base/deep_base.fvecs";
-        path_gt = "dataset/deep/deep_gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
-    } else if (dataname == "glove"){
-        if (subset_size_milllions > 1){
-            printf("error: glove size set error.\n");
+        path_q = path_dataset + "query.public.10K.fbin";
+        path_data = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        path_gt = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+    } else if (dataname == "turing"){
+        if (subset_size_milllions > 100){
+            printf("error: turing size set error.\n");
             exit(1);
         }
-        // 1193515 1193517
-        vecsize = 1193515;
-        qsize = 10000;
-        // (25) 50 100 200
-        vecdim = 25;
+        qsize = 100000;
+        vecdim = 100;
         gt_maxnum = 100;
-        path_q = "glove/glove" + to_string(vecdim) + "d_query.fvecs";
-        path_data = "glove/glove_base/glove" + to_string(vecdim) + "d_base.fvecs";
-        path_gt = dataname + "/gnd/idx_" + to_string(vecdim) + "d.ivecs";
+        path_q = path_dataset + "query100K.fbin";
+        path_data = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        path_gt = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
         exit(1);
@@ -109,6 +108,15 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
     file_writer.write((char *) data_m, nums * dims * sizeof(data_T));
     file_writer.close();
     printf("Write %u * %u data to %s done.\n", nums, dims, file_path.c_str());
+}
+
+template<typename data_T>
+void TransIntToFloat(float *dest, data_T *src, size_t &nums, size_t &dims){
+    for (size_t i = 0; i < nums; i++){
+        for (size_t j = 0; j < dims; j++){
+            dest[i * dims + j] = (float) src[i * dims + j];
+        }
+    }
 }
 
 template<typename data_T>

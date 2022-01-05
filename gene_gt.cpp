@@ -42,14 +42,21 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
         //     exit(0);
         // }
 
-        DTset *massB = new DTset[vecsize * vecdim]();
+        DTval *massB = new DTval[vecsize * vecdim]();
         if (massB == nullptr){
             printf("Error, failed to allo mmeory\n");
             exit(1);
         }
 
         cout << "Loading base data:\n";
-        LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
+        if (dataname == "sift"){
+            DTset *massB_set = new DTset[vecsize * vecdim]();
+            LoadBinToArray<DTset>(path_data, massB_set, vecsize, vecdim);
+            TransIntToFloat<DTset>(massB, massB_set, vecsize, vecdim);
+            delete[] massB_set;
+        } else {
+            LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
+        }
 
         cout << "Building index:\n";
         BruteforceSearch<DTres>* brute_alg = new BruteforceSearch<DTres>(&s, vecsize);
@@ -76,12 +83,21 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         BruteforceSearch<DTres> *brute_alg = new BruteforceSearch<DTres>(&s, index);
 
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
-        DTset *massQ = new DTset[qsize * vecdim];
+        DTval *massQ = new DTval[qsize * vecdim];
         
         cout << "Loading queries:\n";
-        LoadBinToArray<DTset>(path_q, massQ, qsize, vecdim);
+        if (dataname == "sift"){
+            DTset *massQ_set = new DTset[qsize * vecdim]();
+            LoadBinToArray<DTset>(path_q, massQ_set, qsize, vecdim);
+            TransIntToFloat<DTset>(massQ, massQ_set, qsize, vecdim);
+            delete[] massQ_set;
+        } else {
+            LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
+        }
+
         printf("Load queries from %s done \n", path_q.c_str());
 
+#pragma omp parallel for
         for (size_t i = 0; i < qsize; i++){
             std::priority_queue<std::pair<DTres, labeltype >> rs = brute_alg->searchKnn(massQ + i * vecdim, k);
             size_t kk = k;
@@ -133,9 +149,6 @@ void gene_gt_impl(bool is_build, const string &using_dataset, size_t &M_size){
     L2Space l2space(vecdim);
 
     string hnsw_index = pre_index + using_dataset + to_string(M_size) + "m_brute.bin";
-    path_data = pre_output + "base." + to_string(M_size) + "m.fbin";
-    path_q = prefix + "query.public.10K.fbin";
-    path_gt = pre_output + "groundtruth." + to_string(M_size) + "m.bin";
 
     if (is_build){
         build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data);
