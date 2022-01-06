@@ -93,18 +93,22 @@ static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    for (int i = 20; i < 40; i += 5) {
-        efs.push_back(i);
-    }
-    for (int i = 40; i < 100; i += 10) {
-        efs.push_back(i);
-    }
-    for (int i = 100; i <= 500; i += 100) {
+    // for (int i = 20; i < 40; i += 5) {
+    //     efs.push_back(i);
+    // }
+    // for (int i = 40; i < 100; i += 10) {
+    //     efs.push_back(i);
+    // }
+    // for (int i = 100; i <= 500; i += 100) {
+    //     efs.push_back(i);
+    // }
+
+    for (int i = 20; i <= 100; i += 10) {
         efs.push_back(i);
     }
 
-    ofstream log_writer(log_file.c_str(), ios::trunc);
-    log_writer << "R@" << k << ",qps" << endl;
+    ofstream csv_writer(log_file.c_str(), ios::trunc);
+    csv_writer << "R@" << k << ",qps" << endl;
 
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
@@ -134,7 +138,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << (1.0 / time_us_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
-        log_writer << recall << "," << (1.0 / time_us_per_query) << endl;
+        csv_writer << recall << "," << (1.0 / time_us_per_query) << endl;
 
         if (recall > 0.98) {
             break;
@@ -158,6 +162,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
     size_t vecdim = index_parameter["vecdim"];
     string path_data = index_string["path_data"];
     string format = index_string["format"];
+    string path_build_txt = index_string["path_build_txt"];
 
     if (exists_test(index)){
         printf("Index %s is existed \n", index.c_str());
@@ -193,8 +198,9 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         cout << "Building index:\n";
         int j1 = 0;
         clk_get stopw = clk_get();
-        clk_get stopw_full = clk_get();
         size_t report_every = vecsize / 10;
+
+        auto s = std::chrono::high_resolution_clock::now();
 #pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {
 #pragma omp critical
@@ -218,7 +224,12 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
             appr_alg->addPoint((void *) (massB + i * vecdim), i);
 #endif
         }
-        cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
+
+        auto e = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = e - s;
+        float time_build = diff.count();
+
+        cout << "Build time:" << time_build << "  seconds\n";
         delete[] massB;
         if (isSave)
             appr_alg->saveIndex(index);
@@ -237,12 +248,13 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         // get degree info
         vector<size_t> dstb_in;
         vector<size_t> dstb_out;
-        appr_alg->getDegreeDistri(dstb_in, dstb_out);
+        float odg_avg = appr_alg->getDegreeDistri(dstb_in, dstb_out);
 
-        // // get her hit
-        // size_t hit_miss = appr_alg->hit_miss;
-        // size_t hit_total = appr_alg->hit_total;
-        // printf("miss: %u, total: %u, prop: %.3f \n", hit_miss, hit_total, (float)hit_miss / hit_total);
+        // write to build txt
+        ofstream txt_writer(path_build_txt.c_str(), ios::trunc);
+        txt_writer << "Build time: " << time_build << " seconds\n";
+        txt_writer << "Average degree: " << odg_avg << endl;
+        txt_writer.close();
     }
 }
 
@@ -260,7 +272,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
     size_t gt_maxnum = index_parameter["gt_maxnum"];
     string format = index_string["format"];
 
-    string log_file = index_string["log_output"];
+    string path_search_csv = index_string["path_search_csv"];
 
     if (!exists_test(index)){
         printf("Error, index %s is unexisted \n", index.c_str());
@@ -295,7 +307,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
         cout << "Comput recall: \n";
-        test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k, log_file);
+        test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k, path_search_csv);
 
         // // get degree info
         // vector<size_t> dstb_in;
@@ -345,10 +357,12 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     
 #if EXI
     string hnsw_index = pre_index + "/" + unique_name + "_exi.bin";
-    string path_csv = pre_output + "/" + unique_name + "_exi.csv";
+    string path_build_txt = pre_output + "/" + unique_name + "_build_exi.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search_exi.csv";
 #else
     string hnsw_index = pre_index + "/" + unique_name + ".bin";
-    string path_csv = pre_output + "/" + unique_name + ".csv";
+    string path_build_txt = pre_output + "/" + unique_name + "_build.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search.csv";
 #endif
 
     map<string, size_t> index_parameter;
@@ -362,7 +376,8 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_string["using_dataset"] = using_dataset;
     index_string["format"] = format;
     index_string["hnsw_index"] = hnsw_index;
-    index_string["log_output"] = path_csv;
+    index_string["path_build_txt"] = path_build_txt;
+    index_string["path_search_csv"] = path_search_csv;
 
     CheckDataset(using_dataset, index_parameter, index_string);
     

@@ -9,4 +9,3 @@ typedef float DTRES;
 
 // for profile
 #define EXI false
-#define SORTRNG false

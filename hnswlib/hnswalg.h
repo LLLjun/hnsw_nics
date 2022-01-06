@@ -348,52 +348,7 @@ namespace hnswlib {
                 queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
                 top_candidates.pop();
             }
-#if SORTRNG
-            std::unordered_set<size_t> g;
 
-            size_t vdim = *((size_t *)dist_func_param_);
-            float *diffData = new float[vdim]();
-            float *vec_o = (float *)getDataByInternalId(insert_node);
-
-            while (queue_closest.size()){
-                if (return_list.size() >= M)
-                    break;
-
-                std::pair<dist_t, tableint> curent_pair = queue_closest.top();
-                queue_closest.pop();
-                float *vec_n = (float *)getDataByInternalId(curent_pair.second);
-
-                std::priority_queue<std::pair<float, size_t>, std::vector<std::pair<float, size_t>>, GreaterByFirst> set_sort;
-
-                for (size_t j = 0; j < vdim; j++){
-                    diffData[j] = vec_n[j] - vec_o[j];
-                    if (set_sort.size() < 1)
-                        set_sort.emplace(std::abs(diffData[j]), j * 10 + signf(diffData[j]));
-                    else {
-                        if (std::abs(diffData[j]) > set_sort.top().first){
-                            set_sort.pop();
-                            set_sort.emplace(std::abs(diffData[j]), j * 10 + signf(diffData[j]));
-                        }
-                    }
-                }
-                
-                size_t kk = 0;
-                size_t rr = 1;
-                while (!set_sort.empty()){
-                    kk += set_sort.top().second * rr;
-                    set_sort.pop();
-                    rr *= 10000;
-                }
-                
-                if (g.find(kk) == g.end()){
-                    g.insert(kk);
-                    return_list.push_back(curent_pair);
-                }
-            }
-            delete[] diffData;
-
-#else
-            size_t cur_miss = 0;
             while (queue_closest.size()) {
                 if (return_list.size() >= M)
                     break;
@@ -416,7 +371,7 @@ namespace hnswlib {
                     return_list.push_back(curent_pair);
                 }
             }
-#endif
+            
             for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
@@ -1302,7 +1257,7 @@ namespace hnswlib {
             input: labeltype
             output: indegree and in node
         */
-        void getDegreeDistri(std::vector<size_t> &dstb_in, std::vector<size_t> &dstb_out, bool isprint = false){
+        float getDegreeDistri(std::vector<size_t> &dstb_in, std::vector<size_t> &dstb_out, bool isprint = false){
             std::vector<size_t>().swap(dstb_in);
             std::vector<size_t>().swap(dstb_out);
             unsigned *node_in = new unsigned[cur_element_count]();
@@ -1345,7 +1300,10 @@ namespace hnswlib {
                 for (size_t i = 0; i < dstb_out.size(); i++)
                     printf("%u\n", dstb_out[i]);
             }
-            printf("average outdegree: %.3f \n", (out_total / cur_element_count));
+
+            float odg_avg = (float) out_total / cur_element_count;
+            printf("average outdegree: %.3f \n", odg_avg);
+            return odg_avg;
         }
 
         /*
