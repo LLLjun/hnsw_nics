@@ -48,7 +48,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_parameter["qsize"] = 100000;
         index_parameter["vecdim"] = 100;
         index_parameter["gt_maxnum"] = 100;
-        index_string["path_q"] = path_dataset + "query.100K.fbin";
+        index_string["path_q"] = path_dataset + "query100K.fbin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else{
