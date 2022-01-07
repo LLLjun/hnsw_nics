@@ -2,7 +2,8 @@ import os
 
 def run_single():
     efc = 60
-    m = 30
+    m = 15
+    datasize = 10
     dataname = "deep"
     format = ""
     stage = "both"
@@ -12,17 +13,20 @@ def run_single():
     else:
         format = "float"
 
-    command = "make main && ./main " + stage + " " + dataname + " " + format + " 10 " + str(efc) + " " + str(m) + " 10"
+    command = "cd build && make main && ./main " + stage + " " + dataname + " " + str(datasize) + " " + format + " 1 " + str(efc) + " " + str(m) + " 10"
     if efc > m:
         os.system(command)
 
 
 def space_explore():
-    max_efc = 301
-    max_m = 26
-    datasets = ["deep", "sift", "turing", "gist"]
+    max_efc = range(30, 51, 20)
+    max_m = [15]
+    datasize = 10
+    datasets = ["deep"]
     format = ""
-    stage = "search"
+    stage = "both"
+
+    os.system("cd build && make main && cp main main_run")
 
     for dataname in datasets:
         if dataname == "sift":
@@ -30,12 +34,13 @@ def space_explore():
         else:
             format = "float"
 
-        for efc in range(50, max_efc, 50):
-            for m in range(5, max_m, 5):
-                command = "make main && ./main " + stage + " " + dataname + " " + format + " 1 " + str(efc) + " " + str(m) + " 10"
+        for efc in max_efc:
+            for m in max_m:
+                command = "cd build && ./main_run " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
                 if efc > m:
                     os.system(command)
 
+    os.system("cd build && rm main_run")
 
 space_explore()
 # run_single()

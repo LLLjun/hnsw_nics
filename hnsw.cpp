@@ -106,6 +106,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     for (int i = 20; i <= 100; i += 10) {
         efs.push_back(i);
     }
+    // for (int i = 100; i <= 500; i += 100) {
+    //     efs.push_back(i);
+    // }
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
     csv_writer << "R@" << k << ",qps" << endl;
@@ -119,16 +122,19 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         std::vector<std::vector<unsigned>> res(qsize);
 
         auto s = std::chrono::high_resolution_clock::now();
-        for (int i = 0; i < qsize; i++) {
-            std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-            while (result.size()){
-                res[i].push_back(result.top().second);
-                result.pop();
+        for (int ii = 0; ii < 10; ii++){
+            std::vector<std::vector<unsigned>>(qsize).swap(res);
+            for (int i = 0; i < qsize; i++) {
+                std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+                while (result.size()){
+                    res[i].push_back(result.top().second);
+                    result.pop();
+                }
             }
         }
         auto e = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> diff = e - s;
-        double time_us_per_query = diff.count() / qsize;
+        double time_us_per_query = diff.count() / qsize / 10;
 
         float recall = comput_recall(res, answers, qsize, k);
 
@@ -169,7 +175,28 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         return;
     } else {
 
-        DTval *massB = new DTval[vecsize * vecdim]();
+//         if (vecsize >= 1e8){
+// #if (!LARGE)
+//             printf("Unsupport dataset \n");
+//             exit(1);
+// #endif
+//         }
+
+#if LARGE
+        printf("load and build base data \n");
+        massB = new DTval[vecdim]();
+
+        std::ifstream inputB(path_data.c_str(), ios::binary);
+        uint32_t nums_r, dims_r;
+        inputB.read((char *) &nums_r, sizeof(uint32_t));
+        inputB.read((char *) &dims_r, sizeof(uint32_t));
+        if ((vecsize != nums_r) || (vecdim != dims_r)){
+            printf("Error, file size is error, nums_r: %u, dims_r: %u\n", nums_r, dims_r);
+            exit(1);
+        }
+        inputB.read((char *) massB, vecdim * sizeof(DTval));
+#else
+        DTval *massB  = new DTval[vecsize * vecdim]();
 
         cout << "Loading base data:\n";
         if (format == "float"){
@@ -183,6 +210,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
             printf("Error, unsupport format \n");
             exit(1);
         }
+#endif
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         // appr_alg->testSortMultiadd();
@@ -324,7 +352,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
-    string label = "hnsw/";
+    string label = "expc1/";
 
     // support dataset: sift, gist, deep, glove, crawl
 
