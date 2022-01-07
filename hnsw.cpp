@@ -140,9 +140,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         csv_writer << recall << "," << (1.0 / time_us_per_query) << endl;
 
-        if (recall > 0.98) {
-            break;
-        }
+        // if (recall > 0.98) {
+        //     break;
+        // }
     }
 }
 
@@ -324,7 +324,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
-    string label = "flat/";
+    string label = "hnsw/";
 
     // support dataset: sift, gist, deep, glove, crawl
 
