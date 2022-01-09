@@ -13,6 +13,7 @@
 
 using namespace std;
 using namespace hnswlib;
+using namespace std::chrono;
 
 cpu_set_t  mask;
 inline void assignToThisCore(int core_id){
@@ -106,9 +107,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     for (int i = 20; i <= 100; i += 10) {
         efs.push_back(i);
     }
-    // for (int i = 100; i <= 500; i += 100) {
-    //     efs.push_back(i);
-    // }
+    for (int i = 200; i <= 300; i += 100) {
+        efs.push_back(i);
+    }
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
     csv_writer << "R@" << k << ",qps" << endl;
@@ -121,30 +122,26 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         std::vector<std::vector<unsigned>> res(qsize);
 
-        auto s = std::chrono::high_resolution_clock::now();
-        for (int ii = 0; ii < 10; ii++){
-            std::vector<std::vector<unsigned>>(qsize).swap(res);
-            for (int i = 0; i < qsize; i++) {
-                std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-                while (result.size()){
-                    res[i].push_back(result.top().second);
-                    result.pop();
-                }
+        steady_clock::time_point s = steady_clock::now();
+        for (int i = 0; i < qsize; i++) {
+            std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+            while (result.size()){
+                res[i].push_back(result.top().second);
+                result.pop();
             }
         }
-        auto e = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> diff = e - s;
-        double time_us_per_query = diff.count() / qsize / 10;
+        steady_clock::time_point e = steady_clock::now();
+        double time_s_per_query = duration<double>(e - s).count() / qsize;
 
         float recall = comput_recall(res, answers, qsize, k);
 
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
 
-        cout << ef << "\t" << recall << "\t" << (1.0 / time_us_per_query) << "\t" 
+        cout << ef << "\t" << recall << "\t" << (1.0 / time_s_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
-        csv_writer << recall << "," << (1.0 / time_us_per_query) << endl;
+        csv_writer << recall << "," << (1.0 / time_s_per_query) << endl;
 
         // if (recall > 0.98) {
         //     break;
@@ -228,7 +225,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         clk_get stopw = clk_get();
         size_t report_every = vecsize / 10;
 
-        auto s = std::chrono::high_resolution_clock::now();
+        steady_clock::time_point s = steady_clock::now();
 #pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {
 #pragma omp critical
@@ -253,9 +250,8 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
 #endif
         }
 
-        auto e = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> diff = e - s;
-        float time_build = diff.count();
+        steady_clock::time_point e = steady_clock::now();
+        double time_build = duration<double>(e - s).count();
 
         cout << "Build time:" << time_build << "  seconds\n";
         delete[] massB;

@@ -22,7 +22,7 @@ def save_fig(path_fig, np_array, legend_list, columns):
     for i in range(0, nums):
         label = legend_list[i]
         np_a = np_array[i]
-        plt.plot(np_a[0], np_a[1], lw=3, label=label)
+        plt.semilogy(np_a[0], np_a[1], lw=3, label=label)
         
     plt.legend(loc='upper right', fontsize='large')
 
@@ -40,13 +40,25 @@ def handle_data():
     if os.path.exists(path_save) is False:
         os.mkdir(path_save)
 
-    data_list = []
-    legend_list = []
+
     columns = []
     efc_list = range(30, 51, 20)
     m_list = [15]
 
+    #             df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+    #             columns = df_feature.columns
+    #             data_list.append(df_feature[columns].values.transpose())
+    #             legend_list.append(unique_name)
+
+    #     np_feature = np.array(data_list).astype(np.float32)
+    #     figname = dataname + str(datasize) + "m_baseline_m" + str(m)
+    #     path_fig = os.path.join(path_save, figname)
+    #     save_fig(path_fig, np_feature, legend_list, columns)
+
+    
     for efc in efc_list:
+        data_list = []
+        legend_list = []
         for m in m_list:
             if efc > m:
                 

@@ -19,12 +19,14 @@ def run_single():
 
 
 def space_explore():
-    max_efc = range(30, 51, 20)
-    max_m = [15]
-    datasize = 10
-    datasets = ["deep"]
+    max_efc = range(50, 301, 50)
+    max_m = range(5, 26, 5)
+    datasets = ["deep", "sift", "gist"]
+    datasize = 1
     format = ""
     stage = "both"
+
+    os.system("cd build && make main && cp main main_run")
 
     os.system("cd build && make main && cp main main_run")
 
