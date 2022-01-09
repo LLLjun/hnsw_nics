@@ -11,3 +11,6 @@ typedef float DTRES;
 #define EXI false
 
 #define LARGE false
+
+#define IOF1 true
+#define PROFILE true

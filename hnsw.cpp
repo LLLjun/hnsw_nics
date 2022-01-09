@@ -274,9 +274,52 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         vector<size_t> dstb_out;
         float odg_avg = appr_alg->getDegreeDistri(dstb_in, dstb_out);
 
+#if IOF1
+        // IF1 -> IDG, OF1
+        vector<unsigned> OF1, IF1, IDG, ODG;
+        OF1.swap(appr_alg->OF1);
+        IF1.swap(appr_alg->IF1);
+        appr_alg->getDegreePerPoint(IDG, ODG);
+
+        size_t maxM0 = 2 * M;
+
+        vector<vector<unsigned>> IF1_to_IDG(maxM0 + 1);
+        for (size_t i = 0; i <= maxM0; i++)
+            IF1_to_IDG[i].resize(maxM0 + 1, 0);
+        for (size_t i = 0; i < vecsize; i++){
+            unsigned row = IF1[i] > maxM0 ? maxM0: IF1[i];
+            unsigned col = IDG[i] > maxM0 ? maxM0: IDG[i];
+            IF1_to_IDG[row][col]++;
+        }
+        string path_IF1_to_IDG = path_build_txt + "IF1_to_IDG.csv";
+        ofstream IF1_to_IDG_writer(path_IF1_to_IDG.c_str(), ios::trunc);
+        for (size_t i = 0; i <= maxM0; i++){
+            for (size_t j = 0; j <= maxM0; j++)
+                IF1_to_IDG_writer << IF1_to_IDG[i][j] << ",";
+            IF1_to_IDG_writer << endl;
+        }
+        IF1_to_IDG_writer.close();
+
+        vector<unsigned> OF1_dt(maxM0 + 1, 0);
+        for (size_t i = 0; i < vecsize; i++){
+            size_t pos = OF1[i] > maxM0 ? maxM0 : OF1[i];
+            OF1_dt[pos]++;
+        }
+        string path_OF1_dt = path_build_txt + "OF1_dt.csv";
+        ofstream OF1_dt_writer(path_OF1_dt.c_str(), ios::trunc);
+        for (size_t i = 0; i <= maxM0; i++){
+            OF1_dt_writer << OF1_dt[i] << endl;
+        }
+        OF1_dt_writer.close();
+#endif
+
         // write to build txt
         ofstream txt_writer(path_build_txt.c_str(), ios::trunc);
         txt_writer << "Build time: " << time_build << " seconds\n";
+#if PROFILE
+        txt_writer << "Search time: " << appr_alg->tb_search << " seconds\n";
+        txt_writer << "Sort time: " << appr_alg->tb_sort << " seconds\n";
+#endif
         txt_writer << "Average degree: " << odg_avg << endl;
         txt_writer.close();
     }

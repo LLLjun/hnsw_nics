@@ -10,6 +10,7 @@
 #include <list>
 #include "config.h"
 #include "profile.h"
+#include <chrono>
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -58,7 +59,10 @@ namespace hnswlib {
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);
 
-
+#if IOF1
+            OF1.resize(max_elements_, 0);
+            IF1.resize(max_elements_, 0);
+#endif
 
             //initializations for special treatment of the first node
             enterpoint_node_ = -1;
@@ -405,6 +409,12 @@ namespace hnswlib {
             dggb_out = new unsigned[max_elements_]();
         }
 
+#if IOF1
+        mutable std::vector<unsigned> OF1;
+        mutable std::vector<unsigned> IF1;
+#endif
+
+
         tableint mutuallyConnectNewElement(const void *data_point, tableint cur_c,
                                        std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         int level, bool isUpdate) {
@@ -438,6 +448,10 @@ namespace hnswlib {
                 selectedNeighbors.push_back(top_candidates.top().second);
                 top_candidates.pop();
             }
+#endif
+
+#if IOF1
+            OF1[cur_c] += selectedNeighbors.size();
 #endif
 
             tableint next_closest_entry_point = selectedNeighbors.back();
@@ -563,6 +577,12 @@ namespace hnswlib {
                         } */
                     }
                 }
+#if IOF1
+                if (isNeighbor(cur_c, cur_i, level)){
+                    IF1[cur_c]++;
+                }
+#endif
+
             }
 
             return next_closest_entry_point;
@@ -1029,6 +1049,11 @@ namespace hnswlib {
             return result;
         };
 
+#if PROFILE
+        mutable double tb_search = 0;
+        mutable double tb_sort = 0;
+#endif
+
         tableint addPoint(const void *data_point, labeltype label, int level) {
 
             tableint cur_c = 0;
@@ -1132,7 +1157,22 @@ namespace hnswlib {
                 for (int level = std::min(curlevel, maxlevelcopy); level >= 0; level--) {
                     if (level > maxlevelcopy || level < 0)  // possible?
                         throw std::runtime_error("Level error");
-
+#if PROFILE
+                    std::chrono::steady_clock::time_point s = std::chrono::steady_clock::now();
+                    std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
+                            currObj, data_point, level);
+                    if (epDeleted) {
+                        top_candidates.emplace(fstdistfunc_(data_point, getDataByInternalId(enterpoint_copy), dist_func_param_), enterpoint_copy);
+                        if (top_candidates.size() > ef_construction_)
+                            top_candidates.pop();
+                    }
+                    std::chrono::steady_clock::time_point e = std::chrono::steady_clock::now();
+                    tb_search += std::chrono::duration<double>(e - s).count();
+                    s = std::chrono::steady_clock::now();
+                    currObj = mutuallyConnectNewElement(data_point, cur_c, top_candidates, level, false);
+                    e = std::chrono::steady_clock::now();
+                    tb_sort += std::chrono::duration<double>(e - s).count();
+#else
                     std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
                             currObj, data_point, level);
                     if (epDeleted) {
@@ -1141,6 +1181,7 @@ namespace hnswlib {
                             top_candidates.pop();
                     }
                     currObj = mutuallyConnectNewElement(data_point, cur_c, top_candidates, level, false);
+#endif
                 }
 
 
@@ -1269,7 +1310,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
@@ -1321,7 +1362,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
@@ -1394,7 +1435,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
@@ -1434,9 +1475,45 @@ namespace hnswlib {
             return (dist_average / need_comp.size());
         }
 
+#if IOF1
+        int isNeighbor(tableint &xi, tableint &xc, int &level){
+            linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
+            int size = getListCount(ll_cur);
+            tableint *data = (tableint *) (ll_cur + 1);
+
+            for (int j = 0; j < size; j++){
+                if (data[j] == xi)
+                    return 1;
+            }
+            return 0;
+        }
+
+        void getDegreePerPoint(std::vector<unsigned> &IDG, std::vector<unsigned> &ODG){
+            std::vector<unsigned>().swap(IDG);
+            std::vector<unsigned>().swap(ODG);
+            IDG.resize(cur_element_count, 0);
+            ODG.resize(cur_element_count, 0);
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                for(size_t l = 0; l <= element_levels_[i]; l++){
+                    linklistsizeint *ll_cur = get_linklist_at_level(i, l);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    
+                    ODG[i] += size;
+                    for (int j = 0; j < size; j++){
+                        assert(data[j] > 0);
+                        assert(data[j] < cur_element_count);
+                        assert (data[j] != i);
+                        IDG[data[j]]++;
+                    }
+                }
+            }
+        }
+#endif
+
 
 #if EXPC1
-
         void resetEdge(int n_out) {
 #pragma omp parallel for
             for (size_t i = 0; i < cur_element_count; i++){
