@@ -24,7 +24,7 @@ def save_fig(path_fig, np_array, legend_list, columns):
         np_a = np_array[i]
         plt.semilogy(np_a[0], np_a[1], lw=3, label=label)
         
-    plt.legend(loc='upper right', fontsize='large')
+    plt.legend(loc='lower left', fontsize='large')
 
     fig_acc.savefig(path_fig, dpi=300)
 
@@ -41,10 +41,10 @@ def handle_data():
 
 
     columns = []
-    efc_list = range(100, 701, 100)
-    m_list = range(10, 36, 5)
-    # efc_list = range(50, 301, 50)
-    # m_list = range(5, 26, 5)
+    efc_list = range(300, 701, 100)
+    m_list = range(20, 36, 5)
+    # efc_list = range(400, 701, 100)
+    # m_list = range(30, 51, 5)
     
     for m in m_list:
         data_list = []
@@ -65,10 +65,30 @@ def handle_data():
         save_fig(path_fig, np_feature, legend_list, columns)
 
     
+    # for efc in efc_list:
+    #     data_list = []
+    #     legend_list = []
+    #     for m in m_list:
+    #         if efc > m:
+    #             k = 10
+    #             unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
+
+    #             df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+    #             columns = df_feature.columns
+    #             data_list.append(df_feature[columns].values.transpose())
+    #             legend_list.append(unique_name)
+
+    #     np_feature = np.array(data_list).astype(np.float32)
+    #     figname = dataname + str(datasize) + "m_baseline_efc" + str(efc)
+    #     path_fig = os.path.join(path_save, figname)
+    #     save_fig(path_fig, np_feature, legend_list, columns)
+
+    # all in
+    data_list = []
+    legend_list = []
     for efc in efc_list:
-        data_list = []
-        legend_list = []
         for m in m_list:
+
             if efc > m:
                 k = 10
                 unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
@@ -78,10 +98,10 @@ def handle_data():
                 data_list.append(df_feature[columns].values.transpose())
                 legend_list.append(unique_name)
 
-        np_feature = np.array(data_list).astype(np.float32)
-        figname = dataname + str(datasize) + "m_baseline_efc" + str(efc)
-        path_fig = os.path.join(path_save, figname)
-        save_fig(path_fig, np_feature, legend_list, columns)
+    np_feature = np.array(data_list).astype(np.float32)
+    figname = dataname + str(datasize) + "m_baseline_all"
+    path_fig = os.path.join(path_save, figname)
+    save_fig(path_fig, np_feature, legend_list, columns)
 
 if __name__ == "__main__":
     handle_data()

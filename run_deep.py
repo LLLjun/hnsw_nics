@@ -19,7 +19,7 @@ def run_single():
 
 def space_explore(stage):
     max_efc = range(100, 701, 100)
-    max_m = range(10, 36, 5)
+    max_m = range(30, 36, 5)
     # max_efc = range(50, 301, 50)
     # max_m = range(5, 26, 5)
     datasets = ["deep"]

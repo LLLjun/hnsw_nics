@@ -1269,7 +1269,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
@@ -1321,7 +1321,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
@@ -1394,7 +1394,7 @@ namespace hnswlib {
                     int size = getListCount(ll_cur);
                     tableint *data = (tableint *) (ll_cur + 1);
                     
-                    node_out[i] = size;
+                    node_out[i] += size;
                     for (int j = 0; j < size; j++){
                         assert(data[j] > 0);
                         assert(data[j] < cur_element_count);
