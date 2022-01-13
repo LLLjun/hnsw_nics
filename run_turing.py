@@ -1,9 +1,9 @@
 import os
 
 def run_single():
-    efc = 100
+    efc = 60
     m = 20
-    dataname = "deep"
+    dataname = "turing"
     datasize = 1
     format = ""
     stage = "build"
@@ -12,11 +12,12 @@ def run_single():
         format = "uint8"
     else:
         format = "float"
-    os.system("cd build && make main && cp main main_run_deep")
-    command = "cd build && ./main_run_deep " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+
+    os.system("cd build && make main && cp main main_run_turing")
+    command = "cd build && ./main_run_turing " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
     if efc > m:
         os.system(command)
-    os.system("cd build && rm main_run_deep")
+    os.system("cd build && rm main_run_turing")
 
 
 def space_explore(stage):
@@ -24,12 +25,11 @@ def space_explore(stage):
     m_list = [20]
     # efc_list = range(50, 301, 50)
     # m_list = range(5, 26, 5)
-    datasets = ["deep"]
+    datasets = ["turing"]
     datasize = 1
     format = ""
-    # stage = "build"
 
-    # os.system("cd build && make main && cp main main_run_deep")
+    # os.system("cd build && make main && cp main main_run_turing")
 
     for dataname in datasets:
         if dataname == "sift":
@@ -46,7 +46,7 @@ def space_explore(stage):
                 command = "cd build && ./main_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
                 if efc >= (2 * m):
                     os.system(command)
-    # os.system("cd build && rm main_run_deep")
+    # os.system("cd build && rm main_run_turing")
 
 
 # space_explore("build")

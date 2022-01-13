@@ -31,8 +31,8 @@ def save_fig(path_fig, np_array, legend_list, columns):
 
 def handle_data():
     label = "expc1"
-    dataname = "deep"
-    datasize = 10
+    dataname = "turing"
+    datasize = 1
     k = 10
 
     path_dataset = os.path.join(root_output, label, dataname)
@@ -42,26 +42,15 @@ def handle_data():
 
 
     columns = []
-    efc_list = range(30, 51, 20)
-    m_list = [15]
+    efc_list = range(40, 101, 20)
+    m_list = [20]
 
-    #             df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-    #             columns = df_feature.columns
-    #             data_list.append(df_feature[columns].values.transpose())
-    #             legend_list.append(unique_name)
+    data_list = []
+    legend_list = []
 
-    #     np_feature = np.array(data_list).astype(np.float32)
-    #     figname = dataname + str(datasize) + "m_baseline_m" + str(m)
-    #     path_fig = os.path.join(path_save, figname)
-    #     save_fig(path_fig, np_feature, legend_list, columns)
-
-    
     for efc in efc_list:
-        data_list = []
-        legend_list = []
         for m in m_list:
             if efc > m:
-                
                 unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
                 df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
                 data_list.append(df_feature.values.transpose())
@@ -73,6 +62,15 @@ def handle_data():
                 legend_list.append(unique_name)
 
                 columns = df_feature.columns
+
+    # efc_list = [200]
+    # for efc in efc_list:
+    #     for m in m_list:
+    #         if efc > m:
+    #             unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
+    #             df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+    #             data_list.append(df_feature.values.transpose())
+    #             legend_list.append(unique_name)
 
     np_feature = np.array(data_list).astype(np.float32)
     figname = "compare_exi_" + dataname + str(datasize) + "m"

@@ -130,18 +130,17 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
                 result.pop();
             }
         }
-        steady_clock::time_point e = steady_clock::now();
-        double time_s_per_query = duration<double>(e - s).count() / qsize;
+        double time_ns_per_query = duration_cast<nanoseconds>(steady_clock::now() - s).count() / qsize;
 
         float recall = comput_recall(res, answers, qsize, k);
 
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
 
-        cout << ef << "\t" << recall << "\t" << (1.0 / time_s_per_query) << "\t" 
+        cout << ef << "\t" << recall << "\t" << (1e9 / time_ns_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
-        csv_writer << recall << "," << (1.0 / time_s_per_query) << endl;
+        csv_writer << recall << "," << (1e9 / time_ns_per_query) << endl;
 
         // if (recall > 0.98) {
         //     break;
@@ -172,27 +171,6 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         return;
     } else {
 
-//         if (vecsize >= 1e8){
-// #if (!LARGE)
-//             printf("Unsupport dataset \n");
-//             exit(1);
-// #endif
-//         }
-
-#if LARGE
-        printf("load and build base data \n");
-        massB = new DTval[vecdim]();
-
-        std::ifstream inputB(path_data.c_str(), ios::binary);
-        uint32_t nums_r, dims_r;
-        inputB.read((char *) &nums_r, sizeof(uint32_t));
-        inputB.read((char *) &dims_r, sizeof(uint32_t));
-        if ((vecsize != nums_r) || (vecdim != dims_r)){
-            printf("Error, file size is error, nums_r: %u, dims_r: %u\n", nums_r, dims_r);
-            exit(1);
-        }
-        inputB.read((char *) massB, vecdim * sizeof(DTval));
-#else
         DTval *massB  = new DTval[vecsize * vecdim]();
 
         cout << "Loading base data:\n";
@@ -207,7 +185,6 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
             printf("Error, unsupport format \n");
             exit(1);
         }
-#endif
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         // appr_alg->testSortMultiadd();
@@ -250,8 +227,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
 #endif
         }
 
-        steady_clock::time_point e = steady_clock::now();
-        double time_build = duration<double>(e - s).count();
+        double time_build = duration_cast<seconds>(steady_clock::now() - s).count();
 
         cout << "Build time:" << time_build << "  seconds\n";
         delete[] massB;
@@ -283,42 +259,50 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
 
         size_t maxM0 = 2 * M;
 
+        vector<unsigned> OF1_dt(maxM0 + 1, 0);
+        vector<unsigned> IF1_dt(maxM0 + 1, 0);
+        for (size_t i = 0; i < vecsize; i++){
+            if (OF1[i] <= maxM0)
+                OF1_dt[OF1[i]]++;
+            if (IF1[i] <= maxM0)
+                IF1_dt[IF1[i]]++;
+        }
+        string path_OF1_dt = path_build_txt + "OF1_IF1_dt.csv";
+        ofstream OF1_dt_writer(path_OF1_dt.c_str(), ios::trunc);
+        for (size_t i = 0; i <= maxM0; i++){
+            OF1_dt_writer << OF1_dt[i] << "," << IF1_dt[i] << endl;
+        }
+        OF1_dt_writer.close();
+
         vector<vector<unsigned>> IF1_to_IDG(maxM0 + 1);
         for (size_t i = 0; i <= maxM0; i++)
             IF1_to_IDG[i].resize(maxM0 + 1, 0);
         for (size_t i = 0; i < vecsize; i++){
-            unsigned row = IF1[i] > maxM0 ? maxM0: IF1[i];
-            unsigned col = IDG[i] > maxM0 ? maxM0: IDG[i];
-            IF1_to_IDG[row][col]++;
+            // unsigned row = IF1[i] > maxM0 ? maxM0: IF1[i];
+            // unsigned col = IDG[i] > maxM0 ? maxM0: IDG[i];
+            // IF1_to_IDG[row][col]++;
+            if (IF1[i] <= maxM0 && IDG[i] <= maxM0)
+                IF1_to_IDG[IF1[i]][IDG[i]]++;
         }
         string path_IF1_to_IDG = path_build_txt + "IF1_to_IDG.csv";
         ofstream IF1_to_IDG_writer(path_IF1_to_IDG.c_str(), ios::trunc);
         for (size_t i = 0; i <= maxM0; i++){
             for (size_t j = 0; j <= maxM0; j++)
-                IF1_to_IDG_writer << IF1_to_IDG[i][j] << ",";
+                IF1_to_IDG_writer << ((float) IF1_to_IDG[i][j] / IF1_dt[i]) << ",";
             IF1_to_IDG_writer << endl;
         }
         IF1_to_IDG_writer.close();
-
-        vector<unsigned> OF1_dt(maxM0 + 1, 0);
-        for (size_t i = 0; i < vecsize; i++){
-            size_t pos = OF1[i] > maxM0 ? maxM0 : OF1[i];
-            OF1_dt[pos]++;
-        }
-        string path_OF1_dt = path_build_txt + "OF1_dt.csv";
-        ofstream OF1_dt_writer(path_OF1_dt.c_str(), ios::trunc);
-        for (size_t i = 0; i <= maxM0; i++){
-            OF1_dt_writer << OF1_dt[i] << endl;
-        }
-        OF1_dt_writer.close();
 #endif
 
         // write to build txt
         ofstream txt_writer(path_build_txt.c_str(), ios::trunc);
         txt_writer << "Build time: " << time_build << " seconds\n";
 #if PROFILE
-        txt_writer << "Search time: " << appr_alg->tb_search << " seconds\n";
-        txt_writer << "Sort time: " << appr_alg->tb_sort << " seconds\n";
+        float part_total = (appr_alg->tb_search + appr_alg->tb_sort);
+        txt_writer << "Search time: " << appr_alg->tb_search << " seconds, Percent: " << (appr_alg->tb_search / part_total) << endl;
+        txt_writer << "Sort time: " << appr_alg->tb_sort << " seconds, Percent: " << (appr_alg->tb_sort / part_total) << endl;
+        float gap_multi_thread = part_total / 112 / time_build;
+        txt_writer << "Similarity: " << gap_multi_thread << endl;
 #endif
         txt_writer << "Average degree: " << odg_avg << endl;
         txt_writer.close();
@@ -391,8 +375,15 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
-    string label = "expc1/";
-
+    string label;
+#if LABEL == 1
+    label = "expc1/";
+#elif LABEL == 2
+    label ="expc2/";
+#else
+    printf("Error, unknown dir \n");
+    exit(1);
+#endif
     // support dataset: sift, gist, deep, glove, crawl
 
     string pre_index = root_index + label + using_dataset;

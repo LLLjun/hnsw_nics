@@ -345,7 +345,51 @@ namespace hnswlib {
             if (top_candidates.size() < M) {
                 return;
             }
+#if RLDT
+            std::unordered_set<size_t> g;
 
+            size_t vdim = *((size_t *)dist_func_param_);
+            float *diffData = new float[vdim]();
+            float *vec_o = (float *)getDataByInternalId(insert_node);
+
+            while (queue_closest.size()){
+                if (return_list.size() >= M)
+                    break;
+
+                std::pair<dist_t, tableint> curent_pair = queue_closest.top();
+                queue_closest.pop();
+                float *vec_n = (float *)getDataByInternalId(curent_pair.second);
+
+                std::priority_queue<std::pair<float, size_t>, std::vector<std::pair<float, size_t>>, GreaterByFirst> set_sort;
+
+                for (size_t j = 0; j < vdim; j++){
+                    diffData[j] = vec_n[j] - vec_o[j];
+                    if (set_sort.size() < 1)
+                        set_sort.emplace(std::abs(diffData[j]), j * 10 + signf(diffData[j]));
+                    else {
+                        if (std::abs(diffData[j]) > set_sort.top().first){
+                            set_sort.pop();
+                            set_sort.emplace(std::abs(diffData[j]), j * 10 + signf(diffData[j]));
+                        }
+                    }
+                }
+                
+                size_t kk = 0;
+                size_t rr = 1;
+                while (!set_sort.empty()){
+                    kk += set_sort.top().second * rr;
+                    set_sort.pop();
+                    rr *= 10000;
+                }
+                
+                if (g.find(kk) == g.end()){
+                    g.insert(kk);
+                    return_list.push_back(curent_pair);
+                }
+            }
+            delete[] diffData;
+
+#else
             std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
             std::vector<std::pair<dist_t, tableint>> return_list;
             while (top_candidates.size() > 0) {
@@ -375,7 +419,7 @@ namespace hnswlib {
                     return_list.push_back(curent_pair);
                 }
             }
-            
+#endif
             for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
@@ -1166,12 +1210,10 @@ namespace hnswlib {
                         if (top_candidates.size() > ef_construction_)
                             top_candidates.pop();
                     }
-                    std::chrono::steady_clock::time_point e = std::chrono::steady_clock::now();
-                    tb_search += std::chrono::duration<double>(e - s).count();
+                    tb_search += std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - s).count();
                     s = std::chrono::steady_clock::now();
                     currObj = mutuallyConnectNewElement(data_point, cur_c, top_candidates, level, false);
-                    e = std::chrono::steady_clock::now();
-                    tb_sort += std::chrono::duration<double>(e - s).count();
+                    tb_sort += std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - s).count();
 #else
                     std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
                             currObj, data_point, level);
@@ -1512,74 +1554,15 @@ namespace hnswlib {
         }
 #endif
 
-
-#if EXPC1
-        void resetEdge(int n_out) {
-#pragma omp parallel for
-            for (size_t i = 0; i < cur_element_count; i++){
-                linklistsizeint *ll_cur = get_linklist0(i);
-                int size = getListCount(ll_cur);
-                tableint *data = (tableint *) (ll_cur + 1);
-                
-                int n_real = std::min<int>(size, n_out);
-
-                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidates;
-                for (size_t j = 0; j < size; j++) {
-                    candidates.emplace(
-                            fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(i),
-                                            dist_func_param_), data[j]);
-                }
-                getNeighborsByHeuristic2(candidates, n_real);
-
-                int indx = 0;
-                while (candidates.size() > 0) {
-                    data[indx] = candidates.top().second;
-                    candidates.pop();
-                    indx++;
-                }
-
-                setListCount(ll_cur, indx);
-            }
-        }
-#endif
-
         /*
             test sort and multi-add
         */
-        int Partition(std::vector<float>& arr, int low, int high){
-            float tmp = arr[low];
-            while (low<high){
-                while(high>low&&arr[high]>=tmp)
-                    high--;
-                arr[low]=arr[high];
-                while(low<high&&arr[low]<=tmp)
-                    low++;
-                arr[high]=arr[low];
-            }
-            arr[high]=tmp;
-            return high;
+        inline int signf(float &pf){
+            if (pf > 0)
+                return 1;
+            else
+                return 0;
         }
-        void TopK_Qsort(std::vector<float>& arr, int k){
-            if(arr.empty()||arr.size()<=k)
-                return;
-            int pos=Partition(arr, 0, arr.size()-1);
-            int addr=arr.size()-1-k+1;
-            while(pos!=addr)
-            {
-                if(pos<addr)
-                {
-                    pos=Partition(arr,pos+1,addr);//当前区间过大，将旧区间减1后再在其中找分界点
-                }
-                else
-                {
-                    pos=Partition(arr,addr,pos-1);//当前区间过小，将pos-1后再在其中找分界点
-                }
-            }
-            // for(int i=0;i<arr.size();i++)
-            //     printf("%.3f\t", arr[i]);
-            // printf("\n");
-        }
-
         struct GreaterByFirst {
             constexpr bool operator()(std::pair<float, size_t> const &a,
                                       std::pair<float, size_t> const &b) const noexcept {
@@ -1600,16 +1583,6 @@ namespace hnswlib {
                 }
             }
             std::sort_heap(set_unsort.begin(), set_unsort.begin() + nums);
-            // set_res.assign(set_unsort.begin(), set_unsort.begin() + nums);
-            // for(int i=0; i<set_unsort.size();i++)
-            //     printf("%.3f\t", set_unsort[i]);
-            // printf("\n");
-        }
-        inline int signf(float &pf){
-            if (pf > 0)
-                return 1;
-            else
-                return 0;
         }
 
         void testSortMultiadd(){

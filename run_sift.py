@@ -1,47 +1,35 @@
 import os
 
-def run_single(efc, m):
-    # efc = 250
-    # m = 20
+def run_single():
+    efc = 60
+    m = 20
     dataname = "sift"
     datasize = 1
     format = ""
-    stage = "search"
+    stage = "build"
 
     if dataname == "sift":
         format = "uint8"
     else:
         format = "float"
 
+    os.system("cd build && make main && cp main main_run_sift")
     command = "cd build && ./main_run_sift " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
     if efc > m:
         os.system(command)
-    
-
-def run_refine():
-    os.system("cd build && make main && cp main main_run_sift")
-    run_single(300, 5)
-    run_single(250, 5)
-    run_single(150, 5)
-    run_single(250, 10)
-    run_single(200, 10)
-    run_single(250, 15)
-    run_single(100, 15)
-    run_single(150, 15)
-    run_single(150, 25)
-    run_single(300, 25)
     os.system("cd build && rm main_run_sift")
 
 
-def space_explore():
-    max_efc = range(50, 301, 50)
-    max_m = range(5, 26, 5)
+def space_explore(stage):
+    efc_list = range(75, 126, 50)
+    m_list = [25]
+    # efc_list = range(50, 301, 50)
+    # m_list = range(5, 26, 5)
     datasets = ["sift"]
     datasize = 1
     format = ""
-    stage = "search"
 
-    os.system("cd build && make main && cp main main_run_sift")
+    # os.system("cd build && make main && cp main main_run_sift")
 
     for dataname in datasets:
         if dataname == "sift":
@@ -49,14 +37,18 @@ def space_explore():
         else:
             format = "float"
 
-        for efc in max_efc:
-            for m in max_m:
-                command = "cd build && ./main_run_sift " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
-                if efc > m:
+        for m in m_list:
+            for efc in efc_list:
+                command = "cd build && ./main_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                if efc >= (2 * m):
                     os.system(command)
 
-    os.system("cd build && rm main_run_sift")
+                command = "cd build && ./main_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                if efc >= (2 * m):
+                    os.system(command)
+    # os.system("cd build && rm main_run_sift")
 
 
-# space_explore()
-run_refine()
+space_explore("build")
+space_explore("search")
+# run_single()
