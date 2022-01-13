@@ -7,7 +7,6 @@ typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;
 
-#define LABEL 1
 // for strategy
 #define EXI false
 #define RLDT false
@@ -15,3 +14,18 @@ typedef float DTRES;
 // for profiling
 #define IOF1 false
 #define PROFILE true
+// for profile
+#define EXI false
+
+// for lstm
+#define USESAMQ false
+#define CREATESF true
+
+#define ITST 15
+#define ITLE 40
+#define OLLE 0
+#define NMSG 1
+#define EFS_MAX 300
+
+#define MANUAL false
+#define MANUALRUN false

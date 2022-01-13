@@ -148,3 +148,5 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     cout << center_pt_id << "\n";
     return center_pt_id;
 }
+
+// float comp
