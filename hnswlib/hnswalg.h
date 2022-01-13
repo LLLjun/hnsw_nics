@@ -251,7 +251,7 @@ namespace hnswlib {
         mutable std::atomic<long> metric_hops;
         mutable std::atomic<long> metric_hops_L;
 
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
         mutable std::vector<float> candi_top;
         mutable std::vector<std::vector<float>> candi_top_neig;
         mutable std::vector<float> bound;
@@ -269,11 +269,11 @@ namespace hnswlib {
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
-#if (CREATESF || MANUAL || MANUALRUN)
+#if (CREATESF || MANUAL || MSH || MANUALRUN)
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_ten;
 #endif
 
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
             std::vector<float>().swap(candi_top);
             std::vector<std::vector<float>>().swap(candi_top_neig);
             
@@ -312,7 +312,7 @@ namespace hnswlib {
             std::vector<float>res_first;
             std::vector<float>res_tenth;
 #endif
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
             dist_start_query = lowerBound;
 #endif
             visited_array[ep_id] = visited_array_tag;
@@ -325,7 +325,7 @@ namespace hnswlib {
                     break;
                 }
                 candidate_set.pop();
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
                 std::vector<float> top_neig(maxM0_, -1);
                 bound.push_back(lowerBound);
                 candi_top.push_back(-current_node_pair.first);
@@ -368,7 +368,7 @@ namespace hnswlib {
                                  _MM_HINT_T0);////////////
 #endif
 
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
                     top_neig[j-1] = fstdistfunc_(data_point, getDataByInternalId(candidate_id), dist_func_param_);
 #endif
 
@@ -395,7 +395,7 @@ namespace hnswlib {
 
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
                             if (top_candidates_ten.size() < 10){
                                 top_candidates_ten.emplace(dist, candidate_id);
                             } else if (dist < top_candidates_ten.top().first){
@@ -419,7 +419,7 @@ namespace hnswlib {
                         }
                     }
                 }
-#if (CREATESF || MANUAL)
+#if (CREATESF || MANUAL || MSH)
                 candi_top_neig.push_back(top_neig);
                 if (!top_candidates_ten.empty())
                     res_tenth.push_back(top_candidates_ten.top().first);
@@ -1814,6 +1814,42 @@ namespace hnswlib {
             printf("Comput time per vector: %.3f \n", (t_sort / vsize));
         }
 
+#if MSH
+        /*
+            input: defferent query's saerch result
+            output: 0 is done, 1 need continue
+        */
+        void getEveryQueryMinStep(float *massQ, size_t &qsize, size_t &vecdim, size_t &k, std::string &path_step){
+            unsigned *min_step = new unsigned[qsize]();
+            unsigned *all_step = new unsigned[qsize]();
+
+            for (size_t qi = 0; qi < qsize; qi++){
+                float *query = massQ + qi * vecdim;
+                std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
+
+                min_step[qi] = 0;
+                all_step[qi] = res_tenth.size();
+                float cur_dist = res_tenth.back();
+                for (int j = all_step[qi] - 1; j >= 0; j--){
+                    if (res_tenth[j] > cur_dist){
+                        min_step[qi] = j + 1;
+                        break;
+                    }
+                }
+            }
+
+            std::ofstream csv_step(path_step.c_str());
+            csv_step << "min_step,all_step" << std::endl;
+            for (size_t qi = 0; qi < qsize; qi++){
+                csv_step << min_step[qi] << "," << all_step[qi] << std::endl;
+            }
+            csv_step.close();
+
+            printf("Generate per query search step to %s done.\n", path_step.c_str());
+            delete[] min_step;
+            delete[] all_step;
+        }
+#endif
         /*
             input: query, gt_label, k, find_step
             output: in degree node distribution

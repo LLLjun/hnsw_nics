@@ -22,78 +22,6 @@ inline void assignToThisCore(int core_id){
     sched_setaffinity(0, sizeof(mask), &mask);
 }
 
-size_t efs_max = EFS_MAX;
-string path_root = "/home/ljun/anns/hnsw_nics/experiment/aware/for_train/";
-string path_aware = path_root + "target_" + to_string(efs_max) + "/";
-
-
-// template<typename DTres>
-// void handleIndegree(HierarchicalNSW<DTres> &appr_alg, unsigned qi, const void *query, vector<labeltype> &gt_list, string &flag){
-//     string path_aware = "/home/ljun/anns/hnsw_nics/experiment/aware/exi/efc40m16/";
-//     string path_stroe = path_aware + "query" + to_string(qi) + "_" + flag + ".log";
-
-//     float dist_sq;
-//     std::vector<std::vector<Node_Connect_Info>> in_connect;
-//     size_t find_step = 1;
-//     appr_alg.getParentDistri(query, gt_list, find_step, in_connect, dist_sq);
-
-//     std::ofstream file_writer(path_stroe.c_str(), ios::trunc);
-//     file_writer << "dist start to query: " << dist_sq << endl;
-//     file_writer << endl;
-//     for (size_t st_i = 0; st_i < find_step; st_i++){
-//         file_writer << "find step: " << st_i <<endl;
-//         for (size_t ch_i = 0; ch_i < in_connect[st_i].size(); ch_i++){
-//             file_writer << "child: " << in_connect[st_i][ch_i].node_self << "\t";
-//             file_writer << "to query: " << in_connect[st_i][ch_i].dist_self_query << "\t";
-//             file_writer << "to start: " << in_connect[st_i][ch_i].dist_self_start << endl;
-//             for (size_t pa_i = 0; pa_i < in_connect[st_i][ch_i].node_parent.size(); pa_i++){
-//                 file_writer << in_connect[st_i][ch_i].node_parent[pa_i] << "\t"
-//                             << in_connect[st_i][ch_i].dist_parent_query[pa_i] << "\t"
-//                             << in_connect[st_i][ch_i].dist_parent_start[pa_i] << endl;
-//             }
-//             file_writer << endl;
-//         }
-//         file_writer << endl;
-//     }
-//     file_writer.close();
-//     printf("Write data to %s done.\n", path_stroe.c_str());
-// }
-
-/*
-    input: defferent query's saerch result
-    output: 0 is done, 1 need continue
-*/
-// void getEveryQueryMinStep(size_t &qsize, vector<vector<float>> &dist_per_step_per_query, string &path_min_step,
-//                             size_t &step_target, string &path_recall_loss){
-//     unsigned *min_step = new unsigned[qsize]();
-//     unsigned *all_step = new unsigned[qsize]();
-//     unsigned *res_loss = new unsigned[qsize]();
-//     for (size_t i = 0; i < qsize; i++){
-//         all_step[i] = dist_per_step_per_query[i].size();
-//         float all_dist = dist_per_step_per_query[i].back();
-//         float cur_dist = dist_per_step_per_query[i].back();
-//         for (int j = all_step[i] - 1; j >= 0; j--){
-//             if (dist_per_step_per_query[i][j] > all_dist){
-//                 min_step[i] = j + 1;
-//                 break;
-//             }
-//         }
-
-//         for (int j = all_step[i] - 1; j >= step_target; j--){
-//             if (dist_per_step_per_query[i][j] > cur_dist){
-//                 res_loss[i]++;
-//                 cur_dist = dist_per_step_per_query[i][j];
-//             }
-//         }
-//     }
-//     string path_all_step = path_min_step + "_all_step.txt";
-//     WriteTxtToArray<unsigned>(path_all_step, all_step, qsize, 1);
-//     WriteTxtToArray<unsigned>(path_min_step, min_step, qsize, 1);
-//     WriteTxtToArray<unsigned>(path_recall_loss, res_loss, qsize, 1);
-//     printf("Generate per query min search step to %s done.\n", path_min_step.c_str());
-//     delete[] min_step;
-//     delete[] all_step;
-// }
 
 template<typename DTres>
 static void
@@ -168,17 +96,15 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
 
-    // for (int i = 20; i <= 100; i += 10) {
-    //     efs.push_back(i);
-    // }
-    // for (int i = 200; i <= 300; i += 100) {
-    //     efs.push_back(i);
-    // }
+    for (int i = 20; i <= 100; i += 10) {
+        efs.push_back(i);
+    }
+    for (int i = 200; i <= 300; i += 100) {
+        efs.push_back(i);
+    }
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
     csv_writer << "R@" << k << ",qps" << endl;
-
-    efs.push_back(efs_max);
 
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
@@ -395,12 +321,6 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         printf("Error, index %s is unexisted \n", index.c_str());
         exit(1);
     } else {
-        if (access(path_aware.c_str(), R_OK|W_OK)){
-            if (mkdir(path_aware.c_str(), S_IRWXU) != 0) {
-                printf("Error, dir %s create failed \n", path_aware.c_str());
-                exit(1);
-            }
-        }
 
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
 
@@ -425,6 +345,13 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         }
         printf("Load queries from %s done \n", path_q.c_str());
     
+#if MSH
+        string path_step = index_string["prefix_unique"] + "_step.csv";
+        appr_alg->setEf(EFS_MAX);
+        appr_alg->getEveryQueryMinStep(massQ, qsize, vecdim, k, path_step);
+        exit(0);
+#endif
+
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
@@ -590,6 +517,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_string["hnsw_index"] = hnsw_index;
     index_string["path_build_txt"] = path_build_txt;
     index_string["path_search_csv"] = path_search_csv;
+    index_string["prefix_unique"] = pre_output + "/" + unique_name;
 
     CheckDataset(using_dataset, index_parameter, index_string);
     
