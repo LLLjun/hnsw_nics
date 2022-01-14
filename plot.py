@@ -31,7 +31,7 @@ def save_fig(path_fig, np_array, legend_list, columns):
 
 def handle_data():
     label = "expc1"
-    dataname = "turing"
+    dataname = "deep"
     datasize = 1
     k = 10
 
@@ -42,7 +42,7 @@ def handle_data():
 
 
     columns = []
-    efc_list = range(40, 101, 20)
+    efc_list = range(40, 61, 20)
     m_list = [20]
 
     data_list = []
