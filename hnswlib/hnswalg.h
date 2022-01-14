@@ -1364,10 +1364,10 @@ namespace hnswlib {
                         if (top_candidates.size() > ef_construction_)
                             top_candidates.pop();
                     }
-                    tb_search += std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - s).count();
+                    tb_search += std::chrono::duration<double>(std::chrono::steady_clock::now() - s).count();
                     s = std::chrono::steady_clock::now();
                     currObj = mutuallyConnectNewElement(data_point, cur_c, top_candidates, level, false);
-                    tb_sort += std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - s).count();
+                    tb_sort += std::chrono::duration<double>(std::chrono::steady_clock::now() - s).count();
 #else
                     std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
                             currObj, data_point, level);
@@ -1846,14 +1846,14 @@ namespace hnswlib {
             delete[] all_step;
         }
 
-        void getSearchTrace(float *query, std::string &path_trace){
+        void getSearchTrace(float *query, size_t &k, std::string &path_trace){
             std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
             size_t search_steps = candi_pop.size();
 
-            std::ofstream csv_trace(path_step.c_str());
+            std::ofstream csv_trace(path_trace.c_str());
             csv_trace << "d_bound,d_pop,d_topk,d_top1" << std::endl;
             for (size_t i = 0; i < search_steps; i++){
-                csv_trace << bound[i] << "," << candi_pop[i] << res_tenth[i] << "," << res_first[i] << std::endl;
+                csv_trace << bound[i] << "," << candi_pop[i] << "," << res_tenth[i] << "," << res_first[i] << std::endl;
             }
             csv_trace.close();
             printf("Generate search trace to %s done.\n", path_trace.c_str());

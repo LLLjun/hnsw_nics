@@ -231,7 +231,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
 #endif
         }
 
-        double time_build = duration_cast<seconds>(steady_clock::now() - s).count();
+        double time_build = duration<double>(steady_clock::now() - s).count();
 
         cout << "Build time:" << time_build << "  seconds\n";
         delete[] massB;
@@ -360,7 +360,11 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 #if MSH
         string path_step = index_string["prefix_unique"] + "_step_random.csv";
         appr_alg->setEf(EFS_MAX);
-        appr_alg->getEveryQueryMinStep(massQ, qsize, vecdim, k, path_step);
+        // appr_alg->getEveryQueryMinStep(massQ, qsize, vecdim, k, path_step);
+
+        size_t qid = 4397;
+        string path_trace = index_string["prefix_unique"] + "_trace_" + to_string(qid) + ".csv";
+        appr_alg->getSearchTrace((massQ + qid * vecdim), k, path_trace);
         exit(0);
 #endif
 

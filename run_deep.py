@@ -1,12 +1,12 @@
 import os
 
 def run_single():
-    efc = 300
+    efc = 100
     m = 20
     dataname = "deep"
     datasize = 1
     format = ""
-    stage = "both"
+    stage = "search"
 
     if dataname == "sift":
         format = "uint8"
