@@ -252,7 +252,7 @@ namespace hnswlib {
         mutable std::atomic<long> metric_hops_L;
 
 #if (CREATESF || MANUAL || MSH)
-        mutable std::vector<float> candi_top;
+        mutable std::vector<float> candi_pop;
         mutable std::vector<std::vector<float>> candi_top_neig;
         mutable std::vector<float> bound;
         mutable std::vector<float> res_first;
@@ -274,7 +274,7 @@ namespace hnswlib {
 #endif
 
 #if (CREATESF || MANUAL || MSH)
-            std::vector<float>().swap(candi_top);
+            std::vector<float>().swap(candi_pop);
             std::vector<std::vector<float>>().swap(candi_top_neig);
             
             std::vector<float>().swap(bound);
@@ -308,7 +308,7 @@ namespace hnswlib {
             bool is_predict = true;
             size_t predict = std::numeric_limits<size_t>::max();
             
-            std::vector<float>candi_top;
+            std::vector<float>candi_pop;
             std::vector<float>res_first;
             std::vector<float>res_tenth;
 #endif
@@ -328,14 +328,14 @@ namespace hnswlib {
 #if (CREATESF || MANUAL || MSH)
                 std::vector<float> top_neig(maxM0_, -1);
                 bound.push_back(lowerBound);
-                candi_top.push_back(-current_node_pair.first);
+                candi_pop.push_back(-current_node_pair.first);
                 if (res_first.empty())
                     res_first.push_back(-current_node_pair.first);
                 else
                     res_first.push_back(res_first.back());
 #elif MANUALRUN
                 if (is_predict){
-                    candi_top.push_back(-current_node_pair.first);
+                    candi_pop.push_back(-current_node_pair.first);
                     if (res_first.empty())
                         res_first.push_back(-current_node_pair.first);
                     else
@@ -434,11 +434,11 @@ namespace hnswlib {
                 // manual
                 if (is_predict){
                     if ((!is_find_k) && (hop_i > 0)){
-                        float pop = candi_top[hop_i];
+                        float pop = candi_pop[hop_i];
                         float top1 = res_first[hop_i];
                         float topk = res_tenth[hop_i];
 
-                        if ((pop >= topk) && (candi_top[hop_i-1] <= res_tenth[hop_i-1])){
+                        if ((pop >= topk) && (candi_pop[hop_i-1] <= res_tenth[hop_i-1])){
                             keep_k = 0;
                         }
                         if (pop > topk && keep_k >= 0){
@@ -454,11 +454,11 @@ namespace hnswlib {
 
                     if (is_find_k){
                         float upper = dist_thr * (res_tenth[pos_stable_k] - res_first[pos_stable_k]);
-                        float diff = candi_top[pos_stable_k] - res_tenth[pos_stable_k];
+                        float diff = candi_pop[pos_stable_k] - res_tenth[pos_stable_k];
                         
                         if (curve_stable.size() < 4 * len_observe){
                             while (pos_stable_k <= hop_i){
-                                diff = candi_top[pos_stable_k] - res_tenth[pos_stable_k];
+                                diff = candi_pop[pos_stable_k] - res_tenth[pos_stable_k];
                                 curve_stable.push_back(diff);
                                 pos_stable_k++;
                             }
@@ -474,7 +474,7 @@ namespace hnswlib {
                             }
                             is_predict = false;
                         } else {
-                            diff = candi_top[pos_stable_k] - res_tenth[pos_stable_k];
+                            diff = candi_pop[pos_stable_k] - res_tenth[pos_stable_k];
                             curve_stable.push_back(diff);
                             pos_stable_k++;
                         }
@@ -1815,10 +1815,6 @@ namespace hnswlib {
         }
 
 #if MSH
-        /*
-            input: defferent query's saerch result
-            output: 0 is done, 1 need continue
-        */
         void getEveryQueryMinStep(float *massQ, size_t &qsize, size_t &vecdim, size_t &k, std::string &path_step){
             unsigned *min_step = new unsigned[qsize]();
             unsigned *all_step = new unsigned[qsize]();
@@ -1848,6 +1844,19 @@ namespace hnswlib {
             printf("Generate per query search step to %s done.\n", path_step.c_str());
             delete[] min_step;
             delete[] all_step;
+        }
+
+        void getSearchTrace(float *query, std::string &path_trace){
+            std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
+            size_t search_steps = candi_pop.size();
+
+            std::ofstream csv_trace(path_step.c_str());
+            csv_trace << "d_bound,d_pop,d_topk,d_top1" << std::endl;
+            for (size_t i = 0; i < search_steps; i++){
+                csv_trace << bound[i] << "," << candi_pop[i] << res_tenth[i] << "," << res_first[i] << std::endl;
+            }
+            csv_trace.close();
+            printf("Generate search trace to %s done.\n", path_trace.c_str());
         }
 #endif
         /*
@@ -2008,9 +2017,9 @@ namespace hnswlib {
                 int keep_k = -1;
                 bool is_find_k = false;
 
-                size_t len_step = candi_top.size();
+                size_t len_step = candi_pop.size();
                 for (size_t si = 0; si < len_step; si++){
-                    float pop = candi_top[si];
+                    float pop = candi_pop[si];
                     float top1 = res_first[si];
                     float topk = res_tenth[si];
 
@@ -2033,7 +2042,7 @@ namespace hnswlib {
                     // find the stable k pos
                     if ((!is_find_k) && (si > 0)){
 
-                        if ((pop >= topk) && (candi_top[si-1] <= res_tenth[si-1])){
+                        if ((pop >= topk) && (candi_pop[si-1] <= res_tenth[si-1])){
                             keep_k = 0;
                         }
                         if (pop > topk && keep_k >= 0){
@@ -2058,7 +2067,7 @@ namespace hnswlib {
                 if (is_find_k){
                     float upper = dist_thr * (res_tenth[pos_stable_k] - res_first[pos_stable_k]);
                     for (size_t i = pos_stable_k; i < len_step; i++){
-                        float diff = candi_top[i] - res_tenth[i];
+                        float diff = candi_pop[i] - res_tenth[i];
                         if (curve_stable.size() < 4 * len_observe){
                             curve_stable.push_back(diff);
                         } else {
@@ -2077,7 +2086,7 @@ namespace hnswlib {
 
                 // printf("%u, %.4f, %.3f, %u, %u, %u \n", qi, curve_av_st[1], (curve_av_st[0] * 1e4), min_step, pos_stable_k, curve_stable.size());
 
-                size_t predict = candi_top.size();
+                size_t predict = candi_pop.size();
                 if (curve_av_st[1] < std_thr){
                     predict = pos_stable_k + curve_stable.size() + add_step;
                     if (predict >= min_step){
@@ -2128,15 +2137,15 @@ namespace hnswlib {
                 bool is_find_k = false;
                 int len_observe = 10;
 
-                size_t len_step = candi_top.size();
+                size_t len_step = candi_pop.size();
                 for (size_t si = 0; si < len_step; si++){
-                    float pop = candi_top[si];
+                    float pop = candi_pop[si];
                     float top1 = res_first[si];
                     float topk = res_tenth[si];
                     // find the stable k pos
                     if ((!is_find_k) && (si > 0)){
 
-                        if ((pop >= topk) && (candi_top[si-1] <= res_tenth[si-1])){
+                        if ((pop >= topk) && (candi_pop[si-1] <= res_tenth[si-1])){
                             keep_k = 0;
                         }
                         if (pop > topk && keep_k >= 0){
@@ -2152,7 +2161,7 @@ namespace hnswlib {
                 }
             }
 
-            size_t real_stage = unsigned((candi_top.size() - iter_start - iter_len) / (iter_len - overlap)) + 1;
+            size_t real_stage = unsigned((candi_pop.size() - iter_start - iter_len) / (iter_len - overlap)) + 1;
             if (real_stage < num_stage){
                 printf("No support, num_stage need decrease\n");
                 exit(1);
@@ -2178,15 +2187,15 @@ namespace hnswlib {
                     cur_featrue.cycle = (float)iter_c / EFS_MAX;
 
                     cur_featrue.dist_bound = bound[iter_c];
-                    cur_featrue.dist_candi_top = candi_top[iter_c];
+                    cur_featrue.dist_candi_top = candi_pop[iter_c];
                     cur_featrue.dist_result_k = res_tenth[iter_c];
                     cur_featrue.dist_result_1 = res_first[iter_c];
 
                     if (iter_c == 0)
                         cur_featrue.diff_top = 0;
                     else
-                        cur_featrue.diff_top = candi_top[iter_c] - candi_top[iter_c - 1];
-                    cur_featrue.diff_top_k = candi_top[iter_c] - res_tenth[iter_c];
+                        cur_featrue.diff_top = candi_pop[iter_c] - candi_pop[iter_c - 1];
+                    cur_featrue.diff_top_k = candi_pop[iter_c] - res_tenth[iter_c];
                     cur_featrue.diff_k_1 = res_tenth[iter_c] - res_first[iter_c];
 
                     if (res_first[iter_c] == 0){
@@ -2194,7 +2203,7 @@ namespace hnswlib {
                         cur_featrue.div_k_1 = 0;
                     }
                     else{
-                        cur_featrue.div_top_1 = candi_top[iter_c] / res_first[iter_c];
+                        cur_featrue.div_top_1 = candi_pop[iter_c] / res_first[iter_c];
                         cur_featrue.div_k_1 = res_tenth[iter_c] / res_first[iter_c];
                     }
 

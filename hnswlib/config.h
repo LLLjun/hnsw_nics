@@ -14,7 +14,7 @@ typedef float DTRES;
 // for profiling
 #define IOF1 false
 #define PROFILE true
-#define MSH false
+#define MSH true
 
 // for lstm
 #define USESAMQ false

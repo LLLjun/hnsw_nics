@@ -181,7 +181,13 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         // appr_alg->testSortMultiadd();
         // exit(0);
-        
+#if MSH
+        // random
+        std::vector<uint32_t> rand_list(vecsize - 1);
+        for (uint32_t i = 1; i < vecsize; i++)
+            rand_list[i] = i;
+        random_shuffle(rand_list.begin(), rand_list.end());
+#endif
 
 #if PLATG
         unsigned center_id = compArrayCenter<DTval>(massB, vecsize, vecdim);
@@ -195,9 +201,9 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         size_t report_every = vecsize / 10;
 
         steady_clock::time_point s = steady_clock::now();
-#pragma omp parallel for
+// #pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {
-#pragma omp critical
+// #pragma omp critical
             {
                 j1++;
                 if (j1 % report_every == 0) {
@@ -215,7 +221,13 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
                 ic = i;
             appr_alg->addPoint((void *) (massB + ic * vecdim), ic);
 #else
+
+#if MSH
+            appr_alg->addPoint((void *) (massB + rand_list[i] * vecdim), rand_list[i]);
+#else
             appr_alg->addPoint((void *) (massB + i * vecdim), i);
+#endif
+
 #endif
         }
 
@@ -346,7 +358,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         printf("Load queries from %s done \n", path_q.c_str());
     
 #if MSH
-        string path_step = index_string["prefix_unique"] + "_step.csv";
+        string path_step = index_string["prefix_unique"] + "_step_random.csv";
         appr_alg->setEf(EFS_MAX);
         appr_alg->getEveryQueryMinStep(massQ, qsize, vecdim, k, path_step);
         exit(0);
@@ -499,9 +511,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string path_build_txt = pre_output + "/" + unique_name + "_build_exi.txt";
     string path_search_csv = pre_output + "/" + unique_name + "_search_exi.csv";
 #else
-    string hnsw_index = pre_index + "/" + unique_name + ".bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search.csv";
+    string hnsw_index = pre_index + "/" + unique_name + "_rand.bin";
+    string path_build_txt = pre_output + "/" + unique_name + "_build_rand.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search_rand.csv";
 #endif
 
     map<string, size_t> index_parameter;
