@@ -345,6 +345,13 @@ namespace hnswlib {
             if (top_candidates.size() < M) {
                 return;
             }
+            std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
+            std::vector<std::pair<dist_t, tableint>> return_list;
+            while (top_candidates.size() > 0) {
+                queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
+                top_candidates.pop();
+            }
+
 #if RLDT
             std::unordered_set<size_t> g;
 
@@ -383,20 +390,13 @@ namespace hnswlib {
                 }
                 
                 if (g.find(kk) == g.end()){
-                    g.insert(kk);
+                    g.emplace(kk);
                     return_list.push_back(curent_pair);
                 }
             }
             delete[] diffData;
 
 #else
-            std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
-            std::vector<std::pair<dist_t, tableint>> return_list;
-            while (top_candidates.size() > 0) {
-                queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
-                top_candidates.pop();
-            }
-
             while (queue_closest.size()) {
                 if (return_list.size() >= M)
                     break;
@@ -1325,7 +1325,7 @@ namespace hnswlib {
                         assert(data[j] < cur_element_count);
                         assert (data[j] != i);
                         inbound_connections_num[data[j]]++;
-                        s.insert(data[j]);
+                        s.emplace(data[j]);
                         connections_checked++;
 
                     }

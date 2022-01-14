@@ -7,10 +7,10 @@ typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;
 
-#define LABEL 1
+#define LABEL 2
 // for strategy
-#define EXI false
-#define RLDT false
+#define EXI true
+#define RLDT true
 
 // for profiling
 #define IOF1 false

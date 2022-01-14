@@ -30,8 +30,8 @@ def save_fig(path_fig, np_array, legend_list, columns):
 
 
 def handle_data():
-    label = "expc1"
-    dataname = "deep"
+    label = "expc2"
+    dataname = "gist"
     datasize = 1
     k = 10
 
@@ -42,8 +42,8 @@ def handle_data():
 
 
     columns = []
-    efc_list = range(40, 61, 20)
-    m_list = [20]
+    efc_list = range(60, 91, 30)
+    m_list = [30]
 
     data_list = []
     legend_list = []
@@ -56,7 +56,17 @@ def handle_data():
                 data_list.append(df_feature.values.transpose())
                 legend_list.append(unique_name)
 
+                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt.csv"
+                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                data_list.append(df_feature.values.transpose())
+                legend_list.append(unique_name)
+
                 unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
+                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                data_list.append(df_feature.values.transpose())
+                legend_list.append(unique_name)
+
+                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi_rldt.csv"
                 df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
                 data_list.append(df_feature.values.transpose())
                 legend_list.append(unique_name)
@@ -73,7 +83,7 @@ def handle_data():
     #             legend_list.append(unique_name)
 
     np_feature = np.array(data_list).astype(np.float32)
-    figname = "compare_exi_" + dataname + str(datasize) + "m"
+    figname = "compare_exi_rldt_" + dataname + str(datasize) + "m"
     path_fig = os.path.join(path_save, figname)
     save_fig(path_fig, np_feature, legend_list, columns)
 

@@ -412,11 +412,19 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
-    
-#if EXI
+
+#if (EXI && RLDT)
+    string hnsw_index = pre_index + "/" + unique_name + "_sxi_rldt.bin";
+    string path_build_txt = pre_output + "/" + unique_name + "_build_sxi_rldt.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search_sxi_rldt.csv";
+#elif EXI
     string hnsw_index = pre_index + "/" + unique_name + "_sxi.bin";
     string path_build_txt = pre_output + "/" + unique_name + "_build_sxi.txt";
     string path_search_csv = pre_output + "/" + unique_name + "_search_sxi.csv";
+#elif RLDT
+    string hnsw_index = pre_index + "/" + unique_name + "_rldt.bin";
+    string path_build_txt = pre_output + "/" + unique_name + "_build_rldt.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search_rldt.csv";
 #else
     string hnsw_index = pre_index + "/" + unique_name + ".bin";
     string path_build_txt = pre_output + "/" + unique_name + "_build.txt";
