@@ -1,8 +1,8 @@
 import os
 
 def run_single():
-    efc = 100
-    m = 25
+    efc = 40
+    m = 20
     datasize = 10
     dataname = "deep"
     format = ""
@@ -21,9 +21,9 @@ def run_single():
 
 
 def space_explore(stage):
-    max_efc = range(60, 101, 400)
-    max_m = range(20, 31, 20)
-    datasets = ["deep", "sift", "gist", "turing"]
+    efc_list = range(40, 101, 20)
+    m_list = [20]
+    datasets = ["deep"]
     datasize = 1
     format = ""
     # stage = "both"
@@ -36,8 +36,8 @@ def space_explore(stage):
         else:
             format = "float"
 
-        for efc in max_efc:
-            for m in max_m:
+        for efc in efc_list:
+            for m in m_list:
                 command = "cd build && ./main_run " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
                 if efc > m:
                     os.system(command)
@@ -45,4 +45,5 @@ def space_explore(stage):
     os.system("cd build && rm main_run")
 
 space_explore("build")
+space_explore("search")
 # run_single()

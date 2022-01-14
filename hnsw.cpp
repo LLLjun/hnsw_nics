@@ -227,7 +227,7 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
 #endif
         }
 
-        double time_build = duration_cast<seconds>(steady_clock::now() - s).count();
+        double time_build = duration<double>(steady_clock::now() - s).count();
 
         cout << "Build time:" << time_build << "  seconds\n";
         delete[] massB;
@@ -414,9 +414,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string path_index, path_gt, path_q, path_data;
     
 #if EXI
-    string hnsw_index = pre_index + "/" + unique_name + "_exi.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_exi.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_exi.csv";
+    string hnsw_index = pre_index + "/" + unique_name + "_sxi.bin";
+    string path_build_txt = pre_output + "/" + unique_name + "_build_sxi.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search_sxi.csv";
 #else
     string hnsw_index = pre_index + "/" + unique_name + ".bin";
     string path_build_txt = pre_output + "/" + unique_name + "_build.txt";

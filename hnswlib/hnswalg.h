@@ -528,12 +528,28 @@ namespace hnswlib {
                 ex_list.push_back(selectedNeighbors[idx]);
             }
             std::unordered_set<tableint> rever_node;
+            unsigned IF1_cur_c = 0;
             for (size_t idx = 0; idx < ex_list.size(); idx++) {
-                tableint cur_i =  ex_list[idx];
+                if (IF1_cur_c >= M_)
+                    break;
+                
+                tableint cur_i =  ex_list[ex_list.size() - idx - 1];
+
                 if (rever_node.find(cur_i) != rever_node.end()){
                     continue;
                 }
-                rever_node.insert(cur_i);
+                if (idx > M_){
+                    bool no_link = true;
+                    for (auto iter = rever_node.begin(); iter != rever_node.end(); iter++){
+                        if (isNeighbor(*iter, cur_i, level)){
+                            no_link = false;
+                            break;
+                        }
+                    }
+                    if (!no_link)
+                        continue;
+                }
+                rever_node.emplace(cur_i);
 #else
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
                 tableint cur_i =  selectedNeighbors[idx];
@@ -573,6 +589,9 @@ namespace hnswlib {
                     if ((graph_type == "base") && (sz_link_list_other < Mcurmax)) {
                         data[sz_link_list_other] = cur_c;
                         setListCount(ll_other, sz_link_list_other + 1);
+#if EXI
+                        IF1_cur_c++;
+#endif
                     } else {
                         // finding the "weakest" element to replace it with the new one
                         dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(cur_i),
@@ -605,20 +624,11 @@ namespace hnswlib {
                             candidates.pop();
                             indx++;
                         }
-
                         setListCount(ll_other, indx);
-                        // Nearest K:
-                        /*int indx = -1;
-                        for (int j = 0; j < sz_link_list_other; j++) {
-                            dist_t d = fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(rez[idx]), dist_func_param_);
-                            if (d > d_max) {
-                                indx = j;
-                                d_max = d;
-                            }
-                        }
-                        if (indx >= 0) {
-                            data[indx] = cur_c;
-                        } */
+#if EXI
+                        if (isNeighbor(cur_c, cur_i, level))
+                            IF1_cur_c++;
+#endif
                     }
                 }
 #if IOF1
@@ -626,7 +636,6 @@ namespace hnswlib {
                     IF1[cur_c]++;
                 }
 #endif
-
             }
 
             return next_closest_entry_point;
@@ -1210,10 +1219,10 @@ namespace hnswlib {
                         if (top_candidates.size() > ef_construction_)
                             top_candidates.pop();
                     }
-                    tb_search += std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - s).count();
+                    tb_search += std::chrono::duration<double>(std::chrono::steady_clock::now() - s).count();
                     s = std::chrono::steady_clock::now();
                     currObj = mutuallyConnectNewElement(data_point, cur_c, top_candidates, level, false);
-                    tb_sort += std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - s).count();
+                    tb_sort += std::chrono::duration<double>(std::chrono::steady_clock::now() - s).count();
 #else
                     std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates = searchBaseLayer(
                             currObj, data_point, level);
@@ -1517,8 +1526,8 @@ namespace hnswlib {
             return (dist_average / need_comp.size());
         }
 
-#if IOF1
-        int isNeighbor(tableint &xi, tableint &xc, int &level){
+#if (IOF1 || EXI)
+        int isNeighbor(const tableint &xi, tableint &xc, int &level){
             linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
             int size = getListCount(ll_cur);
             tableint *data = (tableint *) (ll_cur + 1);
@@ -1642,7 +1651,7 @@ namespace hnswlib {
                     // printf("%.3f, %u \n", set_sort.top().first, set_sort.top().second);
                     set_sort.pop();
                 }
-                g.insert(kk);
+                g.emplace(kk);
                 // printf("%u \n", kk);
 
                 // use max for 1
@@ -1653,7 +1662,7 @@ namespace hnswlib {
                 // int pos = std::max_element(vecB, vecB + vdim) - vecB;
                 // size_t kk = pos * 10 + signf(vecA[pos]);
                 // std::unordered_set<size_t> g;
-                // g.insert(kk);
+                // g.emplace(kk);
                 // // printf("%u \n", kk);
             }
             float t_sort = stopc.getElapsedTimeus();

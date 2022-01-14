@@ -56,7 +56,7 @@ def handle_data():
                 data_list.append(df_feature.values.transpose())
                 legend_list.append(unique_name)
 
-                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_exi.csv"
+                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
                 df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
                 data_list.append(df_feature.values.transpose())
                 legend_list.append(unique_name)

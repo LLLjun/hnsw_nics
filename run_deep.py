@@ -20,7 +20,7 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = range(40, 101, 20)
+    efc_list = range(60, 101, 40)
     m_list = [20]
     # efc_list = range(50, 301, 50)
     # m_list = range(5, 26, 5)
