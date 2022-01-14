@@ -273,8 +273,8 @@ void hnsw_impl(bool is_build, const string &using_dataset, string &graph_type){
     }
 
 	size_t subset_size_milllions = 1;
-	size_t efConstruction = 40;
-	size_t M = 16;
+	size_t efConstruction = 80;
+	size_t M = 20;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;

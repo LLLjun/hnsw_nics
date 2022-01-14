@@ -1,7 +1,7 @@
 // For multi experiment
 // #define DIR(A) #A
 
-#define PLATG true
+#define PLATG false
 
 #define MODE base
 
