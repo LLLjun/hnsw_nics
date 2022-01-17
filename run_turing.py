@@ -21,12 +21,13 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = range(80, 101, 20)
+    efc_list = range(40, 101, 20)
     m_list = [20]
     # efc_list = range(50, 301, 50)
     # m_list = range(5, 26, 5)
     datasets = ["turing"]
     datasize = 1
+    k = 1
     format = ""
 
     # os.system("cd build && make main && cp main main_run_turing")
@@ -39,11 +40,11 @@ def space_explore(stage):
 
         for m in m_list:
             for efc in efc_list:
-                command = "cd build && ./main_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                command = "cd build && ./main_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
                 if efc >= (2 * m):
                     os.system(command)
 
-                command = "cd build && ./main_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                command = "cd build && ./main_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
                 if efc >= (2 * m):
                     os.system(command)
     # os.system("cd build && rm main_run_turing")

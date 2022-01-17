@@ -140,6 +140,17 @@ namespace hnswlib {
         std::default_random_engine level_generator_;
         std::default_random_engine update_probability_generator_;
 
+        inline tableint getInternalByLabel(labeltype external_id) const {
+            tableint return_id;
+            auto ss = label_lookup_.find(external_id);
+            if (ss == label_lookup_.end()){
+                throw std::runtime_error("Label not found");
+            } else {
+                return_id = ss->second;
+            }
+            return return_id;
+        }
+
         inline labeltype getExternalLabel(tableint internal_id) const {
             labeltype return_label;
             memcpy(&return_label,(data_level0_memory_ + internal_id * size_data_per_element_ + label_offset_), sizeof(labeltype));
@@ -1561,6 +1572,72 @@ namespace hnswlib {
                 }
             }
         }
+#endif
+
+#if DGPERF
+        void getIDGTable(std::vector<unsigned> &IDG){
+            std::vector<unsigned>().swap(IDG);
+            IDG.resize(cur_element_count, 0);
+
+            for (size_t i = 0; i < cur_element_count; i++){
+                for(size_t l = 0; l <= element_levels_[i]; l++){
+                    linklistsizeint *ll_cur = get_linklist_at_level(i, l);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+                    
+                    for (int j = 0; j < size; j++){
+                        assert(data[j] > 0);
+                        assert(data[j] < cur_element_count);
+                        assert (data[j] != i);
+                        IDG[data[j]]++;
+                    }
+                }
+            }
+        }
+
+        void getIDGforNOfind(std::vector<unsigned> &no_find, std::string &path_distrib){
+            std::vector<unsigned> idg_num;
+
+            std::vector<unsigned> IDG_table;
+            getIDGTable(IDG_table);
+            std::vector<unsigned> IDG_distrib;
+            for (unsigned idg: IDG_table){
+                if (IDG_distrib.size() < (idg + 1)){
+                    IDG_distrib.resize(idg + 1, 0);
+                }
+                IDG_distrib[idg]++;
+            }
+
+            std::vector<tableint> nof_tbi;
+            for (unsigned nf: no_find)
+                nof_tbi.push_back(getInternalByLabel(nf));
+            std::sort(nof_tbi.begin(), nof_tbi.end());
+
+            tableint ni_last = std::numeric_limits<tableint>::max();
+            for (tableint ni: nof_tbi){
+                if (ni_last != ni){
+                    unsigned idg = IDG_table[ni];
+                    if (idg_num.size() < (idg + 1)){
+                        idg_num.resize(idg + 1, 0);
+                    }
+                    idg_num[idg]++;
+                    ni_last = ni;
+                }
+            }
+
+            std::string path_d = path_distrib + "efs" + std::to_string(ef_) + ".csv";
+            std::ofstream csv_distrib(path_d.c_str());
+            csv_distrib << "idg,num,all_num,prop" << std::endl;
+            for (int i = 0; i < idg_num.size(); i++){
+                if (idg_num[i] != 0)
+                    csv_distrib << i << "," 
+                                << idg_num[i] << ","
+                                << IDG_distrib[i] << ","
+                                << ((float)idg_num[i] / IDG_distrib[i]) << std::endl;
+            }
+
+            printf("Write no find result idg distribution to %s done \n", path_d.c_str());
+        }        
 #endif
 
         /*

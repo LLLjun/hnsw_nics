@@ -1,12 +1,12 @@
 import os
 
 def run_single():
-    efc = 100
+    efc = 40
     m = 20
     dataname = "deep"
     datasize = 1
     format = ""
-    stage = "build"
+    stage = "search"
 
     if dataname == "sift":
         format = "uint8"
@@ -20,12 +20,12 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = range(60, 61, 20)
+    efc_list = range(40, 61, 20)
     m_list = [20]
     # efc_list = range(50, 301, 50)
     # m_list = range(5, 26, 5)
     datasets = ["deep"]
-    datasize = 1
+    datasize = 10
     format = ""
     # stage = "build"
 
@@ -49,6 +49,6 @@ def space_explore(stage):
     # os.system("cd build && rm main_run_deep")
 
 
-# space_explore("build")
+space_explore("build")
 space_explore("search")
 # run_single()
