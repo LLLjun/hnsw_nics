@@ -422,9 +422,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string path_build_txt = pre_output + "/" + unique_name + "_build_sxi.txt";
     string path_search_csv = pre_output + "/" + unique_name + "_search_sxi.csv";
 #elif RLDT
-    string hnsw_index = pre_index + "/" + unique_name + "_rldt.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_rldt.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_rldt.csv";
+    string hnsw_index = pre_index + "/" + unique_name + "_rldt_pro.bin";
+    string path_build_txt = pre_output + "/" + unique_name + "_build_rldt_pro.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search_rldt_pro.csv";
 #else
     string hnsw_index = pre_index + "/" + unique_name + ".bin";
     string path_build_txt = pre_output + "/" + unique_name + "_build.txt";

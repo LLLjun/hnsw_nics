@@ -9,8 +9,9 @@ typedef float DTRES;
 
 #define LABEL 2
 // for strategy
-#define EXI true
+#define EXI false
 #define RLDT true
+#define DMS 2
 
 // for profiling
 #define IOF1 false
