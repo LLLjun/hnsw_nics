@@ -12,6 +12,7 @@ typedef float DTRES;
 #define EXI false
 #define RLDT true
 #define DMS 2
+#define RLNG true
 
 // for profiling
 #define IOF1 false

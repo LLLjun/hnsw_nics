@@ -341,18 +341,86 @@ namespace hnswlib {
 
         void getNeighborsByHeuristic2(
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
-        const size_t M, tableint insert_node=0, bool isCollect = false) {
+        const size_t M, int level = 0, tableint insert_node=0, bool isCollect = false) {
             if (top_candidates.size() < M) {
                 return;
             }
             std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
             std::vector<std::pair<dist_t, tableint>> return_list;
+            std::unordered_set<tableint> unreach_list;
+
             while (top_candidates.size() > 0) {
                 queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
+                unreach_list.emplace(top_candidates.top().second);
                 top_candidates.pop();
             }
 
-#if RLDT
+#if (RLNG && RLDT)
+            
+
+            while (queue_closest.size()){
+                if (return_list.size() >= M)
+                    break;
+
+                std::pair<dist_t, tableint> curent_pair = queue_closest.top();
+                queue_closest.pop();
+
+                if (unreach_list.find(curent_pair.second) == unreach_list.end()){
+                    unreach_list.erase(curent_pair.second);
+                    continue;
+                }
+
+                return_list.push_back(curent_pair);
+                linklistsizeint *ll_cur = get_linklist_at_level(curent_pair.second, level);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+
+                for (int j = 0; j < size; j++){
+                    if (unreach_list.find(data[j]) != unreach_list.end()){
+                        unreach_list.erase(data[j]);
+                    }
+                }
+
+                // if (!return_list.empty()){
+                //     // bool no_connect = true;
+                //     // for (std::pair<dist_t, tableint> neighbor_pair: return_list){
+                //     //     if (isNeighbor(curent_pair.second, neighbor_pair.second, level)){
+                //     //         no_connect = false;
+                //     //         break;
+                //     //     }
+                //     // }
+
+
+                    
+                //     if (reach_list.find(curent_pair.second) == reach_list.end()){
+                //         return_list.push_back(curent_pair);
+
+                //         linklistsizeint *ll_cur = get_linklist_at_level(curent_pair.second, level);
+                //         int size = getListCount(ll_cur);
+                //         tableint *data = (tableint *) (ll_cur + 1);
+
+                //         for (int j = 0; j < size; j++){
+                //             reach_list.emplace(data[j]);
+                //         }
+                //     }
+                // } else {
+                //     return_list.push_back(curent_pair);
+
+                //     linklistsizeint *ll_cur = get_linklist_at_level(curent_pair.second, level);
+                //     int size = getListCount(ll_cur);
+                //     tableint *data = (tableint *) (ll_cur + 1);
+
+                //     for (int j = 0; j < size; j++){
+                //         reach_list.emplace(data[j]);
+                //     }
+                // }
+            }
+
+            for (std::pair<dist_t, tableint> curent_pair : return_list) {
+                top_candidates.emplace(-curent_pair.first, curent_pair.second);
+            }
+
+#elif RLDT
             std::unordered_set<int> bucket_nearest;
             std::unordered_map<int, std::pair<float, unsigned>> bucket_direct;
             std::unordered_set<unsigned> mark_delete;
@@ -512,7 +580,7 @@ namespace hnswlib {
                     ex_list.push_back(top_candidates.top().second);
                 top_candidates.pop();
             }
-            getNeighborsByHeuristic2(top_candidates_copy, M_, cur_c);
+            getNeighborsByHeuristic2(top_candidates_copy, M_, level, cur_c);
             if (top_candidates_copy.size() > M_)
                 throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
             while (top_candidates_copy.size() > 0) {
@@ -520,7 +588,7 @@ namespace hnswlib {
                 top_candidates_copy.pop();
             }
 #else
-            getNeighborsByHeuristic2(top_candidates, M_);
+            getNeighborsByHeuristic2(top_candidates, M_, level);
             if (top_candidates.size() > M_)
                 throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
             while (top_candidates.size() > 0) {
@@ -640,18 +708,7 @@ namespace hnswlib {
                                     fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(cur_i),
                                                  dist_func_param_), data[j]);
                         }
-                        if (graph_type == "knng"){
-                            while (candidates.size() > Mcurmax)
-                                candidates.pop();
-                        } else if (graph_type == "rng"){
-                            size_t mm = std::min(Mcurmax, sz_link_list_other + 1);
-                            getNeighborsByHeuristic2(candidates, mm);                   
-                        } else if (graph_type == "base"){
-                            getNeighborsByHeuristic2(candidates, Mcurmax, cur_i);
-                        } else {
-                            printf("Error, unknown graph type \n");
-                            exit(1);
-                        }
+                        getNeighborsByHeuristic2(candidates, Mcurmax, level, cur_i);
 
                         int indx = 0;
                         while (candidates.size() > 0) {
@@ -1561,7 +1618,6 @@ namespace hnswlib {
             return (dist_average / need_comp.size());
         }
 
-#if (IOF1 || EXI)
         int isNeighbor(const tableint &xi, tableint &xc, int &level){
             linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
             int size = getListCount(ll_cur);
@@ -1574,6 +1630,7 @@ namespace hnswlib {
             return 0;
         }
 
+#if (IOF1 || EXI)
         void getDegreePerPoint(std::vector<unsigned> &IDG, std::vector<unsigned> &ODG){
             std::vector<unsigned>().swap(IDG);
             std::vector<unsigned>().swap(ODG);
