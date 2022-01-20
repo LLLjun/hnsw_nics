@@ -37,7 +37,7 @@ def handle_data():
     k = 10
 
     columns = []
-    efc_list = range(60, 101, 40)
+    efc_list = [100, 300, 500, 700]
     m_list = [20]
 
     for dataname in datasets:
@@ -66,15 +66,15 @@ def handle_data():
                     data_list.append(df_feature.values.transpose())
                     legend_list.append(unique_name)
 
-                    unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
-                    df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    data_list.append(df_feature.values.transpose())
-                    legend_list.append(unique_name)
+                    # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
+                    # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                    # data_list.append(df_feature.values.transpose())
+                    # legend_list.append(unique_name)
 
-                    unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi_rldt.csv"
-                    df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    data_list.append(df_feature.values.transpose())
-                    legend_list.append(unique_name)
+                    # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi_rldt.csv"
+                    # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                    # data_list.append(df_feature.values.transpose())
+                    # legend_list.append(unique_name)
 
                     columns = df_feature.columns
 

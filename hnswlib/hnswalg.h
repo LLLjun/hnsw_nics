@@ -421,16 +421,14 @@ namespace hnswlib {
             }
 
 #elif RLDT
-            std::unordered_set<int> bucket_nearest;
-            std::unordered_map<int, std::pair<float, unsigned>> bucket_direct;
-            std::unordered_set<unsigned> mark_delete;
+            std::unordered_multimap<int, unsigned> bucket_direct;
 
             size_t vdim = *((size_t *)dist_func_param_);
             float *diffData = new float[vdim]();
             float *vec_o = (float *)getDataByInternalId(insert_node);
 
             while (queue_closest.size()){
-                if (return_list.size() >= (M + mark_delete.size()))
+                if (return_list.size() >= M)
                     break;
 
                 std::pair<dist_t, tableint> curent_pair = queue_closest.top();
@@ -452,51 +450,43 @@ namespace hnswlib {
                 }
                 
                 int key = 0;
-                float prop = 1;
                 while (!set_sort.empty()){
                     if (set_sort.size() == 1){
                         key = set_sort.top().second;
-                        if (prop != 0)
-                            prop = set_sort.top().first / prop;
-                        else
-                            prop = std::numeric_limits<float>::max();
-                        break;
                     }
-                    prop = set_sort.top().first;
                     set_sort.pop();
                 }
                 
-                if (bucket_nearest.find(key) == bucket_nearest.end()){
-                    bucket_nearest.emplace(key);
+                auto iter_connect = bucket_direct.find(key);
+                if (iter_connect == bucket_direct.end()){
+                    bucket_direct.emplace(key, return_list.size());
                     return_list.push_back(curent_pair);
-                } else {
-                    auto iter_direct = bucket_direct.find(key);
-                    if (iter_direct == bucket_direct.end()){
-                        bucket_direct.emplace(key, std::make_pair(prop, return_list.size()));
-                        return_list.push_back(curent_pair);
-                    } else {
-                        // if (iter_direct->second.first < prop){
-                            // replace
-                            mark_delete.emplace(iter_direct->second.second);
-                            bucket_direct[key] = std::make_pair(prop, return_list.size());
-                            return_list.push_back(curent_pair);
-
-                            auto iter_debug = bucket_direct.find(key);
-                            if (iter_debug->second.first != prop){
-                                printf("Error\n");
-                                exit(1);
+                } 
+                else {
+                    int len = bucket_direct.count(key);
+                    if (len <= 20){
+                        bool no_connect = true;
+                        while (len--){
+                            tableint boo = return_list[iter_connect->second].second;
+                            if (isNeighbor(curent_pair.second, boo, level)){
+                                no_connect = false;
+                                break;
                             }
-                        // }
+                            iter_connect++;
+                        }
+                        if (no_connect){
+                            bucket_direct.emplace(key, return_list.size());
+                            return_list.push_back(curent_pair);
+                        }
                     }
                 }
+                
             }
             delete[] diffData;
 
             for (unsigned i = 0; i < return_list.size(); i++) {
-                if (mark_delete.find(i) == mark_delete.end()){
-                    std::pair<dist_t, tableint> curent_pair = return_list[i];
-                    top_candidates.emplace(-curent_pair.first, curent_pair.second);
-                }
+                std::pair<dist_t, tableint> curent_pair = return_list[i];
+                top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
 #else
             while (queue_closest.size()) {
@@ -656,6 +646,7 @@ namespace hnswlib {
 #else
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
                 tableint cur_i =  selectedNeighbors[idx];
+                // tableint cur_i =  selectedNeighbors[selectedNeighbors.size() - idx - 1];    
 #endif
 
                 std::unique_lock <std::mutex> lock(link_list_locks_[cur_i]);
@@ -690,6 +681,14 @@ namespace hnswlib {
                 // If cur_c is already present in the neighboring connections of `cur_i` then no need to modify any connections or run the heuristics.
                 if (!is_cur_c_present) {
                     if ((graph_type == "base") && (sz_link_list_other < Mcurmax)) {
+                        // lower
+                        // for (int jj = 0; jj < sz_link_list_other; jj++){
+                        //     if (isNeighbor(cur_c, data[jj], level)){
+                        //         no_connect = false;
+                        //         break;
+                        //     }
+                        // }
+
                         data[sz_link_list_other] = cur_c;
                         setListCount(ll_other, sz_link_list_other + 1);
 #if EXI
