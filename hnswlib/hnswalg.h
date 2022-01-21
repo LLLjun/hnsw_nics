@@ -682,12 +682,28 @@ namespace hnswlib {
                 ex_list.push_back(selectedNeighbors[idx]);
             }
             std::unordered_set<tableint> rever_node;
+            unsigned IF1_cur_c = 0;
             for (size_t idx = 0; idx < ex_list.size(); idx++) {
-                tableint cur_i =  ex_list[idx];
+                if (IF1_cur_c >= M_)
+                    break;
+                
+                tableint cur_i =  ex_list[ex_list.size() - idx - 1];
+
                 if (rever_node.find(cur_i) != rever_node.end()){
                     continue;
                 }
-                rever_node.insert(cur_i);
+                if (idx > M_){
+                    bool no_link = true;
+                    for (auto iter = rever_node.begin(); iter != rever_node.end(); iter++){
+                        if (isNeighbor(*iter, cur_i, level)){
+                            no_link = false;
+                            break;
+                        }
+                    }
+                    if (!no_link)
+                        continue;
+                }
+                rever_node.emplace(cur_i);
 #else
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
                 tableint cur_i =  selectedNeighbors[idx];
@@ -1671,8 +1687,7 @@ namespace hnswlib {
             return (dist_average / need_comp.size());
         }
 
-#if IOF1
-        int isNeighbor(tableint &xi, tableint &xc, int &level){
+        int isNeighbor(const tableint &xi, tableint &xc, int &level){
             linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
             int size = getListCount(ll_cur);
             tableint *data = (tableint *) (ll_cur + 1);
@@ -1684,6 +1699,7 @@ namespace hnswlib {
             return 0;
         }
 
+#if IOF1
         void getDegreePerPoint(std::vector<unsigned> &IDG, std::vector<unsigned> &ODG){
             std::vector<unsigned>().swap(IDG);
             std::vector<unsigned>().swap(ODG);
@@ -1834,10 +1850,13 @@ namespace hnswlib {
                 }
             }
 
+
+
             std::ofstream csv_step(path_step.c_str());
-            csv_step << "min_step,all_step" << std::endl;
+            csv_step << "min_step" << std::endl;
             for (size_t qi = 0; qi < qsize; qi++){
-                csv_step << min_step[qi] << "," << all_step[qi] << std::endl;
+                csv_step << min_step[qi] << std::endl;
+                // csv_step << min_step[qi] << "," << all_step[qi] << std::endl;
             }
             csv_step.close();
 

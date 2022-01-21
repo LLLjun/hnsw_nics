@@ -96,12 +96,14 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
 
-    for (int i = 20; i <= 100; i += 10) {
-        efs.push_back(i);
-    }
-    for (int i = 200; i <= 300; i += 100) {
-        efs.push_back(i);
-    }
+    // for (int i = 20; i <= 100; i += 10) {
+    //     efs.push_back(i);
+    // }
+    // for (int i = 200; i <= 300; i += 100) {
+    //     efs.push_back(i);
+    // }
+
+    efs.push_back(300);
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
     csv_writer << "R@" << k << ",qps" << endl;
@@ -181,13 +183,13 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         // appr_alg->testSortMultiadd();
         // exit(0);
-#if MSH
-        // random
-        std::vector<uint32_t> rand_list(vecsize - 1);
-        for (uint32_t i = 1; i < vecsize; i++)
-            rand_list[i] = i;
-        random_shuffle(rand_list.begin(), rand_list.end());
-#endif
+// #if MSH
+//         // random
+//         std::vector<uint32_t> rand_list(vecsize - 1);
+//         for (uint32_t i = 1; i < vecsize; i++)
+//             rand_list[i] = i;
+//         random_shuffle(rand_list.begin(), rand_list.end());
+// #endif
 
 #if PLATG
         unsigned center_id = compArrayCenter<DTval>(massB, vecsize, vecdim);
@@ -201,9 +203,9 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         size_t report_every = vecsize / 10;
 
         steady_clock::time_point s = steady_clock::now();
-// #pragma omp parallel for
+#pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {
-// #pragma omp critical
+#pragma omp critical
             {
                 j1++;
                 if (j1 % report_every == 0) {
@@ -222,11 +224,11 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
             appr_alg->addPoint((void *) (massB + ic * vecdim), ic);
 #else
 
-#if MSH
-            appr_alg->addPoint((void *) (massB + rand_list[i] * vecdim), rand_list[i]);
-#else
+// #if MSH
+//             appr_alg->addPoint((void *) (massB + rand_list[i] * vecdim), rand_list[i]);
+// #else
             appr_alg->addPoint((void *) (massB + i * vecdim), i);
-#endif
+// #endif
 
 #endif
         }
@@ -358,13 +360,21 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         printf("Load queries from %s done \n", path_q.c_str());
     
 #if MSH
-        string path_step = index_string["prefix_unique"] + "_step_random.csv";
-        appr_alg->setEf(EFS_MAX);
-        // appr_alg->getEveryQueryMinStep(massQ, qsize, vecdim, k, path_step);
+        vector<size_t> efs_list;
+        efs_list.push_back(100);
+        efs_list.push_back(200);
+        efs_list.push_back(300);
+        for (size_t efs: efs_list){
+            string path_step = index_string["prefix_unique"] + "_step_efs" + to_string(efs) + ".csv";
+            appr_alg->setEf(efs);
+            appr_alg->getEveryQueryMinStep(massQ, qsize, vecdim, k, path_step);
+        }
 
-        size_t qid = 4397;
-        string path_trace = index_string["prefix_unique"] + "_trace_" + to_string(qid) + ".csv";
-        appr_alg->getSearchTrace((massQ + qid * vecdim), k, path_trace);
+        // {        
+        //     size_t qid = 4397;
+        //     string path_trace = index_string["prefix_unique"] + "_trace_" + to_string(qid) + ".csv";
+        //     appr_alg->getSearchTrace((massQ + qid * vecdim), k, path_trace);
+        // }
         exit(0);
 #endif
 
@@ -373,7 +383,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
 #if MANUAL
-        appr_alg->setEf(efs_max);
+        appr_alg->setEf(EFS_MAX);
         map<string, float> param;
 
         param["len_observe"] = 18;
@@ -411,15 +421,15 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         size_t ovlp_len = OLLE;
         size_t num_stage = NMSG;
 #if USESAMQ
-        string path_train = path_aware + "train_" + to_string(iter_start) + "_" + to_string(iter_len) + 
+        string path_train = index_string["prefix_unique"] + "_train_" + to_string(iter_start) + "_" + to_string(iter_len) + 
                             "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".csv";
 #else
-        string path_train = path_aware + "test_" + to_string(iter_start) + "_" + to_string(iter_len) + 
+        string path_train = index_string["prefix_unique"] + "_test_" + to_string(iter_start) + "_" + to_string(iter_len) + 
                             "_" + to_string(ovlp_len) + "_" + to_string(num_stage) + ".csv";
 #endif
         ofstream train_data(path_train.c_str(), ios::trunc);
         vector<Lstm_Feature> SeqFeature;
-        appr_alg->setEf(efs_max);
+        appr_alg->setEf(EFS_MAX);
 
         train_data  << "q_id" << "," 
                     << "stage" << ","
@@ -515,9 +525,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     string path_build_txt = pre_output + "/" + unique_name + "_build_exi.txt";
     string path_search_csv = pre_output + "/" + unique_name + "_search_exi.csv";
 #else
-    string hnsw_index = pre_index + "/" + unique_name + "_rand.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_rand.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_rand.csv";
+    string hnsw_index = pre_index + "/" + unique_name + ".bin";
+    string path_build_txt = pre_output + "/" + unique_name + "_build.txt";
+    string path_search_csv = pre_output + "/" + unique_name + "_search.csv";
 #endif
 
     map<string, size_t> index_parameter;
@@ -533,7 +543,11 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_string["hnsw_index"] = hnsw_index;
     index_string["path_build_txt"] = path_build_txt;
     index_string["path_search_csv"] = path_search_csv;
+#if EXI
+    index_string["prefix_unique"] = pre_output + "/" + unique_name + "_exi";
+#else
     index_string["prefix_unique"] = pre_output + "/" + unique_name;
+#endif
 
     CheckDataset(using_dataset, index_parameter, index_string);
     
