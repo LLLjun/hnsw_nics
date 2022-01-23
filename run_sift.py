@@ -1,4 +1,5 @@
 import os
+from plot import handle_data
 
 def run_single():
     efc = 60
@@ -21,7 +22,7 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = range(40, 101, 20)
+    efc_list = range(100, 301, 100)
     m_list = [20]
     # efc_list = range(50, 301, 50)
     # m_list = range(5, 26, 5)
@@ -41,16 +42,19 @@ def space_explore(stage):
             for efc in efc_list:
 
 
-                command = "cd build && ./main_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                command = "cd build && ./main_c2_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
                 if efc >= (2 * m):
                     os.system(command)
                 
-                command = "cd build && ./main_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                command = "cd build && ./main_c2_rldt " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
                 if efc >= (2 * m):
                     os.system(command)
     # os.system("cd build && rm main_run_sift")
 
+        if (stage == "search"):
+            handle_data(dataname, efc_list, m_list)
 
-# space_explore("build")
+
+space_explore("build")
 space_explore("search")
 # run_single()

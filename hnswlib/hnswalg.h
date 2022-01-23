@@ -347,81 +347,118 @@ namespace hnswlib {
             }
             std::priority_queue<std::pair<dist_t, tableint>> queue_closest;
             std::vector<std::pair<dist_t, tableint>> return_list;
-            std::unordered_set<tableint> unreach_list;
 
             while (top_candidates.size() > 0) {
                 queue_closest.emplace(-top_candidates.top().first, top_candidates.top().second);
-                unreach_list.emplace(top_candidates.top().second);
                 top_candidates.pop();
             }
 
 #if (RLNG && RLDT)
-            
+            std::vector<std::pair<dist_t, tableint>> delete_list;
+            // std::vector<std::pair<dist_t, tableint>> reuse_list;
 
-            while (queue_closest.size()){
+            while (queue_closest.size()) {
                 if (return_list.size() >= M)
                     break;
-
                 std::pair<dist_t, tableint> curent_pair = queue_closest.top();
+                dist_t dist_to_query = -curent_pair.first;
                 queue_closest.pop();
+                bool good = true;
 
-                if (unreach_list.find(curent_pair.second) == unreach_list.end()){
-                    unreach_list.erase(curent_pair.second);
-                    continue;
-                }
-
-                return_list.push_back(curent_pair);
-                linklistsizeint *ll_cur = get_linklist_at_level(curent_pair.second, level);
-                int size = getListCount(ll_cur);
-                tableint *data = (tableint *) (ll_cur + 1);
-
-                for (int j = 0; j < size; j++){
-                    if (unreach_list.find(data[j]) != unreach_list.end()){
-                        unreach_list.erase(data[j]);
+                for (std::pair<dist_t, tableint> second_pair : return_list) {
+                    dist_t curdist =
+                            fstdistfunc_(getDataByInternalId(second_pair.second),
+                                         getDataByInternalId(curent_pair.second),
+                                         dist_func_param_);;
+                    if (curdist < dist_to_query) {
+                        delete_list.push_back(curent_pair);
+                        good = false;
+                        break;
                     }
                 }
+                if (good) {
+                    return_list.push_back(curent_pair);
+                }
+            }
+            if (return_list.size() < M){
+                for (std::pair<dist_t, tableint> curent_pair: delete_list){
+                    if (return_list.size() >= M)
+                        break;
 
-                // if (!return_list.empty()){
-                //     // bool no_connect = true;
-                //     // for (std::pair<dist_t, tableint> neighbor_pair: return_list){
-                //     //     if (isNeighbor(curent_pair.second, neighbor_pair.second, level)){
-                //     //         no_connect = false;
-                //     //         break;
-                //     //     }
-                //     // }
-
-
-                    
-                //     if (reach_list.find(curent_pair.second) == reach_list.end()){
-                //         return_list.push_back(curent_pair);
-
-                //         linklistsizeint *ll_cur = get_linklist_at_level(curent_pair.second, level);
-                //         int size = getListCount(ll_cur);
-                //         tableint *data = (tableint *) (ll_cur + 1);
-
-                //         for (int j = 0; j < size; j++){
-                //             reach_list.emplace(data[j]);
-                //         }
-                //     }
-                // } else {
-                //     return_list.push_back(curent_pair);
-
-                //     linklistsizeint *ll_cur = get_linklist_at_level(curent_pair.second, level);
-                //     int size = getListCount(ll_cur);
-                //     tableint *data = (tableint *) (ll_cur + 1);
-
-                //     for (int j = 0; j < size; j++){
-                //         reach_list.emplace(data[j]);
-                //     }
-                // }
+                    bool good = true;
+                    for (std::pair<dist_t, tableint> second_pair : return_list){
+                        if (isNeighbor(curent_pair.second, second_pair.second, level)){
+                            good = false;
+                            break;
+                        }
+                    }
+                    if (good)
+                        return_list.push_back(curent_pair);
+                }
             }
 
             for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
 
+#elif (RLCU && RLDT)
+            std::vector<std::pair<dist_t, tableint>> closest_list;
+            std::vector<std::vector<unsigned>> reach_list;
+            std::priority_queue<std::pair<unsigned, int>> reach_num;
+            std::unordered_set<int> delete_list;
+
+            reach_list.resize(queue_closest.size());
+            while (queue_closest.size() > 0){
+                closest_list.push_back(queue_closest.top());
+                queue_closest.pop();
+            }
+            for (int i = 0; i < closest_list.size(); i++){
+                tableint base_id = closest_list[i].second;
+                for (int j = 0; j < closest_list.size(); j++){
+                    if (i == j)
+                        continue;
+                    tableint compare_id = closest_list[j].second;
+                    if (isNeighbor(compare_id, base_id, level)){
+                        reach_list[i].push_back(j);
+                    }
+                }
+                reach_num.emplace(reach_list[i].size(), i);
+            }
+
+            int seq_i = 0;
+            while (!(return_list.size() >= M || (seq_i == closest_list.size() && reach_num.empty()))){
+                for (int i = seq_i; i < closest_list.size(); i++){
+                    seq_i = i + 1;
+                    if (delete_list.find(i) == delete_list.end()){
+                        return_list.push_back(closest_list[i]);
+                        
+                        delete_list.emplace(i);
+                        for (unsigned j = 0; j < reach_list[i].size(); j++)
+                            delete_list.emplace(reach_list[i][j]);
+                        break;
+                    }
+                }
+
+                while (!reach_num.empty()){
+                    int i = reach_num.top().second;
+                    reach_num.pop();
+                    if (delete_list.find(i) == delete_list.end()){
+                        return_list.push_back(closest_list[i]);
+                        
+                        delete_list.emplace(i);
+                        for (unsigned j = 0; j < reach_list[i].size(); j++)
+                            delete_list.emplace(reach_list[i][j]);
+                        break;
+                    }
+                }
+            }
+            
+            for (std::pair<dist_t, tableint> curent_pair : return_list) {
+                top_candidates.emplace(-curent_pair.first, curent_pair.second);
+            }
+
 #elif RLDT
-            std::unordered_multimap<int, unsigned> bucket_direct;
+            std::unordered_multimap<int, unsigned> bucket_base;
 
             size_t vdim = *((size_t *)dist_func_param_);
             float *diffData = new float[vdim]();
@@ -449,43 +486,40 @@ namespace hnswlib {
                     }
                 }
                 
-                int key = 0;
+                // key_list.end() is the largest
+                std::vector<int> key_list;
                 while (!set_sort.empty()){
-                    if (set_sort.size() == 1){
-                        key = set_sort.top().second;
-                    }
+                    key_list.push_back(set_sort.top().second);
                     set_sort.pop();
                 }
-                
-                auto iter_connect = bucket_direct.find(key);
-                if (iter_connect == bucket_direct.end()){
-                    bucket_direct.emplace(key, return_list.size());
-                    return_list.push_back(curent_pair);
-                } 
-                else {
-                    int len = bucket_direct.count(key);
-                    if (len <= 20){
-                        bool no_connect = true;
-                        while (len--){
-                            tableint boo = return_list[iter_connect->second].second;
-                            if (isNeighbor(curent_pair.second, boo, level)){
-                                no_connect = false;
+
+                bool good = true;
+                for (int key: key_list){
+                    auto iter_connect = bucket_base.find(key);
+                    if (iter_connect != bucket_base.end()){
+                        int len = bucket_base.count(key);
+                        for (int i = 0; i < len; i++){
+                            tableint conflict_id = return_list[iter_connect->second].second;
+                            // compare neighbor connection is very important.
+                            if (isNeighbor(curent_pair.second, conflict_id, level)){
+                                good = false;
                                 break;
                             }
                             iter_connect++;
                         }
-                        if (no_connect){
-                            bucket_direct.emplace(key, return_list.size());
-                            return_list.push_back(curent_pair);
-                        }
                     }
+                    if (!good)
+                        break;
                 }
-                
+                if (good){
+                    bucket_base.emplace(key_list[DMS-1], return_list.size());
+                    return_list.push_back(curent_pair);
+                }
+
             }
             delete[] diffData;
 
-            for (unsigned i = 0; i < return_list.size(); i++) {
-                std::pair<dist_t, tableint> curent_pair = return_list[i];
+            for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
             }
 #else

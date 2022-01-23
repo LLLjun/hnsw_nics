@@ -20,11 +20,13 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = [100, 300, 500, 700]
-    m_list = [20]
+    efc_list = [100, 300]
+    m_list = [30]
+    # efc_list = [100, 200]
+    # m_list = [20]
     # efc_list = range(50, 301, 50)
     # m_list = range(5, 26, 5)
-    datasets = ["deep"]
+    datasets = ["gist"]
     datasize = 1
     format = ""
     # stage = "build"

@@ -15,3 +15,5 @@ dataset/
 FC_model/
 output/
 dataset
+
+__pycache__/

@@ -29,68 +29,67 @@ def save_fig(path_fig, np_array, legend_list, columns):
     fig_acc.savefig(path_fig, dpi=300)
 
 
-def handle_data():
+def handle_data(dataname, efc_list, m_list):
     label = "expc2"
-    # dataname = "deep"
-    datasets = ["deep"]
     datasize = 1
     k = 10
 
     columns = []
-    efc_list = [100, 300, 500, 700]
-    m_list = [20]
+    # efc_list = [100, 300]
+    # m_list = [30]
+    # efc_list = range(100, 301, 100)
+    # m_list = [20]
 
-    for dataname in datasets:
-        data_list = []
-        legend_list = []
-        path_dataset = os.path.join(root_output, label, dataname)
-        path_save = os.path.join(path_dataset, "fig")
-        if os.path.exists(path_save) is False:
-            os.mkdir(path_save)
+    data_list = []
+    legend_list = []
+    path_dataset = os.path.join(root_output, label, dataname)
+    path_save = os.path.join(path_dataset, "fig")
+    if os.path.exists(path_save) is False:
+        os.mkdir(path_save)
 
-        for efc in efc_list:
-            for m in m_list:
-                if efc > m:
-                    unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
-                    df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    data_list.append(df_feature.values.transpose())
-                    legend_list.append(unique_name)
+    for efc in efc_list:
+        for m in m_list:
+            if efc > m:
+                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
+                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                data_list.append(df_feature.values.transpose())
+                legend_list.append(unique_name)
 
-                    # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt.csv"
-                    # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    # data_list.append(df_feature.values.transpose())
-                    # legend_list.append(unique_name)
+                # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt.csv"
+                # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                # data_list.append(df_feature.values.transpose())
+                # legend_list.append(unique_name)
 
-                    unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt_pro.csv"
-                    df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    data_list.append(df_feature.values.transpose())
-                    legend_list.append(unique_name)
+                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt_pro.csv"
+                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                data_list.append(df_feature.values.transpose())
+                legend_list.append(unique_name)
 
-                    # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
-                    # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    # data_list.append(df_feature.values.transpose())
-                    # legend_list.append(unique_name)
+                # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
+                # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                # data_list.append(df_feature.values.transpose())
+                # legend_list.append(unique_name)
 
-                    # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi_rldt.csv"
-                    # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                    # data_list.append(df_feature.values.transpose())
-                    # legend_list.append(unique_name)
+                # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi_rldt.csv"
+                # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                # data_list.append(df_feature.values.transpose())
+                # legend_list.append(unique_name)
 
-                    columns = df_feature.columns
+                columns = df_feature.columns
 
-        # efc_list = [200]
-        # for efc in efc_list:
-        #     for m in m_list:
-        #         if efc > m:
-        #             unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
-        #             df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-        #             data_list.append(df_feature.values.transpose())
-        #             legend_list.append(unique_name)
+    # efc_list = [200]
+    # for efc in efc_list:
+    #     for m in m_list:
+    #         if efc > m:
+    #             unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
+    #             df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+    #             data_list.append(df_feature.values.transpose())
+    #             legend_list.append(unique_name)
 
-        np_feature = np.array(data_list).astype(np.float32)
-        figname = "compare_rldt_pro_pp_" + dataname + str(datasize) + "m"
-        path_fig = os.path.join(path_save, figname)
-        save_fig(path_fig, np_feature, legend_list, columns)
+    np_feature = np.array(data_list).astype(np.float32)
+    figname = "compare_rldt_pro_pp_" + dataname + str(datasize) + "m"
+    path_fig = os.path.join(path_save, figname)
+    save_fig(path_fig, np_feature, legend_list, columns)
 
 if __name__ == "__main__":
     handle_data()
