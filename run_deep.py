@@ -21,6 +21,7 @@ def run_single():
     os.system("cd build && rm main_run_sift")
 
 
+<<<<<<< Updated upstream
 def space_explore(stage):
     efc_list = range(100, 301, 100)
     m_list = [20]
@@ -49,8 +50,37 @@ def space_explore(stage):
 
             if (stage == "search"):
                 handle_data(dataname, datasize, efc_list, m_list, k)
+=======
+def space_explore(stage, datasize):
+    # efc_list = range(60, 121, 20)
+    efc_list = [100]
+    m_list = [20]
+    datasets = ["deep"]
+    # datasize = 10
+    k_list = [1, 100]
+    format = ""
+
+    for dataname in datasets:
+        if dataname == "sift":
+            format = "uint8"
+        else:
+            format = "float"
+
+        for efc in efc_list:
+            for m in m_list:
+                for k in k_list:
+                    command = "cd build && ./main_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
+                    if efc > m:
+                        os.system(command)
+
+                    command = "cd build && ./main_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
+                    if efc > m:
+                        os.system(command)
+>>>>>>> Stashed changes
 
 
-space_explore("build")
-space_explore("search")
+# space_explore("build", 10)
+space_explore("search", 10)
+# space_explore("build", 1)
+# space_explore("search", 1)
 # run_single()

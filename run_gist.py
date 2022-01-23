@@ -27,6 +27,7 @@ def space_explore(stage):
     k_list = [1, 10]
     datasets = ["gist"]
     datasize = 1
+    k_list = [1, 10, 100]
     format = ""
 
     for dataname in datasets:

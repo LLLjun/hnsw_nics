@@ -129,14 +129,14 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         for (int i = 20; i <= 100; i += 10) {
             efs.push_back(i);
         }
-        for (int i = 200; i <= 300; i += 100) {
+        for (int i = 200; i <= 500; i += 100) {
             efs.push_back(i);
         }
     } else if (k == 100){
         for (int i = 50; i <= 300; i += 50) {
             efs.push_back(i);
         }
-        for (int i = 400; i <= 600; i += 100) {
+        for (int i = 400; i <= 1000; i += 100) {
             efs.push_back(i);
         }
     }

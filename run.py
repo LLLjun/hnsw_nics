@@ -21,11 +21,11 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = range(60, 121, 20)
+    efc_list = range(60, 101, 40)
     m_list = [20]
-    datasets = ["deep"]
+    datasets = ["sift"]
     datasize = 10
-    k_list = [100]
+    k_list = [1, 10, 100]
     format = ""
 
     for dataname in datasets:
