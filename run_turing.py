@@ -1,24 +1,28 @@
 import os
 from plot import handle_data
 
-def run_single():
-    efc = 60
-    m = 20
-    dataname = "deep"
+def run_single(stage):
+    efc_list = [300]
+    m_list = [20]
+    k_list = [1]
+    datasets = ["turing"]
     datasize = 1
     format = ""
-    stage = "build"
 
-    if dataname == "sift":
-        format = "uint8"
-    else:
-        format = "float"
+    for dataname in datasets:
+        for k in k_list:
+            if dataname == "sift":
+                format = "uint8"
+            else:
+                format = "float"
 
-    os.system("cd build && make main && cp main main_run_sift")
-    command = "cd build && ./main_run_sift " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
-    if efc > m:
-        os.system(command)
-    os.system("cd build && rm main_run_sift")
+            for m in m_list:
+                for efc in efc_list:
+
+                    command = "cd build && ./main_c1_sxi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
+                    if efc >= (2 * m):
+                        os.system(command)
+
 
 
 def space_explore(stage):
@@ -51,6 +55,7 @@ def space_explore(stage):
                 handle_data(dataname, datasize, efc_list, m_list, k)
 
 
-space_explore("build")
-space_explore("search")
-# run_single()
+# space_explore("build")
+# space_explore("search")
+run_single("build")
+run_single("search")

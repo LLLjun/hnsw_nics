@@ -74,12 +74,16 @@ float comput_recall(HierarchicalNSW<DTres> &appr_alg, std::vector<std::vector<un
 
 #if DGPERF
     vector<unsigned> no_find;
+    vector<unsigned> gt_all;
 #endif
 
     for (size_t qi = 0; qi < qsize; qi++){
         std::unordered_set<unsigned> g;
         while (answers[qi].size()){
             g.insert(answers[qi].top().second);
+#if DGPERF
+            gt_all.push_back(answers[qi].top().second);
+#endif
             answers[qi].pop();
         }
         total += res[qi].size();
@@ -104,8 +108,9 @@ float comput_recall(HierarchicalNSW<DTres> &appr_alg, std::vector<std::vector<un
 
 #if DGPERF
     printf("no find number: %u \n", no_find.size());
-    string path_distrib = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/expc1/deep/no_find/deep1m_efc40_sxi_";
-    appr_alg.getIDGforNOfind(no_find, path_distrib);
+    string path_distrib = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/expc1/turing/no_find/turing1m_efc300_sxi_";
+    appr_alg.getIDGforNOfind(no_find, gt_all, path_distrib);
+    exit(0);
 #endif
 
     return (float)correct / total;
@@ -116,13 +121,17 @@ static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-
-    // efs.push_back(100);
+#if DGPERF
+    efs.push_back(30);
+#endif
     if (k == 1){
         for (int i = 5; i <= 30; i += 5) {
             efs.push_back(i);
         }
         for (int i = 40; i <= 100; i += 10) {
+            efs.push_back(i);
+        }
+        for (int i = 200; i <= 500; i += 100) {
             efs.push_back(i);
         }
     } else if (k == 10){

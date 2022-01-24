@@ -475,6 +475,7 @@ namespace hnswlib {
         int level, bool isUpdate) {
             size_t Mcurmax = level ? maxM_ : maxM0_;
 #if EXI
+            // from far to near
             std::vector<tableint> ex_list;
             ex_list.reserve(top_candidates.size());
 #endif
@@ -546,9 +547,18 @@ namespace hnswlib {
                 
                 tableint cur_i =  ex_list[ex_list.size() - idx - 1];
 
+                // if (idx > M_){
+                //     cur_i = ex_list[idx - M_];
+                // }
+
                 if (rever_node.find(cur_i) != rever_node.end()){
                     continue;
                 }
+
+                // srand((int)time(0));
+                // if ((rand() / double(RAND_MAX)) > 0.5)
+                //     continue;
+
                 if (idx > M_){
                     bool no_link = true;
                     for (auto iter = rever_node.begin(); iter != rever_node.end(); iter++){
@@ -1595,13 +1605,13 @@ namespace hnswlib {
             }
         }
 
-        void getIDGforNOfind(std::vector<unsigned> &no_find, std::string &path_distrib){
+        void getIDGforNOfind(std::vector<unsigned> &no_find, std::vector<unsigned> &gt_all, std::string &path_distrib){
             std::vector<unsigned> idg_num;
 
-            std::vector<unsigned> IDG_table;
-            getIDGTable(IDG_table);
+            // std::vector<unsigned> IDG_table;
+            // getIDGTable(IDG_table);
             std::vector<unsigned> IDG_distrib;
-            for (unsigned idg: IDG_table){
+            for (unsigned idg: gt_all){
                 if (IDG_distrib.size() < (idg + 1)){
                     IDG_distrib.resize(idg + 1, 0);
                 }
@@ -1616,7 +1626,7 @@ namespace hnswlib {
             tableint ni_last = std::numeric_limits<tableint>::max();
             for (tableint ni: nof_tbi){
                 if (ni_last != ni){
-                    unsigned idg = IDG_table[ni];
+                    unsigned idg = gt_all[ni];
                     if (idg_num.size() < (idg + 1)){
                         idg_num.resize(idg + 1, 0);
                     }

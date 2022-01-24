@@ -31,9 +31,6 @@ def save_fig(path_fig, np_array, legend_list, columns):
 
 def handle_data(dataname, datasize, efc_list, m_list, k):
     label = "expc1"
-<<<<<<< Updated upstream
-    columns = []
-=======
     # datasets = ["turing"]
     datasets = ["turing"]
     datasize = 1
@@ -82,31 +79,5 @@ def handle_data(dataname, datasize, efc_list, m_list, k):
             figname = "compare_sxi_" + dataname + str(datasize) + "m_k" + str(k) + "_final"
             path_fig = os.path.join(path_save, figname)
             save_fig(path_fig, np_feature, legend_list, columns)
->>>>>>> Stashed changes
 
-    path_dataset = os.path.join(root_output, label, dataname)
-    path_save = os.path.join(path_dataset, "fig")
-    if os.path.exists(path_save) is False:
-        os.mkdir(path_save)
 
-    data_list = []
-    legend_list = []
-    for efc in efc_list:
-        for m in m_list:
-            if efc > m:
-                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search.csv"
-                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                data_list.append(df_feature.values.transpose())
-                legend_list.append(unique_name)
-
-                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
-                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                data_list.append(df_feature.values.transpose())
-                legend_list.append(unique_name)
-
-                columns = df_feature.columns
-
-    np_feature = np.array(data_list).astype(np.float32)
-    figname = "compare_sxi_" + dataname + str(datasize) + "m_k" + str(k) + "_a"
-    path_fig = os.path.join(path_save, figname)
-    save_fig(path_fig, np_feature, legend_list, columns)
