@@ -29,10 +29,9 @@ def save_fig(path_fig, np_array, legend_list, columns):
     fig_acc.savefig(path_fig, dpi=300)
 
 
-def handle_data(dataname, efc_list, m_list):
+def handle_data(dataname, efc_list, m_list, k, dms_list, ncf_list):
     label = "expc2"
     datasize = 1
-    k = 10
 
     columns = []
     # efc_list = [100, 300]
@@ -55,15 +54,12 @@ def handle_data(dataname, efc_list, m_list):
                 data_list.append(df_feature.values.transpose())
                 legend_list.append(unique_name)
 
-                # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt.csv"
-                # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                # data_list.append(df_feature.values.transpose())
-                # legend_list.append(unique_name)
-
-                unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_rldt_pro.csv"
-                df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                data_list.append(df_feature.values.transpose())
-                legend_list.append(unique_name)
+                for dms in dms_list:
+                    for ncf in ncf_list:
+                        unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_dms" + str(dms) + "_ncf" + str(ncf) + "_k" + str(k) + "_search_rldt_pro.csv"
+                        df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                        data_list.append(df_feature.values.transpose())
+                        legend_list.append(unique_name)
 
                 # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
                 # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
@@ -87,7 +83,7 @@ def handle_data(dataname, efc_list, m_list):
     #             legend_list.append(unique_name)
 
     np_feature = np.array(data_list).astype(np.float32)
-    figname = "compare_rldt_pro_pp_" + dataname + str(datasize) + "m"
+    figname = "compare_rldt_pro_pp_" + dataname + str(datasize) + "m_k" + str(k)
     path_fig = os.path.join(path_save, figname)
     save_fig(path_fig, np_feature, legend_list, columns)
 

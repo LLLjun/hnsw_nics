@@ -94,21 +94,31 @@ static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    // for (int i = 20; i < 40; i += 5) {
-    //     efs.push_back(i);
-    // }
-    // for (int i = 40; i < 100; i += 10) {
-    //     efs.push_back(i);
-    // }
-    // for (int i = 100; i <= 500; i += 100) {
-    //     efs.push_back(i);
-    // }
 
-    for (int i = 20; i <= 100; i += 10) {
-        efs.push_back(i);
-    }
-    for (int i = 200; i <= 300; i += 100) {
-        efs.push_back(i);
+    if (k == 1){
+        for (int i = 5; i <= 30; i += 5) {
+            efs.push_back(i);
+        }
+        for (int i = 40; i <= 100; i += 10) {
+            efs.push_back(i);
+        }
+        for (int i = 200; i <= 300; i += 100){
+            efs.push_back(i);
+        }
+    } else if (k == 10){
+        for (int i = 20; i <= 100; i += 10) {
+            efs.push_back(i);
+        }
+        for (int i = 200; i <= 500; i += 100) {
+            efs.push_back(i);
+        }
+    } else if (k == 100){
+        for (int i = 50; i <= 300; i += 50) {
+            efs.push_back(i);
+        }
+        for (int i = 400; i <= 1000; i += 100) {
+            efs.push_back(i);
+        }
     }
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
@@ -189,7 +199,9 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
         // appr_alg->testSortMultiadd();
         // exit(0);
-        
+#if RLDT
+        appr_alg->setHeuristic2(index_parameter["Dms"], index_parameter["Ncf"]);
+#endif
 
 #if PLATG
         unsigned center_id = compArrayCenter<DTval>(massB, vecsize, vecdim);
@@ -371,7 +383,8 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
     }
 }
 
-void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res){
+void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res,
+                unsigned Dms = 0, unsigned Ncf = 0){
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
@@ -406,29 +419,37 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
 	size_t M = neibor;
     size_t k = k_res;
 
-    string unique_name = using_dataset + to_string(subset_size_milllions) + 
-                        "m_ef" + to_string(efConstruction) + "_M" + to_string(M) + "_k" + to_string(k);
-	
+#if RLDT
+    string unique_name_b = using_dataset + to_string(subset_size_milllions) + 
+                        "m_ef" + to_string(efConstruction) + "_M" + to_string(M) +
+                        "_dms" + to_string(Dms) + "_ncf" + to_string(Ncf);
+#else
+    string unique_name_b = using_dataset + to_string(subset_size_milllions) + 
+                        "m_ef" + to_string(efConstruction) + "_M" + to_string(M);
+#endif
+
+    string unique_name_s = unique_name_b + "_k" + to_string(k);
+
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
 
 #if (EXI && RLDT)
-    string hnsw_index = pre_index + "/" + unique_name + "_sxi_rldt.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_sxi_rldt.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_sxi_rldt.csv";
+    string hnsw_index = pre_index + "/" + unique_name_b + "_sxi_rldt.bin";
+    string path_build_txt = pre_output + "/" + unique_name_b + "_build_sxi_rldt.txt";
+    string path_search_csv = pre_output + "/" + unique_name_s + "_search_sxi_rldt.csv";
 #elif EXI
-    string hnsw_index = pre_index + "/" + unique_name + "_sxi.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_sxi.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_sxi.csv";
+    string hnsw_index = pre_index + "/" + unique_name_b + "_sxi.bin";
+    string path_build_txt = pre_output + "/" + unique_name_b + "_build_sxi.txt";
+    string path_search_csv = pre_output + "/" + unique_name_s + "_search_sxi.csv";
 #elif RLDT
-    string hnsw_index = pre_index + "/" + unique_name + "_rldt_pro.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_rldt_pro.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_rldt_pro.csv";
+    string hnsw_index = pre_index + "/" + unique_name_b + "_rldt_pro.bin";
+    string path_build_txt = pre_output + "/" + unique_name_b + "_build_rldt_pro.txt";
+    string path_search_csv = pre_output + "/" + unique_name_s + "_search_rldt_pro.csv";
 #else
-    string hnsw_index = pre_index + "/" + unique_name + ".bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search.csv";
+    string hnsw_index = pre_index + "/" + unique_name_b + ".bin";
+    string path_build_txt = pre_output + "/" + unique_name_b + "_build.txt";
+    string path_search_csv = pre_output + "/" + unique_name_s + "_search.csv";
 #endif
 
     map<string, size_t> index_parameter;
@@ -437,6 +458,8 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_parameter["M"] = M;
     index_parameter["k"] = k;
     index_parameter["vecsize"] = vecsize;
+    index_parameter["Dms"] = Dms;
+    index_parameter["Ncf"] = Ncf;
 
     map<string, string> index_string;
     index_string["using_dataset"] = using_dataset;

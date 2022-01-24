@@ -13,7 +13,8 @@ using namespace std;
 //     sched_setaffinity(0, sizeof(mask), &mask);
 // }
 
-void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res);
+void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res,
+                unsigned Dms = 0, unsigned Ncf = 0);
 
 int main(int argc, char **argv) {
     
@@ -36,8 +37,11 @@ int main(int argc, char **argv) {
     size_t efc = atol(argv[5]);
     size_t neibor = atol(argv[6]);
     size_t k_res = atol(argv[7]);
+
+    unsigned Dms = atol(argv[8]);
+    unsigned Ncf = atol(argv[9]);
     
-    hnsw_impl(stage, using_dataset, format, M_size, efc, neibor, k_res);
+    hnsw_impl(stage, using_dataset, format, M_size, efc, neibor, k_res, Dms, Ncf);
 
     return 0;
 };

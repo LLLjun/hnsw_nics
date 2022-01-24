@@ -339,6 +339,12 @@ namespace hnswlib {
             return top_candidates;
         }
 
+        unsigned dms, ncf;
+        void setHeuristic2(unsigned Dms, unsigned Ncf){
+            dms = Dms;
+            ncf = Ncf;
+        }
+
         void getNeighborsByHeuristic2(
                 std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> &top_candidates,
         const size_t M, int level = 0, tableint insert_node=0, bool isCollect = false) {
@@ -354,48 +360,124 @@ namespace hnswlib {
             }
 
 #if (RLNG && RLDT)
-            std::vector<std::pair<dist_t, tableint>> delete_list;
-            // std::vector<std::pair<dist_t, tableint>> reuse_list;
+            std::vector<std::vector<int>> rldt_list;
+            rldt_list.resize(queue_closest.size());
 
-            while (queue_closest.size()) {
+            std::unordered_set<unsigned> connect_node;
+            std::unordered_map<int, std::pair<unsigned, int>> connect_list;
+
+            std::vector<std::pair<dist_t, tableint>> closest_list;
+            while (queue_closest.size() > 0){
+                closest_list.push_back(queue_closest.top());
+                queue_closest.pop();
+            }
+
+            size_t vdim = *((size_t *)dist_func_param_);
+            float *diffData = new float[vdim]();
+            float *vec_o = (float *)getDataByInternalId(insert_node);
+            for (unsigned i = 0; i < closest_list.size(); i++){
+                std::pair<dist_t, tableint> curent_pair = closest_list[i];
+                float *vec_n = (float *)getDataByInternalId(curent_pair.second);
+
+                std::priority_queue<std::pair<float, int>, std::vector<std::pair<float, int>>, GreaterByFirst> set_sort;
+
+                for (int j = 0; j < vdim; j++){
+                    diffData[j] = vec_n[j] - vec_o[j];
+                    if (set_sort.size() < dms)
+                        set_sort.emplace(std::abs(diffData[j]), (j + 1) * signf(diffData[j]));
+                    else {
+                        if (std::abs(diffData[j]) > set_sort.top().first){
+                            set_sort.pop();
+                            set_sort.emplace(std::abs(diffData[j]), (j + 1) * signf(diffData[j]));
+                        }
+                    }
+                }
+                
+                // rldt_list[i].end() is the largest
+                while (!set_sort.empty()){
+                    rldt_list[i].push_back(set_sort.top().second);
+                    set_sort.pop();
+                }
+            }
+            delete[] diffData;
+
+            // first allo
+            for (unsigned i = 0; i < closest_list.size(); i++){
                 if (return_list.size() >= M)
                     break;
-                std::pair<dist_t, tableint> curent_pair = queue_closest.top();
-                dist_t dist_to_query = -curent_pair.first;
-                queue_closest.pop();
+                
+                std::pair<dist_t, tableint> curent_pair = closest_list[i];
                 bool good = true;
-
-                for (std::pair<dist_t, tableint> second_pair : return_list) {
-                    dist_t curdist =
-                            fstdistfunc_(getDataByInternalId(second_pair.second),
-                                         getDataByInternalId(curent_pair.second),
-                                         dist_func_param_);;
-                    if (curdist < dist_to_query) {
-                        delete_list.push_back(curent_pair);
+                for (int key : rldt_list[i]){
+                    if (connect_list.find(key) != connect_list.end()){
                         good = false;
                         break;
                     }
                 }
-                if (good) {
+                if (good){
+                    for (int key : rldt_list[i])
+                        connect_list.emplace(key, std::make_pair(return_list.size(), ncf));
+                    connect_node.emplace(i);
+
                     return_list.push_back(curent_pair);
                 }
             }
-            if (return_list.size() < M){
-                for (std::pair<dist_t, tableint> curent_pair: delete_list){
-                    if (return_list.size() >= M)
-                        break;
 
-                    bool good = true;
-                    for (std::pair<dist_t, tableint> second_pair : return_list){
-                        if (isNeighbor(curent_pair.second, second_pair.second, level)){
+            // second allo
+            for (unsigned i = 0; i < closest_list.size(); i++){
+                if (return_list.size() >= M)
+                    break;
+                if (connect_node.find(i) != connect_node.end())
+                    continue;
+                
+                std::pair<dist_t, tableint> curent_pair = closest_list[i];
+                bool good = true;
+                for (int key : rldt_list[i]){
+                    auto iter = connect_list.find(key);
+                    if (iter != connect_list.end()){
+                        tableint conflict_id = return_list[iter->second.first].second;
+                        if (isNeighbor(curent_pair.second, conflict_id, level) || (iter->second.second <= 0)){
                             good = false;
                             break;
                         }
                     }
-                    if (good)
-                        return_list.push_back(curent_pair);
+                }
+                if (good){
+                    for (int key : rldt_list[i]){
+                        auto iter = connect_list.find(key);
+                        if (iter != connect_list.end()){
+                            std::pair<unsigned, bool> c_pair = iter->second;
+                            connect_list[key] = std::make_pair(c_pair.first, (c_pair.second - 1));
+                        } else {
+                            connect_list.emplace(key, std::make_pair(return_list.size(), ncf));
+                        }
+                    }
+                    connect_node.emplace(i);
+
+                    return_list.push_back(curent_pair);
                 }
             }
+
+            // second allo other
+            // for (unsigned i = 0; i < closest_list.size(); i++){
+            //     if (return_list.size() >= M)
+            //         break;
+            //     if (connect_node.find(i) != connect_node.end())
+            //         continue;
+
+            //     std::pair<dist_t, tableint> curent_pair = closest_list[i];
+            //     bool good = true;
+            //     for (std::pair<dist_t, tableint> second_pair : return_list) {
+            //         if (isNeighbor(curent_pair.second, second_pair.second, level)) {
+            //             good = false;
+            //             break;
+            //         }
+            //     }
+            //     if (good) {
+            //         return_list.push_back(curent_pair);
+            //         connect_node.emplace(i);
+            //     }
+            // }
 
             for (std::pair<dist_t, tableint> curent_pair : return_list) {
                 top_candidates.emplace(-curent_pair.first, curent_pair.second);
@@ -476,7 +558,7 @@ namespace hnswlib {
 
                 for (int j = 0; j < vdim; j++){
                     diffData[j] = vec_n[j] - vec_o[j];
-                    if (set_sort.size() < DMS)
+                    if (set_sort.size() < dms)
                         set_sort.emplace(std::abs(diffData[j]), (j + 1) * signf(diffData[j]));
                     else {
                         if (std::abs(diffData[j]) > set_sort.top().first){
@@ -512,7 +594,7 @@ namespace hnswlib {
                         break;
                 }
                 if (good){
-                    bucket_base.emplace(key_list[DMS-1], return_list.size());
+                    bucket_base.emplace(key_list[dms-1], return_list.size());
                     return_list.push_back(curent_pair);
                 }
 
@@ -612,7 +694,7 @@ namespace hnswlib {
                 top_candidates_copy.pop();
             }
 #else
-            getNeighborsByHeuristic2(top_candidates, M_, level);
+            getNeighborsByHeuristic2(top_candidates, M_, level, cur_c);
             if (top_candidates.size() > M_)
                 throw std::runtime_error("Should be not be more than M_ candidates returned by the heuristic");
             while (top_candidates.size() > 0) {

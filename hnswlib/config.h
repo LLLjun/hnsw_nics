@@ -11,8 +11,9 @@ typedef float DTRES;
 // for strategy
 #define EXI false
 #define RLDT true
-#define DMS 7
-#define RLNG false
+// #define DMS 7
+#define RLNG true
+// #define NCF 3
 #define RLCU false
 
 // for profiling
