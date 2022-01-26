@@ -12,12 +12,18 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
     string path_dataset = "dataset/" + dataname + "/";
 
     if (dataname == "sift"){
-        index_parameter["qsize"] = 10000;
         index_parameter["vecdim"] = 128;
         index_parameter["gt_maxnum"] = 100;
-        index_string["path_q"] = path_dataset + "query.public.10K.u8bin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.u8bin";
+#if USESAMQ
+        index_parameter["qsize"] = 100000;
+        index_string["path_q"] = path_dataset + "sample100k/sample.100k.u8bin";
+        index_string["path_gt"] = path_dataset + "sample100k/sample_gt.100k.bin";
+#else
+        index_parameter["qsize"] = 10000;
+        index_string["path_q"] = path_dataset + "query.public.10K.u8bin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+#endif
     } else if (dataname == "gist"){
         if (subset_size_milllions > 1){
             printf("error: gist size set error.\n");
@@ -34,23 +40,35 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
             printf("error: deep size set error.\n");
             exit(1);
         }
-        index_parameter["qsize"] = 10000;
         index_parameter["vecdim"] = 96;
         index_parameter["gt_maxnum"] = 100;
-        index_string["path_q"] = path_dataset + "query.public.10K.fbin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+#if USESAMQ
+        index_parameter["qsize"] = 100000;
+        index_string["path_q"] = path_dataset + "sample100k/sample.100k.fbin";
+        index_string["path_gt"] = path_dataset + "sample100k/sample_gt.100k.bin";
+#else
+        index_parameter["qsize"] = 10000;
+        index_string["path_q"] = path_dataset + "query.public.10K.fbin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+#endif
     } else if (dataname == "turing"){
         if (subset_size_milllions > 100){
             printf("error: turing size set error.\n");
             exit(1);
         }
-        index_parameter["qsize"] = 100000;
         index_parameter["vecdim"] = 100;
         index_parameter["gt_maxnum"] = 100;
-        index_string["path_q"] = path_dataset + "query100K.fbin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+#if USESAMQ
+        index_parameter["qsize"] = 100000;
+        index_string["path_q"] = path_dataset + "sample100k/sample.100k.fbin";
+        index_string["path_gt"] = path_dataset + "sample100k/sample_gt.100k.bin";
+#else
+        index_parameter["qsize"] = 100000;
+        index_string["path_q"] = path_dataset + "query100K.fbin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+#endif
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
         exit(1);

@@ -260,6 +260,14 @@ namespace hnswlib {
         mutable float dist_start_query;
 #endif
 
+#if MANUALRUN
+        mutable std::map<std::string, float> param_aware;
+
+        void setAwareParam(std::map<std::string, float> param){
+            param_aware.swap(param);
+        }
+#endif
+
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
@@ -294,16 +302,33 @@ namespace hnswlib {
 #if MANUALRUN
             size_t hop_i = 0;
             
-            int len_observe = 18;
-            float dist_thr = 1.3;
-            float std_thr = 0.04;
-            size_t order_n = 3;
-            size_t add_step = 5;
+            int len_observe = (int) param_aware["len_observe"];
+            float curve_x = param_aware["curve_x"];
+            float dist_thr = param_aware["dist_thr"];
+            float std_thr = param_aware["std_thr"];
+            size_t order_n = (size_t) param_aware["order_n"];
+            size_t add_step = (size_t) param_aware["add_step"];
 
+            size_t len_curve = (size_t) (curve_x * len_observe);
+
+            int pos_first = -1;
+            int pos_stable_k = -1;
+
+            int keep_first = -1;
+            bool is_find_first = false;
             int keep_k = -1;
             bool is_find_k = false;
-            size_t pos_stable_k;
+
+            bool curve_init = false;
+            bool curve_finish = false;
+            float upper = 0;
             std::vector<float> curve_stable;
+
+
+            // int keep_k = -1;
+            // bool is_find_k = false;
+            // size_t pos_stable_k;
+            // std::vector<float> curve_stable;
 
             bool is_predict = true;
             size_t predict = std::numeric_limits<size_t>::max();
@@ -312,9 +337,11 @@ namespace hnswlib {
             std::vector<float>res_first;
             std::vector<float>res_tenth;
 #endif
+
 #if (CREATESF || MANUAL || MSH)
             dist_start_query = lowerBound;
 #endif
+
             visited_array[ep_id] = visited_array_tag;
 
             while (!candidate_set.empty()) {
@@ -325,6 +352,7 @@ namespace hnswlib {
                     break;
                 }
                 candidate_set.pop();
+
 #if (CREATESF || MANUAL || MSH)
                 std::vector<float> top_neig(maxM0_, -1);
                 bound.push_back(lowerBound);
@@ -433,10 +461,29 @@ namespace hnswlib {
 #if MANUALRUN
                 // manual
                 if (is_predict){
+                    float pop = candi_pop[hop_i];
+                    float top1 = res_first[hop_i];
+                    float topk = res_tenth[hop_i];
+
+                    // find the first pos
+                    if (!is_find_first){
+                        if (pop == top1){
+                            keep_first = 0;
+                        }
+                        if (hop_i > 0 && top1 != res_first[hop_i-1]){
+                            keep_first = -1;
+                            keep_k = -1;
+                        }
+                        if (pop > top1 && keep_first >= 0){
+                            keep_first++;
+                        }
+                        if (keep_first >= len_observe){
+                            is_find_first = true;
+                            pos_first = hop_i - keep_first;
+                        }
+                    }
+                    // find the stable k pos
                     if ((!is_find_k) && (hop_i > 0)){
-                        float pop = candi_pop[hop_i];
-                        float top1 = res_first[hop_i];
-                        float topk = res_tenth[hop_i];
 
                         if ((pop >= topk) && (candi_pop[hop_i-1] <= res_tenth[hop_i-1])){
                             keep_k = 0;
@@ -448,36 +495,78 @@ namespace hnswlib {
                         }
                         if (keep_k >= len_observe){
                             pos_stable_k = hop_i - keep_k + 1;
-                            is_find_k = true;
+                            if (pos_stable_k >= pos_first && pos_first >= 0){
+                                is_find_k = true;
+                                curve_init = true;
+                            } else {
+                                printf("Error, pos_k (%d) must larger than pos_1 (%d) \n", pos_stable_k, pos_first);
+                                exit(1);
+                            }
                         }
                     }
 
+                    // if ((!is_find_k) && (hop_i > 0)){
+                    //     float pop = candi_pop[hop_i];
+                    //     float top1 = res_first[hop_i];
+                    //     float topk = res_tenth[hop_i];
+
+                    //     if ((pop >= topk) && (candi_pop[hop_i-1] <= res_tenth[hop_i-1])){
+                    //         keep_k = 0;
+                    //     }
+                    //     if (pop > topk && keep_k >= 0){
+                    //         keep_k++;
+                    //     } else {
+                    //         keep_k = -1;
+                    //     }
+                    //     if (keep_k >= len_observe){
+                    //         pos_stable_k = hop_i - keep_k + 1;
+                    //         is_find_k = true;
+                    //     }
+                    // }
+
                     if (is_find_k){
-                        float upper = dist_thr * (res_tenth[pos_stable_k] - res_first[pos_stable_k]);
-                        float diff = candi_pop[pos_stable_k] - res_tenth[pos_stable_k];
-                        
-                        if (curve_stable.size() < 4 * len_observe){
-                            while (pos_stable_k <= hop_i){
-                                diff = candi_pop[pos_stable_k] - res_tenth[pos_stable_k];
-                                curve_stable.push_back(diff);
-                                pos_stable_k++;
+                        if (curve_init){
+                            upper = dist_thr * (res_tenth[pos_stable_k] - res_first[pos_stable_k]);
+                            for (size_t i = pos_stable_k; i < hop_i; i++){
+                                float diff = candi_pop[i] - res_tenth[i];
+                                if (curve_stable.size() < len_curve){
+                                    curve_stable.push_back(diff);
+                                } else {
+                                    if (diff > upper){
+                                        curve_init = false;
+                                        curve_finish = true;
+                                        break;
+                                    } else {
+                                        curve_stable.push_back(diff);
+                                    }
+                                }
                             }
-                        } else if (diff > upper){
-                            std::vector<float> curve_order = diff_res(curve_stable, order_n);
+                            curve_init = false;
+                        } else {
+                            float diff = candi_pop[hop_i] - res_tenth[hop_i];
+                            if (curve_stable.size() < len_curve){
+                                curve_stable.push_back(diff);
+                            } else {
+                                if (diff > upper){
+                                    curve_finish = true;
+                                } else {
+                                    curve_stable.push_back(diff);
+                                }
+                            }
+                        }
 
-                            std::vector<float> curve_av_st = getStdv(curve_order);
+                        if (curve_finish){
+                            if (curve_stable.size() >= (order_n + 1)){
+                                std::vector<float> curve_order = diff_res(curve_stable, order_n);
+                                std::vector<float> curve_av_st = getStdv(curve_order);
 
-                            // printf("%u, %.4f, %.3f, %u, %u, %u \n", qi, curve_av_st[1], (curve_av_st[0] * 1e4), min_step, pos_stable_k, curve_stable.size());
-
-                            if (curve_av_st[1] < std_thr){
-                                predict = pos_stable_k + add_step;
+                                if (curve_av_st[1] < std_thr){
+                                    predict = pos_stable_k + curve_stable.size() + add_step;
+                                }
                             }
                             is_predict = false;
-                        } else {
-                            diff = candi_pop[pos_stable_k] - res_tenth[pos_stable_k];
-                            curve_stable.push_back(diff);
-                            pos_stable_k++;
                         }
+
                     }
                 } else {
                     if (hop_i >= predict)
@@ -618,6 +707,7 @@ namespace hnswlib {
         int level, bool isUpdate) {
             size_t Mcurmax = level ? maxM_ : maxM0_;
 #if EXI
+            // from far to near
             std::vector<tableint> ex_list;
             ex_list.reserve(top_candidates.size());
 #endif
@@ -743,6 +833,9 @@ namespace hnswlib {
                     if ((graph_type == "base") && (sz_link_list_other < Mcurmax)) {
                         data[sz_link_list_other] = cur_c;
                         setListCount(ll_other, sz_link_list_other + 1);
+#if EXI
+                        IF1_cur_c++;
+#endif
                     } else {
                         // finding the "weakest" element to replace it with the new one
                         dist_t d_max = fstdistfunc_(getDataByInternalId(cur_c), getDataByInternalId(cur_i),
@@ -775,20 +868,11 @@ namespace hnswlib {
                             candidates.pop();
                             indx++;
                         }
-
                         setListCount(ll_other, indx);
-                        // Nearest K:
-                        /*int indx = -1;
-                        for (int j = 0; j < sz_link_list_other; j++) {
-                            dist_t d = fstdistfunc_(getDataByInternalId(data[j]), getDataByInternalId(rez[idx]), dist_func_param_);
-                            if (d > d_max) {
-                                indx = j;
-                                d_max = d;
-                            }
-                        }
-                        if (indx >= 0) {
-                            data[indx] = cur_c;
-                        } */
+#if EXI
+                        if (isNeighbor(cur_c, cur_i, level))
+                            IF1_cur_c++;
+#endif
                     }
                 }
 #if IOF1
@@ -796,7 +880,6 @@ namespace hnswlib {
                     IF1[cur_c]++;
                 }
 #endif
-
             }
 
             return next_closest_entry_point;
@@ -1998,132 +2081,212 @@ namespace hnswlib {
         /*
             曲线是否平滑
         */
-        void predictStopByManual(float *massQ, size_t qsize, size_t vecdim, size_t k, std::map<std::string, float> &param){
+        void predictStopByManual(float *massQ, size_t qsize, size_t vecdim, size_t k, 
+                                std::vector<std::map<std::string, float>> &param_list, 
+                                std::string &path_train_result, bool logger = false){
 
-            int len_observe = (int)param["len_observe"];
-            float dist_thr = param["dist_thr"];
-            float std_thr = param["std_thr"];
-            size_t order_n = (size_t)param["order_n"];
-            size_t add_step = (size_t)param["add_step"];
-            printf("\n ========= \n");
-            printf("len: %u, dist_thr: %.2f, std_thr: %.2f, order_n: %u, add_step: %u \n",
-                        len_observe, dist_thr, std_thr, order_n, add_step);
+            // get search info
+            std::vector<std::vector<float>> all_candi_pop(qsize);
+            std::vector<std::vector<float>> all_res_tenth(qsize);
+            std::vector<std::vector<float>> all_res_first(qsize);
+            std::vector<unsigned> all_min_step(qsize);
+            std::vector<unsigned> all_total_step(qsize);
 
-            size_t yes_n = 0;
-            size_t yes_step = 0;
-            size_t no_n = 0;
-
+            size_t qi_debug = 0;
             for (size_t qi = 0; qi < qsize; qi++){
                 float *query = massQ + qi * vecdim;
                 std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
+                all_candi_pop[qi].swap(candi_pop);
+                all_res_tenth[qi].swap(res_tenth);
+                all_res_first[qi].swap(res_first);
 
                 unsigned min_step = 0;
-                {
-                    size_t all_step = res_tenth.size();
-                    float cur_dist = res_tenth.back();
-                    for (int j = all_step - 1; j >= 0; j--){
-                        if (res_tenth[j] > cur_dist){
-                            min_step = j + 1;
-                            break;
-                        }
+                unsigned total_step = all_res_tenth[qi].size();
+                float cur_dist = all_res_tenth[qi].back();
+                for (int j = total_step - 1; j >= 0; j--){
+                    if (all_res_tenth[qi][j] > cur_dist){
+                        min_step = j + 1;
+                        break;
                     }
                 }
+                all_min_step[qi] = min_step;
+                all_total_step[qi] = total_step;
 
-                size_t pos_first, pos_stable_k;
-
-                int keep_first = -1;
-                bool is_find_first = false;
-                int keep_k = -1;
-                bool is_find_k = false;
-
-                size_t len_step = candi_pop.size();
-                for (size_t si = 0; si < len_step; si++){
-                    float pop = candi_pop[si];
-                    float top1 = res_first[si];
-                    float topk = res_tenth[si];
-
-                    // find the first pos
-                    if ((!is_find_first) && (si > 0)){
-                        if (pop == top1){
-                            keep_first = 0;
+                if (logger){
+                    if (qi == qi_debug){
+                        std::string path_debug_csv = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/expc3/debug/deep_"
+                                                + std::to_string(qi_debug) + ".csv";
+                        std::ofstream debug_csv_writer(path_debug_csv.c_str(), std::ios::trunc);
+                        debug_csv_writer << "pop,topk,top1" << std::endl;
+                        for (int j = 0; j < all_total_step[qi]; j++){
+                            debug_csv_writer << all_candi_pop[qi][j] << ","
+                                                << all_res_tenth[qi][j] << ","
+                                                << all_res_first[qi][j] << std::endl;
                         }
-                        if (top1 != res_first[si-1]){
-                            keep_first = -1;
-                        }
-                        if (pop > top1 && keep_first >= 0){
-                            keep_first++;
-                        }
-                        if (keep_first >= len_observe){
-                            is_find_first = true;
-                            pos_first = si - keep_first;
-                        }
-                    }
-                    // find the stable k pos
-                    if ((!is_find_k) && (si > 0)){
-
-                        if ((pop >= topk) && (candi_pop[si-1] <= res_tenth[si-1])){
-                            keep_k = 0;
-                        }
-                        if (pop > topk && keep_k >= 0){
-                            keep_k++;
-                        } else {
-                            keep_k = -1;
-                        }
-                        if (keep_k >= len_observe){
-                            pos_stable_k = si - keep_k + 1;
-                            if (pos_stable_k >= pos_first){
-                                is_find_k = true;
-                            } else {
-                                printf("Error, pos_k must larger than pos_1 \n");
-                                exit(1);
-                            }
-                        }
+                        debug_csv_writer.close();
                     }
                 }
-
-                std::vector<float> curve_stable;
-                // get curve
-                if (is_find_k){
-                    float upper = dist_thr * (res_tenth[pos_stable_k] - res_first[pos_stable_k]);
-                    for (size_t i = pos_stable_k; i < len_step; i++){
-                        float diff = candi_pop[i] - res_tenth[i];
-                        if (curve_stable.size() < 4 * len_observe){
-                            curve_stable.push_back(diff);
-                        } else {
-                            if (diff > upper){
-                                break;
-                            } else {
-                                curve_stable.push_back(diff);
-                            }
-                        }
-                    }
-                }
-
-                std::vector<float> curve_order = diff_res(curve_stable, order_n);
-
-                std::vector<float> curve_av_st = getStdv(curve_order);
-
-                // printf("%u, %.4f, %.3f, %u, %u, %u \n", qi, curve_av_st[1], (curve_av_st[0] * 1e4), min_step, pos_stable_k, curve_stable.size());
-
-                size_t predict = candi_pop.size();
-                if (curve_av_st[1] < std_thr){
-                    predict = pos_stable_k + curve_stable.size() + add_step;
-                    if (predict >= min_step){
-                        yes_n++;
-                        yes_step += (len_step - predict);
-                    } else {
-                        printf("%u, %.4f, %.3f, %u, %u, %u \n", qi, curve_av_st[1], (curve_av_st[0] * 1e4), min_step, pos_stable_k, curve_stable.size());
-                        // exit(1);
-                        no_n++;
-                    }
-                }
-
-                printf("%u\n", predict);
-                
             }
 
-            printf("Yes: %u, %u \n", yes_n, yes_step);
-            printf("No: %u \n", no_n);
+
+            // train stage
+            std::ofstream train_result_writer(path_train_result.c_str(), std::ios::trunc);
+            train_result_writer << "yes_n,yes_step,no_n,"
+                                << "len_observe,curve_x,dist_thr,std_thr,order_n,add_step"
+                                << std::endl;
+
+// #pragma omp parallel for
+            for (size_t pi = 0; pi < param_list.size(); pi++){
+                std::map<std::string, float> res_train;
+                size_t yes_n = 0;
+                size_t yes_step = 0;
+                size_t no_n = 0;
+                
+                int len_observe = (int)param_list[pi]["len_observe"];
+                float curve_x = param_list[pi]["curve_x"];
+                float dist_thr = param_list[pi]["dist_thr"];
+                float std_thr = param_list[pi]["std_thr"];
+                size_t order_n = (size_t)param_list[pi]["order_n"];
+                size_t add_step = (size_t)param_list[pi]["add_step"];
+
+                size_t len_curve = (size_t) (curve_x * len_observe);
+
+                if (logger){
+                    printf("\n ========= \n");
+                    printf("len: %u, dist_thr: %.2f, std_thr: %.2f, order_n: %u, add_step: %u \n",
+                                len_observe, dist_thr, std_thr, order_n, add_step);
+                }
+
+                for (size_t qi = 0; qi < qsize; qi++){
+
+                    int pos_first = -1;
+                    int pos_stable_k = -1;
+
+                    int keep_first = -1;
+                    bool is_find_first = false;
+                    int keep_k = -1;
+                    bool is_find_k = false;
+
+                    bool curve_finish = false;
+
+                    size_t len_step = all_total_step[qi];
+                    for (size_t si = 0; si < len_step; si++){
+                        float pop = all_candi_pop[qi][si];
+                        float top1 = all_res_first[qi][si];
+                        float topk = all_res_tenth[qi][si];
+
+                        // find the first pos
+                        if (!is_find_first){
+                            if (pop == top1){
+                                keep_first = 0;
+                            }
+                            if (si > 0 && top1 != all_res_first[qi][si-1]){
+                                keep_first = -1;
+                                keep_k = -1;
+                            }
+                            if (pop > top1 && keep_first >= 0){
+                                keep_first++;
+                            }
+                            if (keep_first >= len_observe){
+                                is_find_first = true;
+                                pos_first = si - keep_first;
+                            }
+                        }
+                        // find the stable k pos
+                        if ((!is_find_k) && (si > 0)){
+
+                            if ((pop >= topk) && (all_candi_pop[qi][si-1] <= all_res_tenth[qi][si-1])){
+                                keep_k = 0;
+                            }
+                            if (pop > topk && keep_k >= 0){
+                                keep_k++;
+                            } else {
+                                keep_k = -1;
+                            }
+                            if (keep_k >= len_observe){
+                                pos_stable_k = si - keep_k + 1;
+                                if (pos_stable_k >= pos_first && pos_first >= 0){
+                                    is_find_k = true;
+                                } else {
+                                    printf("Error, pos_k (%d) must larger than pos_1 (%d) \n", pos_stable_k, pos_first);
+                                    exit(1);
+                                }
+                            }
+                        }
+                    }
+                    if (logger)
+                        printf("find first: %d, find stable k: %d \n", pos_first, pos_stable_k);
+
+
+                    std::vector<float> curve_stable;
+                    // get curve
+                    if (is_find_k){
+                        float upper = dist_thr * (all_res_tenth[qi][pos_stable_k] - all_res_first[qi][pos_stable_k]);
+                        for (size_t i = pos_stable_k; i < len_step; i++){
+                            float diff = all_candi_pop[qi][i] - all_res_tenth[qi][i];
+                            if (curve_stable.size() < len_curve){
+                                curve_stable.push_back(diff);
+                            } else {
+                                if (diff > upper){
+                                    curve_finish = true;
+                                    break;
+                                } else {
+                                    curve_stable.push_back(diff);
+                                }
+                            }
+                        }
+                    }
+
+                    // anaylsis curve
+                    size_t predict = len_step;
+                    if (curve_finish){
+                        std::vector<float> curve_order = diff_res(curve_stable, order_n);
+                        std::vector<float> curve_av_st = getStdv(curve_order);
+
+                        if (curve_av_st[1] < std_thr){
+                            predict = pos_stable_k + curve_stable.size() + add_step;
+                            predict = predict < len_step ? predict : len_step;
+                        }
+
+                        if (predict >= all_min_step[qi]){
+                            yes_n++;
+                            yes_step += (len_step - predict);
+                        } else {
+                            no_n++;
+
+                            if (logger)
+                                printf("%u, %.4f, %.3f, %u, %u, %u \n", qi, curve_av_st[1], (curve_av_st[0] * 1e4), all_min_step[qi], pos_stable_k, curve_stable.size());
+                        }
+                    }
+
+                    if (logger)
+                        printf("qi: %u, predict: %u, total: %u\n", qi, predict, len_step);
+                }
+
+                res_train["yes_n"] = yes_n;
+                res_train["yes_step"] = yes_step;
+                res_train["no_n"] = no_n;
+                if (logger){
+                    printf("Yes: %u, %u \n", yes_n, yes_step);
+                    printf("No: %u \n", no_n);
+                }
+
+// #pragma critical
+                {
+                    train_result_writer << res_train["yes_n"] << ","
+                                        << res_train["yes_step"] << ","
+                                        << res_train["no_n"] << ","
+                                        << param_list[pi]["len_observe"] << ","
+                                        << param_list[pi]["curve_x"] << ","
+                                        << param_list[pi]["dist_thr"] << ","
+                                        << param_list[pi]["std_thr"] << ","
+                                        << param_list[pi]["order_n"] << ","
+                                        << param_list[pi]["add_step"] << std::endl;
+                    
+                    printf("train: %u / %u \n", pi, param_list.size());
+                }
+            }
+            train_result_writer.close();
 
         }
 #endif

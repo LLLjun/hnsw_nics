@@ -21,14 +21,11 @@ def run_single():
 
 
 def space_explore(stage):
-    max_efc = range(60, 101, 400)
-    max_m = range(20, 31, 20)
-    datasets = ["deep", "sift", "gist", "turing"]
+    max_efc = [300]
+    max_m = [20]
+    datasets = ["deep", "sift", "turing"]
     datasize = 1
     format = ""
-    # stage = "both"
-
-    os.system("cd build && make main && cp main main_run")
 
     for dataname in datasets:
         if dataname == "sift":
@@ -38,11 +35,12 @@ def space_explore(stage):
 
         for efc in max_efc:
             for m in max_m:
-                command = "cd build && ./main_run " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
-                if efc > m:
-                    os.system(command)
+                command = "cd build && ./main_c3_base_samq " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                os.system(command)
+                command = "cd build && ./main_c3_base_real " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                os.system(command)
 
-    os.system("cd build && rm main_run")
 
 space_explore("build")
+space_explore("search")
 # run_single()

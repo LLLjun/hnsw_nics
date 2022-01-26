@@ -19,15 +19,13 @@ def run_single():
     os.system("cd build && rm main_run_deep")
 
 
-def space_explore(stage):
-    efc_list = [100]
-    m_list = [20]
-    # efc_list = range(50, 301, 50)
-    # m_list = range(5, 26, 5)
-    datasets = ["sift", "deep", "turing"]
+def space_explore(mode):
+    max_efc = [300]
+    max_m = [20]
+    datasets = ["deep"]
     datasize = 1
     format = ""
-    # stage = "build"
+    stage = "search"
 
     for dataname in datasets:
         if dataname == "sift":
@@ -35,17 +33,24 @@ def space_explore(stage):
         else:
             format = "float"
 
-        for m in m_list:
-            for efc in efc_list:
-                command = "cd build && ./main_c3_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
-                if efc >= (2 * m):
+        if mode == "train":
+            os.system("cd build && make main && cp main main_c3_base_samq")
+
+            for efc in max_efc:
+                for m in max_m:
+                    command = "cd build && ./main_c3_base_samq " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
                     os.system(command)
+        
+        if mode == "inference":
+            os.system("cd build && make main && cp main main_c3_base_real")
 
-                command = "cd build && ./main_c3_exi " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
-                if efc >= (2 * m):
-                    os.system(command)
+            for efc in max_efc:
+                for m in max_m:
+                    command = "cd build && ./main_c3_base_real " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                    os.system(command)     
 
 
-# space_explore("build")
-space_explore("search")
+# space_explore("train")
+space_explore("inference")
+
 # run_single()

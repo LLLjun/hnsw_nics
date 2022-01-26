@@ -96,23 +96,56 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k, string &log_file) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
 
-    // for (int i = 20; i <= 100; i += 10) {
-    //     efs.push_back(i);
-    // }
-    // for (int i = 200; i <= 300; i += 100) {
-    //     efs.push_back(i);
-    // }
-
+#if (MANUAL || MANUALRUN)
     efs.push_back(300);
+#else
+    if (k == 1){
+        for (int i = 5; i <= 30; i += 5) {
+            efs.push_back(i);
+        }
+        for (int i = 40; i <= 100; i += 10) {
+            efs.push_back(i);
+        }
+        for (int i = 200; i <= 500; i += 100) {
+            efs.push_back(i);
+        }
+    } else if (k == 10){
+        for (int i = 20; i <= 100; i += 10) {
+            efs.push_back(i);
+        }
+        for (int i = 200; i <= 500; i += 100) {
+            efs.push_back(i);
+        }
+    } else if (k == 100){
+        for (int i = 50; i <= 300; i += 50) {
+            efs.push_back(i);
+        }
+        for (int i = 400; i <= 1000; i += 100) {
+            efs.push_back(i);
+        }
+    }
+#endif
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
-    csv_writer << "R@" << k << ",qps" << endl;
+    csv_writer << "efs,R@" << k << ",qps" << endl;
 
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
+#if MANUALRUN
+        map<string, float> param_aware;
+
+        param_aware["len_observe"] = 50;
+        param_aware["curve_x"] = 3;
+        param_aware["dist_thr"] = 0.02;
+        param_aware["std_thr"] = 0.02;
+        param_aware["order_n"] = 3;
+        param_aware["add_step"] = 0;
+
+        appr_alg.setAwareParam(param_aware);
+#endif
 
         std::vector<std::vector<unsigned>> res(qsize);
 
@@ -134,7 +167,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << (1e9 / time_ns_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
-        csv_writer << recall << "," << (1e9 / time_ns_per_query) << endl;
+        csv_writer << ef << "," << recall << "," << (1e9 / time_ns_per_query) << endl;
 
         // if (recall > 0.98) {
         //     break;
@@ -384,31 +417,56 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 
 #if MANUAL
         appr_alg->setEf(EFS_MAX);
+        bool debug = false;
+
+        string path_train_result = index_string["prefix_param"] + 
+                                "_efs" + to_string(EFS_MAX) + ".csv";
         map<string, float> param;
+        vector<map<string, float>> param_list;
 
-        param["len_observe"] = 18;
-        param["dist_thr"] = 1.3;
-        param["std_thr"] = 0.04;
-        param["order_n"] = 3;
-        param["add_step"] = 5;
+        if (debug){
+            param["len_observe"] = 18;
+            param["curve_x"] = 4;
+            param["dist_thr"] = 1.3;
+            param["std_thr"] = 0.04;
+            param["order_n"] = 3;
+            param["add_step"] = 5;
 
-        // for (size_t len = 20; len <= 40; len += 2){
-        //     // for (float d_thr = 0.1; d_thr <= 2.0; d_thr += 0.2){
-        //     //     for (float s_thr = 0.01; s_thr <= 0.05; s_thr += 0.01){
-        //     for (size_t od = 1; od <= 5; od += 1){
-        //         for (size_t as = 0; as <= 30; as += 3){
-        //             param["len_observe"] = len;
-        //             // param["dist_thr"] = d_thr;
-        //             // param["std_thr"] = s_thr;
-        //             param["order_n"] = od;
-        //             param["add_step"] = as;
+            param_list.push_back(param);
+        } else {
+            for (size_t len = 50; len <= 50; len += 5){
+                for (float cx = 3; cx <= 3; cx += 0.5){
+                    for (float d_thr = 0.02; d_thr <= 0.06; d_thr += 0.02){
+                        for (float s_thr = 0.015; s_thr <= 0.02; s_thr += 0.005){
+                            for (size_t od = 3; od <= 4; od += 1){
+                                for (size_t as = 0; as <= 0; as += 5){
+                                    param["len_observe"] = len;
+                                    param["curve_x"] = cx;
+                                    param["dist_thr"] = d_thr;
+                                    param["std_thr"] = s_thr;
+                                    param["order_n"] = od;
+                                    param["add_step"] = as;
 
-        //             appr_alg->predictStopByManual(massQ, qsize, vecdim, k, param);
-        //         }
-        //     }
-        // }
+                                    param_list.push_back(param);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-        appr_alg->predictStopByManual(massQ, qsize, vecdim, k, param);
+        appr_alg->predictStopByManual(massQ, qsize, vecdim, k, param_list, path_train_result, debug);
+
+
+        // param["len_observe"] = 18;
+        // param["dist_thr"] = 1.3;
+        // param["std_thr"] = 0.04;
+        // param["order_n"] = 3;
+        // param["add_step"] = 5;
+
+
+        // appr_alg->predictStopByManual(massQ, qsize, vecdim, k, param);
 #endif
 #if (MANUALRUN || (!MANUAL && !MANUALRUN))
         cout << "Comput recall: \n";
@@ -507,28 +565,37 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
             exit(1);
         }
     }
+    string pre_param = root_output + label + using_dataset + "/param";
+    if (access(pre_param.c_str(), R_OK|W_OK)){
+        if (mkdir(pre_param.c_str(), S_IRWXU) != 0) {
+            printf("Error, dir %s create failed \n", pre_param.c_str());
+            exit(1);
+        }
+    }
 
 	size_t subset_size_milllions = M_size;
 	size_t efConstruction = efc;
 	size_t M = neibor;
     size_t k = k_res;
 
-    string unique_name = using_dataset + to_string(subset_size_milllions) + 
-                        "m_ef" + to_string(efConstruction) + "_M" + to_string(M) + "_k" + to_string(k);
-	
+    string unique_name_b = using_dataset + to_string(subset_size_milllions) + 
+                        "m_ef" + to_string(efConstruction) + "_M" + to_string(M);
+#if EXI
+    unique_name_b += "_sxi";
+#endif
+
+    string unique_name_s = unique_name_b + "_k" + to_string(k);
+#if USESAMQ
+    unique_name_s += "_samq";
+#endif
+
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
     
-#if EXI
-    string hnsw_index = pre_index + "/" + unique_name + "_exi.bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build_exi.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search_exi.csv";
-#else
-    string hnsw_index = pre_index + "/" + unique_name + ".bin";
-    string path_build_txt = pre_output + "/" + unique_name + "_build.txt";
-    string path_search_csv = pre_output + "/" + unique_name + "_search.csv";
-#endif
+    string hnsw_index = pre_index + "/" + unique_name_b + ".bin";
+    string path_build_txt = pre_output + "/" + unique_name_b + "_build.txt";
+    string path_search_csv = pre_output + "/" + unique_name_s + "_search.csv";
 
     map<string, size_t> index_parameter;
     index_parameter["subset_size_milllions"] = subset_size_milllions;
@@ -543,11 +610,8 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_string["hnsw_index"] = hnsw_index;
     index_string["path_build_txt"] = path_build_txt;
     index_string["path_search_csv"] = path_search_csv;
-#if EXI
-    index_string["prefix_unique"] = pre_output + "/" + unique_name + "_exi";
-#else
-    index_string["prefix_unique"] = pre_output + "/" + unique_name;
-#endif
+    index_string["prefix_param"] = pre_param + "/" + unique_name_s;
+    index_string["prefix_unique"] = pre_output + "/" + unique_name_s;
 
     CheckDataset(using_dataset, index_parameter, index_string);
     
@@ -562,7 +626,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     }
     
     if (stage == 1 || stage == 2){
+// #if (!MANUAL)
         assignToThisCore(27);
+// #endif
         if (format == "float")
             search_index<float, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
         else if (format == "uint8")
