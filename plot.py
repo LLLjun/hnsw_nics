@@ -15,14 +15,14 @@ def save_fig(path_fig, np_array, legend_list, columns):
 
     # plt.ylim(0, 3)
     # plt.title(f'dist with {min_step} steps', size=20)
-    plt.xlabel(columns[0])
-    plt.ylabel(columns[1])
+    plt.xlabel(columns[1])
+    plt.ylabel(columns[2])
 
     nums = np_array.shape[0]
     for i in range(0, nums):
         label = legend_list[i]
         np_a = np_array[i]
-        plt.semilogy(np_a[0], np_a[1], lw=3, label=label)
+        plt.semilogy(np_a[1], np_a[2], lw=3, label=label)
         
     plt.legend(loc='upper right', fontsize='large')
 

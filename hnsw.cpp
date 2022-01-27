@@ -102,11 +102,11 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         for (int i = 40; i <= 100; i += 10) {
             efs.push_back(i);
         }
-        for (int i = 200; i <= 300; i += 100){
+        for (int i = 200; i <= 500; i += 100){
             efs.push_back(i);
         }
     } else if (k == 10){
-        for (int i = 20; i <= 100; i += 10) {
+        for (int i = 20; i <= 200; i += 10) {
             efs.push_back(i);
         }
         for (int i = 200; i <= 500; i += 100) {
@@ -122,13 +122,18 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     }
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
-    csv_writer << "R@" << k << ",qps" << endl;
+#if NEWMETRIC
+    csv_writer << "efs,R@" << k << ",nds" << endl;
+#else
+    csv_writer << "efs,R@" << k << ",qps" << endl;
+#endif
 
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
+        appr_alg.metric_distance_computations = 0;
 
         std::vector<std::vector<unsigned>> res(qsize);
 
@@ -146,12 +151,16 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
+        float avg_mds   = 1.0f * appr_alg.metric_distance_computations / qsize;
 
         cout << ef << "\t" << recall << "\t" << (1e9 / time_ns_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
-        csv_writer << recall << "," << (1e9 / time_ns_per_query) << endl;
-
+#if NEWMETRIC
+        csv_writer << ef << "," << recall << "," << avg_mds << endl;
+#else
+        csv_writer << ef << "," << recall << "," << (1e9 / time_ns_per_query) << endl;
+#endif
         // if (recall > 0.98) {
         //     break;
         // }
@@ -481,7 +490,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     }
     
     if (stage == 1 || stage == 2){
+#if (!NEWMETRIC)
         assignToThisCore(27);
+#endif
         if (format == "float")
             search_index<float, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
         else if (format == "uint8")
