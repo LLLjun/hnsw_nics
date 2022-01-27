@@ -256,11 +256,13 @@ namespace hnswlib {
         mutable std::vector<std::vector<float>> candi_top_neig;
         mutable std::vector<float> bound;
         mutable std::vector<float> res_first;
-        mutable std::vector<float> res_tenth;
+        mutable std::vector<float> res_k_th;
         mutable float dist_start_query;
+        mutable size_t k_search;
 #endif
 
 #if MANUALRUN
+        mutable size_t k_search;
         mutable std::map<std::string, float> param_aware;
 
         void setAwareParam(std::map<std::string, float> param){
@@ -278,7 +280,7 @@ namespace hnswlib {
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
 #if (CREATESF || MANUAL || MSH || MANUALRUN)
-            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_ten;
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_k;
 #endif
 
 #if (CREATESF || MANUAL || MSH)
@@ -287,7 +289,7 @@ namespace hnswlib {
             
             std::vector<float>().swap(bound);
             std::vector<float>().swap(res_first);
-            std::vector<float>().swap(res_tenth);
+            std::vector<float>().swap(res_k_th);
 #endif
             dist_t lowerBound;
             if (!has_deletions || !isMarkedDeleted(ep_id)) {
@@ -335,7 +337,7 @@ namespace hnswlib {
             
             std::vector<float>candi_pop;
             std::vector<float>res_first;
-            std::vector<float>res_tenth;
+            std::vector<float>res_k_th;
 #endif
 
 #if (CREATESF || MANUAL || MSH)
@@ -377,7 +379,7 @@ namespace hnswlib {
 //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
                 if(collect_metrics){
                     metric_hops++;
-                    metric_distance_computations+=size;
+                    // metric_distance_computations+=size;
                 }
 
 #ifdef USE_SSE
@@ -401,6 +403,9 @@ namespace hnswlib {
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+#if NEWMETRIC
+                        metric_distance_computations++;
+#endif
 
                         visited_array[candidate_id] = visited_array_tag;
 
@@ -424,21 +429,21 @@ namespace hnswlib {
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
 #if (CREATESF || MANUAL || MSH)
-                            if (top_candidates_ten.size() < 10){
-                                top_candidates_ten.emplace(dist, candidate_id);
-                            } else if (dist < top_candidates_ten.top().first){
-                                top_candidates_ten.pop();
-                                top_candidates_ten.emplace(dist, candidate_id);
+                            if (top_candidates_k.size() < k_search){
+                                top_candidates_k.emplace(dist, candidate_id);
+                            } else if (dist < top_candidates_k.top().first){
+                                top_candidates_k.pop();
+                                top_candidates_k.emplace(dist, candidate_id);
                             }
                             if (res_first.back() > dist)
                                 res_first.back() = dist;
 #elif MANUALRUN
                             if (is_predict){
-                                if (top_candidates_ten.size() < 10){
-                                    top_candidates_ten.emplace(dist, candidate_id);
-                                } else if (dist < top_candidates_ten.top().first){
-                                    top_candidates_ten.pop();
-                                    top_candidates_ten.emplace(dist, candidate_id);
+                                if (top_candidates_k.size() < k_search){
+                                    top_candidates_k.emplace(dist, candidate_id);
+                                } else if (dist < top_candidates_k.top().first){
+                                    top_candidates_k.pop();
+                                    top_candidates_k.emplace(dist, candidate_id);
                                 }
                                 if (res_first.back() > dist)
                                     res_first.back() = dist;
@@ -449,12 +454,12 @@ namespace hnswlib {
                 }
 #if (CREATESF || MANUAL || MSH)
                 candi_top_neig.push_back(top_neig);
-                if (!top_candidates_ten.empty())
-                    res_tenth.push_back(top_candidates_ten.top().first);
+                if (!top_candidates_k.empty())
+                    res_k_th.push_back(top_candidates_k.top().first);
 #elif MANUALRUN
                 if (is_predict){
-                    if (!top_candidates_ten.empty())
-                        res_tenth.push_back(top_candidates_ten.top().first); 
+                    if (!top_candidates_k.empty())
+                        res_k_th.push_back(top_candidates_k.top().first); 
                 }
 #endif
 
@@ -463,7 +468,7 @@ namespace hnswlib {
                 if (is_predict){
                     float pop = candi_pop[hop_i];
                     float top1 = res_first[hop_i];
-                    float topk = res_tenth[hop_i];
+                    float topk = res_k_th[hop_i];
 
                     // find the first pos
                     if (!is_find_first){
@@ -485,7 +490,7 @@ namespace hnswlib {
                     // find the stable k pos
                     if ((!is_find_k) && (hop_i > 0)){
 
-                        if ((pop >= topk) && (candi_pop[hop_i-1] <= res_tenth[hop_i-1])){
+                        if ((pop >= topk) && (candi_pop[hop_i-1] <= res_k_th[hop_i-1])){
                             keep_k = 0;
                         }
                         if (pop > topk && keep_k >= 0){
@@ -508,9 +513,9 @@ namespace hnswlib {
                     // if ((!is_find_k) && (hop_i > 0)){
                     //     float pop = candi_pop[hop_i];
                     //     float top1 = res_first[hop_i];
-                    //     float topk = res_tenth[hop_i];
+                    //     float topk = res_k_th[hop_i];
 
-                    //     if ((pop >= topk) && (candi_pop[hop_i-1] <= res_tenth[hop_i-1])){
+                    //     if ((pop >= topk) && (candi_pop[hop_i-1] <= res_k_th[hop_i-1])){
                     //         keep_k = 0;
                     //     }
                     //     if (pop > topk && keep_k >= 0){
@@ -526,9 +531,9 @@ namespace hnswlib {
 
                     if (is_find_k){
                         if (curve_init){
-                            upper = dist_thr * (res_tenth[pos_stable_k] - res_first[pos_stable_k]);
+                            upper = dist_thr * (res_k_th[pos_stable_k] - res_first[pos_stable_k]);
                             for (size_t i = pos_stable_k; i < hop_i; i++){
-                                float diff = candi_pop[i] - res_tenth[i];
+                                float diff = candi_pop[i] - res_k_th[i];
                                 if (curve_stable.size() < len_curve){
                                     curve_stable.push_back(diff);
                                 } else {
@@ -543,7 +548,7 @@ namespace hnswlib {
                             }
                             curve_init = false;
                         } else {
-                            float diff = candi_pop[hop_i] - res_tenth[hop_i];
+                            float diff = candi_pop[hop_i] - res_k_th[hop_i];
                             if (curve_stable.size() < len_curve){
                                 curve_stable.push_back(diff);
                             } else {
@@ -1923,10 +1928,10 @@ namespace hnswlib {
                 std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
 
                 min_step[qi] = 0;
-                all_step[qi] = res_tenth.size();
-                float cur_dist = res_tenth.back();
+                all_step[qi] = res_k_th.size();
+                float cur_dist = res_k_th.back();
                 for (int j = all_step[qi] - 1; j >= 0; j--){
-                    if (res_tenth[j] > cur_dist){
+                    if (res_k_th[j] > cur_dist){
                         min_step[qi] = j + 1;
                         break;
                     }
@@ -1955,7 +1960,7 @@ namespace hnswlib {
             std::ofstream csv_trace(path_trace.c_str());
             csv_trace << "d_bound,d_pop,d_topk,d_top1" << std::endl;
             for (size_t i = 0; i < search_steps; i++){
-                csv_trace << bound[i] << "," << candi_pop[i] << "," << res_tenth[i] << "," << res_first[i] << std::endl;
+                csv_trace << bound[i] << "," << candi_pop[i] << "," << res_k_th[i] << "," << res_first[i] << std::endl;
             }
             csv_trace.close();
             printf("Generate search trace to %s done.\n", path_trace.c_str());
@@ -2087,7 +2092,7 @@ namespace hnswlib {
 
             // get search info
             std::vector<std::vector<float>> all_candi_pop(qsize);
-            std::vector<std::vector<float>> all_res_tenth(qsize);
+            std::vector<std::vector<float>> all_res_k_th(qsize);
             std::vector<std::vector<float>> all_res_first(qsize);
             std::vector<unsigned> all_min_step(qsize);
             std::vector<unsigned> all_total_step(qsize);
@@ -2097,14 +2102,14 @@ namespace hnswlib {
                 float *query = massQ + qi * vecdim;
                 std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
                 all_candi_pop[qi].swap(candi_pop);
-                all_res_tenth[qi].swap(res_tenth);
+                all_res_k_th[qi].swap(res_k_th);
                 all_res_first[qi].swap(res_first);
 
                 unsigned min_step = 0;
-                unsigned total_step = all_res_tenth[qi].size();
-                float cur_dist = all_res_tenth[qi].back();
+                unsigned total_step = all_res_k_th[qi].size();
+                float cur_dist = all_res_k_th[qi].back();
                 for (int j = total_step - 1; j >= 0; j--){
-                    if (all_res_tenth[qi][j] > cur_dist){
+                    if (all_res_k_th[qi][j] > cur_dist){
                         min_step = j + 1;
                         break;
                     }
@@ -2120,7 +2125,7 @@ namespace hnswlib {
                         debug_csv_writer << "pop,topk,top1" << std::endl;
                         for (int j = 0; j < all_total_step[qi]; j++){
                             debug_csv_writer << all_candi_pop[qi][j] << ","
-                                                << all_res_tenth[qi][j] << ","
+                                                << all_res_k_th[qi][j] << ","
                                                 << all_res_first[qi][j] << std::endl;
                         }
                         debug_csv_writer.close();
@@ -2173,7 +2178,7 @@ namespace hnswlib {
                     for (size_t si = 0; si < len_step; si++){
                         float pop = all_candi_pop[qi][si];
                         float top1 = all_res_first[qi][si];
-                        float topk = all_res_tenth[qi][si];
+                        float topk = all_res_k_th[qi][si];
 
                         // find the first pos
                         if (!is_find_first){
@@ -2195,7 +2200,7 @@ namespace hnswlib {
                         // find the stable k pos
                         if ((!is_find_k) && (si > 0)){
 
-                            if ((pop >= topk) && (all_candi_pop[qi][si-1] <= all_res_tenth[qi][si-1])){
+                            if ((pop >= topk) && (all_candi_pop[qi][si-1] <= all_res_k_th[qi][si-1])){
                                 keep_k = 0;
                             }
                             if (pop > topk && keep_k >= 0){
@@ -2221,9 +2226,9 @@ namespace hnswlib {
                     std::vector<float> curve_stable;
                     // get curve
                     if (is_find_k){
-                        float upper = dist_thr * (all_res_tenth[qi][pos_stable_k] - all_res_first[qi][pos_stable_k]);
+                        float upper = dist_thr * (all_res_k_th[qi][pos_stable_k] - all_res_first[qi][pos_stable_k]);
                         for (size_t i = pos_stable_k; i < len_step; i++){
-                            float diff = all_candi_pop[qi][i] - all_res_tenth[qi][i];
+                            float diff = all_candi_pop[qi][i] - all_res_k_th[qi][i];
                             if (curve_stable.size() < len_curve){
                                 curve_stable.push_back(diff);
                             } else {
@@ -2302,11 +2307,11 @@ namespace hnswlib {
             std::priority_queue<std::pair<dist_t, labeltype >> result = searchKnn(query, k);
             std::vector<int> min_step_list;
             {
-                size_t all_step = res_tenth.size();
-                float cur_dist = res_tenth.back();
+                size_t all_step = res_k_th.size();
+                float cur_dist = res_k_th.back();
                 for (int j = all_step - 1; j >= 0; j--){
-                    if (res_tenth[j] > cur_dist){
-                        cur_dist = res_tenth[j];
+                    if (res_k_th[j] > cur_dist){
+                        cur_dist = res_k_th[j];
                         min_step_list.push_back(j + 1);
                         if (min_step_list.size() >= k)
                             break;
@@ -2323,11 +2328,11 @@ namespace hnswlib {
                 for (size_t si = 0; si < len_step; si++){
                     float pop = candi_pop[si];
                     float top1 = res_first[si];
-                    float topk = res_tenth[si];
+                    float topk = res_k_th[si];
                     // find the stable k pos
                     if ((!is_find_k) && (si > 0)){
 
-                        if ((pop >= topk) && (candi_pop[si-1] <= res_tenth[si-1])){
+                        if ((pop >= topk) && (candi_pop[si-1] <= res_k_th[si-1])){
                             keep_k = 0;
                         }
                         if (pop > topk && keep_k >= 0){
@@ -2370,15 +2375,15 @@ namespace hnswlib {
 
                     cur_featrue.dist_bound = bound[iter_c];
                     cur_featrue.dist_candi_top = candi_pop[iter_c];
-                    cur_featrue.dist_result_k = res_tenth[iter_c];
+                    cur_featrue.dist_result_k = res_k_th[iter_c];
                     cur_featrue.dist_result_1 = res_first[iter_c];
 
                     if (iter_c == 0)
                         cur_featrue.diff_top = 0;
                     else
                         cur_featrue.diff_top = candi_pop[iter_c] - candi_pop[iter_c - 1];
-                    cur_featrue.diff_top_k = candi_pop[iter_c] - res_tenth[iter_c];
-                    cur_featrue.diff_k_1 = res_tenth[iter_c] - res_first[iter_c];
+                    cur_featrue.diff_top_k = candi_pop[iter_c] - res_k_th[iter_c];
+                    cur_featrue.diff_k_1 = res_k_th[iter_c] - res_first[iter_c];
 
                     if (res_first[iter_c] == 0){
                         cur_featrue.div_top_1 = 0;
@@ -2386,7 +2391,7 @@ namespace hnswlib {
                     }
                     else{
                         cur_featrue.div_top_1 = candi_pop[iter_c] / res_first[iter_c];
-                        cur_featrue.div_k_1 = res_tenth[iter_c] / res_first[iter_c];
+                        cur_featrue.div_k_1 = res_k_th[iter_c] / res_first[iter_c];
                     }
 
                     if (cur_featrue.diff_top_k <= 0)

@@ -17,14 +17,16 @@ typedef float DTRES;
 #define MSH false
 
 // for lstm
-#define USESAMQ false
+#define USESAMQ true
 #define CREATESF false
 
 // #define ITST 15
 // #define ITLE 40
 // #define OLLE 0
 // #define NMSG 1
-#define EFS_MAX 300
+#define EFS_MAX 400
 
 #define MANUAL false
-#define MANUALRUN true
+#define MANUALRUN false
+
+#define NEWMETRIC true

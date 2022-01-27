@@ -22,9 +22,10 @@ def run_single():
 def space_explore(mode):
     max_efc = [300]
     max_m = [20]
-    datasets = ["deep"]
+    datasets = ["turing"]
     datasize = 1
     format = ""
+    k = 10
     stage = "search"
 
     for dataname in datasets:
@@ -38,7 +39,7 @@ def space_explore(mode):
 
             for efc in max_efc:
                 for m in max_m:
-                    command = "cd build && ./main_c3_base_samq " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                    command = "cd build && ./main_c3_base_samq " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
                     os.system(command)
         
         if mode == "inference":
@@ -46,11 +47,11 @@ def space_explore(mode):
 
             for efc in max_efc:
                 for m in max_m:
-                    command = "cd build && ./main_c3_base_real " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " 10"
+                    command = "cd build && ./main_c3_base_real " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k)
                     os.system(command)     
 
 
-# space_explore("train")
-space_explore("inference")
+space_explore("train")
+# space_explore("inference")
 
 # run_single()

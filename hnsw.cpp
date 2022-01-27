@@ -97,7 +97,8 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     vector<size_t> efs;// = { 10,10,10,10,10 };
 
 #if (MANUAL || MANUALRUN)
-    efs.push_back(300);
+    efs.push_back(EFS_MAX);
+    appr_alg.k_search = k;
 #else
     if (k == 1){
         for (int i = 5; i <= 30; i += 5) {
@@ -110,7 +111,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
             efs.push_back(i);
         }
     } else if (k == 10){
-        for (int i = 20; i <= 100; i += 10) {
+        for (int i = 20; i <= 200; i += 10) {
             efs.push_back(i);
         }
         for (int i = 200; i <= 500; i += 100) {
@@ -127,21 +128,27 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 #endif
 
     ofstream csv_writer(log_file.c_str(), ios::trunc);
+#if NEWMETRIC
+    csv_writer << "efs,R@" << k << ",nds" << endl;
+#else
     csv_writer << "efs,R@" << k << ",qps" << endl;
+#endif
 
     cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
+        appr_alg.metric_distance_computations = 0;
+
 #if MANUALRUN
         map<string, float> param_aware;
 
-        param_aware["len_observe"] = 50;
-        param_aware["curve_x"] = 3;
-        param_aware["dist_thr"] = 0.02;
-        param_aware["std_thr"] = 0.02;
-        param_aware["order_n"] = 3;
+        param_aware["len_observe"] = 30;
+        param_aware["curve_x"] = 1.5;
+        param_aware["dist_thr"] = 0.01;
+        param_aware["std_thr"] = 0.04;
+        param_aware["order_n"] = 4;
         param_aware["add_step"] = 0;
 
         appr_alg.setAwareParam(param_aware);
@@ -163,12 +170,16 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
+        float avg_mds   = 1.0f * appr_alg.metric_distance_computations / qsize;
 
         cout << ef << "\t" << recall << "\t" << (1e9 / time_ns_per_query) << "\t" 
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
 
+#if NEWMETRIC
+        csv_writer << ef << "," << recall << "," << avg_mds << endl;
+#else
         csv_writer << ef << "," << recall << "," << (1e9 / time_ns_per_query) << endl;
-
+#endif
         // if (recall > 0.98) {
         //     break;
         // }
@@ -417,6 +428,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 
 #if MANUAL
         appr_alg->setEf(EFS_MAX);
+        appr_alg->k_search = k;
         bool debug = false;
 
         string path_train_result = index_string["prefix_param"] + 
@@ -434,12 +446,12 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 
             param_list.push_back(param);
         } else {
-            for (size_t len = 50; len <= 50; len += 5){
-                for (float cx = 3; cx <= 3; cx += 0.5){
-                    for (float d_thr = 0.02; d_thr <= 0.06; d_thr += 0.02){
-                        for (float s_thr = 0.015; s_thr <= 0.02; s_thr += 0.005){
-                            for (size_t od = 3; od <= 4; od += 1){
-                                for (size_t as = 0; as <= 0; as += 5){
+            for (size_t len = 10; len <= 30; len += 5){
+                for (float cx = 1; cx <= 3; cx += 0.5){
+                    for (float d_thr = 0.1; d_thr <= 0.6; d_thr += 0.1){
+                        for (float s_thr = 0.1; s_thr <= 0.4; s_thr += 0.1){
+                            for (size_t od = 3; od <= 6; od += 1){
+                                for (size_t as = 0; as <= 6; as += 3){
                                     param["len_observe"] = len;
                                     param["curve_x"] = cx;
                                     param["dist_thr"] = d_thr;
@@ -626,9 +638,9 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     }
     
     if (stage == 1 || stage == 2){
-// #if (!MANUAL)
+#if (!NEWMETRIC)
         assignToThisCore(27);
-// #endif
+#endif
         if (format == "float")
             search_index<float, DTVAL, DTRES>(using_dataset, l2space, index_parameter, index_string);
         else if (format == "uint8")
