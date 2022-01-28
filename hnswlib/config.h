@@ -16,3 +16,5 @@ typedef float DTRES;
 #define IOF1 false
 #define PROFILE true
 #define DGPERF false
+
+#define NEWMETRIC true

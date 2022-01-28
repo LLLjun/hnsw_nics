@@ -22,12 +22,11 @@ def run_single():
 
 
 def space_explore(stage):
-    efc_list = range(300, 301, 100)
-    m_list = [30]
+    efc_list = [300, 500]
+    m_list = [35]
     k_list = [1, 10]
     datasets = ["gist"]
     datasize = 1
-    k_list = [1, 10, 100]
     format = ""
 
     for dataname in datasets:

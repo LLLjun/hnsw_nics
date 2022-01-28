@@ -300,7 +300,7 @@ namespace hnswlib {
 //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
                 if(collect_metrics){
                     metric_hops++;
-                    metric_distance_computations+=size;
+                    // metric_distance_computations+=size;
                 }
 
 #ifdef USE_SSE
@@ -319,6 +319,9 @@ namespace hnswlib {
                                  _MM_HINT_T0);////////////
 #endif
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+#if NEWMETRIC
+                        metric_distance_computations++;
+#endif
 
                         visited_array[candidate_id] = visited_array_tag;
 
