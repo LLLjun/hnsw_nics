@@ -114,16 +114,16 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         for (int i = 20; i <= 200; i += 10) {
             efs.push_back(i);
         }
-        for (int i = 200; i <= 500; i += 100) {
+        for (int i = 200; i <= 1000; i += 100) {
             efs.push_back(i);
         }
     } else if (k == 100){
-        for (int i = 50; i <= 300; i += 50) {
+        for (int i = 110; i <= 400; i+= 20)
             efs.push_back(i);
-        }
-        for (int i = 400; i <= 1000; i += 100) {
+        for (int i = 400; i <= 600; i += 50)
             efs.push_back(i);
-        }
+        for (int i = 600; i <= 2000; i += 100)
+            efs.push_back(i);
     }
 #endif
 
@@ -427,12 +427,12 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
 #if MANUAL
-        appr_alg->setEf(EFS_MAX);
+        appr_alg->setEf(index_parameter["efs_max"]);
         appr_alg->k_search = k;
         bool debug = false;
 
         string path_train_result = index_string["prefix_param"] + 
-                                "_efs" + to_string(EFS_MAX) + ".csv";
+                                "_efs" + to_string(index_parameter["efs_max"]) + ".csv";
         map<string, float> param;
         vector<map<string, float>> param_list;
 
@@ -446,11 +446,11 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 
             param_list.push_back(param);
         } else {
-            for (size_t len = 10; len <= 30; len += 5){
+            for (size_t len = 20; len <= 50; len += 5){
                 for (float cx = 1; cx <= 3; cx += 0.5){
-                    for (float d_thr = 0.1; d_thr <= 0.6; d_thr += 0.1){
-                        for (float s_thr = 0.1; s_thr <= 0.4; s_thr += 0.1){
-                            for (size_t od = 3; od <= 6; od += 1){
+                    for (float d_thr = 0.002; d_thr <= 0.02; d_thr += 0.002){
+                        for (float s_thr = 0.005; s_thr <= 0.05; s_thr += 0.005){
+                            for (size_t od = 3; od <= 5; od += 1){
                                 for (size_t as = 0; as <= 6; as += 3){
                                     param["len_observe"] = len;
                                     param["curve_x"] = cx;
@@ -556,7 +556,8 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
     }
 }
 
-void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res){
+void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, 
+                size_t &efc, size_t &neibor, size_t &k_res, size_t &efs_max){
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
@@ -615,6 +616,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_parameter["M"] = M;
     index_parameter["k"] = k;
     index_parameter["vecsize"] = vecsize;
+    index_parameter["efs_max"] = efs_max;
 
     map<string, string> index_string;
     index_string["using_dataset"] = using_dataset;

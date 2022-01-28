@@ -46,7 +46,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
 #if USESAMQ
         index_parameter["qsize"] = 100000;
         index_string["path_q"] = path_dataset + "sample100k/sample.100k.fbin";
-        index_string["path_gt"] = path_dataset + "sample100k/sample_gt.100k.bin";
+        index_string["path_gt"] = path_dataset + "sample100k/deep" + to_string(subset_size_milllions) + "m/sample_gt.100k.bin";
 #else
         index_parameter["qsize"] = 10000;
         index_string["path_q"] = path_dataset + "query.public.10K.fbin";

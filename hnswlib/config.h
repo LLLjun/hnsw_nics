@@ -24,9 +24,9 @@ typedef float DTRES;
 // #define ITLE 40
 // #define OLLE 0
 // #define NMSG 1
-#define EFS_MAX 400
+#define EFS_MAX 170
 
-#define MANUAL false
+#define MANUAL true
 #define MANUALRUN false
 
 #define NEWMETRIC true
