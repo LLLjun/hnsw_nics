@@ -342,10 +342,11 @@ namespace hnswlib {
             return top_candidates;
         }
 
-        unsigned dms, ncf;
-        void setHeuristic2(unsigned Dms, unsigned Ncf){
+        unsigned dms, ncf, reach_step;
+        void setHeuristic2(unsigned Dms, unsigned Ncf, unsigned Reach_step){
             dms = Dms;
             ncf = Ncf;
+            reach_step = Reach_step;
         }
 
         void getNeighborsByHeuristic2(
@@ -365,6 +366,7 @@ namespace hnswlib {
 #if (RLNG && RLDT)
             std::vector<std::vector<int>> rldt_list;
             rldt_list.resize(queue_closest.size());
+            // std::unordered_set<tableint> reach_range_set;
 
             std::unordered_set<unsigned> connect_node;
             std::unordered_map<int, std::pair<unsigned, int>> connect_list;
@@ -423,6 +425,7 @@ namespace hnswlib {
                     connect_node.emplace(i);
 
                     return_list.push_back(curent_pair);
+                    // addNeighborToSet(curent_pair.second, level, reach_range_set, reach_step);
                 }
             }
 
@@ -439,7 +442,7 @@ namespace hnswlib {
                     auto iter = connect_list.find(key);
                     if (iter != connect_list.end()){
                         tableint conflict_id = return_list[iter->second.first].second;
-                        if (isNeighbor(curent_pair.second, conflict_id, level) || (iter->second.second <= 0)){
+                        if (isNeighbor(curent_pair.second, conflict_id, level, reach_step) == 1 || (iter->second.second <= 0)){
                             good = false;
                             break;
                         }
@@ -458,6 +461,7 @@ namespace hnswlib {
                     connect_node.emplace(i);
 
                     return_list.push_back(curent_pair);
+                    // addNeighborToSet(curent_pair.second, level, reach_range_set, reach_step);
                 }
             }
 
@@ -1521,6 +1525,61 @@ namespace hnswlib {
             return result;
         };
 
+        /*
+            input: constructed graph
+            output: reconstruct graph
+        */
+        // void reConstructionGraph(size_t resize, unsigned *relist){
+        //     size_t num_reselect;
+        //     tableint *node_select = nullptr;
+
+        //     if (resize == 0){
+        //         num_reselect = cur_element_count / M_;
+        //         printf("reselect %u node for hierarchy graph \n", num_reselect);
+        //         // only get 0 layer outdegree
+        //         node_select = new tableint[num_reselect]();
+        //         // std::vector<tableint> node_select(num_reselect, 0);
+
+        //         std::vector<std::queue<tableint>> idg_list;
+        //         std::vector<std::queue<tableint>> odg_list;
+        //         getDegreeLayer0(idg_list, odg_list);
+        //         // for (size_t i = 0; i < cur_element_count; i++){
+        //         //     linklistsizeint *ll_cur = get_linklist0(i);
+        //         //     int size = getListCount(ll_cur);
+        //         //     odg_list[size].emplace(i);
+        //         // }
+        //         size_t ci = 0;
+        //         size_t degree_range = odg_list.size() - 1;
+        //         for (int dd = degree_range; dd > 0; dd--){
+        //             while (!odg_list[dd].empty()){
+        //                 node_select[ci] = odg_list[dd].front();
+        //                 // node_select.push_back(odg_list[dd].front());
+        //                 odg_list[dd].pop();
+        //                 ci++;
+        //                 if (ci == num_reselect){
+        //                     printf("using min out degree: %d \n", dd);
+        //                     break;
+        //                 }
+        //             }
+        //             if (ci == num_reselect)
+        //                 break;
+        //         }
+        //     } else {
+        //         num_reselect = resize;
+        //         printf("reselect %u node for hierarchy graph \n", num_reselect);
+        //         node_select = new tableint[num_reselect]();
+        //         memcpy(node_select, relist, num_reselect * sizeof(unsigned));
+        //     }
+
+        //     // construct hierarchy structure
+        //     initHierarchy();
+        //     for (size_t i = 0; i < num_reselect; i++){
+        //         tableint cur_c = node_select[i];
+        //         addPointHierarchy(cur_c, -1);
+        //     }
+        //     printf("Reconstruct hierarchy is done.\n");
+        // }
+
         void checkIntegrity(){
             int connections_checked=0;
             std::vector <int > inbound_connections_num(cur_element_count,0);
@@ -1736,7 +1795,9 @@ namespace hnswlib {
             return (dist_average / need_comp.size());
         }
 
-        int isNeighbor(const tableint &xi, tableint &xc, int &level){
+        int isNeighbor(const tableint xi, tableint xc, int level, unsigned step = 1, bool init = true){
+            std::vector<tableint> ngh_first_step;
+            
             linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
             int size = getListCount(ll_cur);
             tableint *data = (tableint *) (ll_cur + 1);
@@ -1744,8 +1805,87 @@ namespace hnswlib {
             for (int j = 0; j < size; j++){
                 if (data[j] == xi)
                     return 1;
+                ngh_first_step.push_back(data[j]);
             }
+
+            for (tableint ngh_fst: ngh_first_step){
+                linklistsizeint *ll_cur = get_linklist_at_level(ngh_fst, level);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+
+                for (int j = 0; j < size; j++){
+                    if (data[j] == xi)
+                        return 1;
+                }
+            }
+
             return 0;
+            
+            // if (step == 1){
+            //     linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
+            //     int size = getListCount(ll_cur);
+            //     tableint *data = (tableint *) (ll_cur + 1);
+
+            //     for (int j = 0; j < size; j++){
+            //         if (data[j] == xi)
+            //             return 1;
+            //     }
+            //     if (init)
+            //         return 0;
+            //     else
+            //         return -1;
+            // } else if (step > 1){
+            //     step--;
+            //     linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
+            //     int size = getListCount(ll_cur);
+            //     tableint *data = (tableint *) (ll_cur + 1);
+
+            //     for (int j = 0; j < size; j++){
+            //         if (data[j] == xi)
+            //             return 1;
+            //     }
+            //     for (int j = 0; j < size; j++){
+            //         if (isNeighbor(xi, data[j], level, step, false) == 1)
+            //             return 1;
+            //     }
+            //     if (init)
+            //         return 0;
+            //     else
+            //         return -1;
+            // } else {
+            //     printf("Error\n");
+            //     exit(1);
+            // }
+        }
+
+        void addNeighborToSet(const tableint &xc, int &level, std::unordered_set<tableint> &set, unsigned step){
+            if (step == 1){
+                linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+
+                for (int j = 0; j < size; j++)
+                    set.emplace(data[j]);
+            } else {
+                if (step > 1){
+                    step--;
+                    linklistsizeint *ll_cur = get_linklist_at_level(xc, level);
+                    int size = getListCount(ll_cur);
+                    tableint *data = (tableint *) (ll_cur + 1);
+
+                    for (int j = 0; j < size; j++){
+                        set.emplace(data[j]);
+                        addNeighborToSet(data[j], level, set, step);
+                    }
+                }
+            }
+        }
+
+        int isInReachRange(const tableint &xi, std::unordered_set<tableint> &set){
+            if (set.find(xi) != set.end())
+                return 1;
+            else
+                return 0;
         }
 
 #if (IOF1 || EXI)

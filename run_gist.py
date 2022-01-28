@@ -40,8 +40,9 @@ def space_explore(stage):
     datasize = 1
     format = ""
     k_list = [1, 10]
-    dms_list = [1, 3, 7]
-    ncf_list = [1, 3, 5]
+    dms_list = [1]
+    ncf_list = [1]
+    reach_step_list = [1, 2]
     # dms_list = [1]
     # ncf_list = [3]
 
@@ -54,21 +55,20 @@ def space_explore(stage):
             format = "float"
 
         for k in k_list:
-            # for m in m_list:
-            #     for efc in efc_list:
+            for m in m_list:
+                for efc in efc_list:
 
-            #         command = "cd build && ./main_c2_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k) + " 0 0"
-            #         if efc >= (2 * m):
-            #             os.system(command)
+                    command = "cd build && ./main_c2_base " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k) + " 0 0 1"
+                    os.system(command)
                     
-            #         for dms in dms_list:
-            #             for ncf in ncf_list:
-            #                 command = "cd build && ./main_c2_rldt " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k) + " " + str(dms) + " " + str(ncf)
-            #                 if efc >= (2 * m):
-            #                     os.system(command)
+                    for dms in dms_list:
+                        for ncf in ncf_list:
+                            for step in reach_step_list:
+                                command = "cd build && ./main_c2_rldt " + stage + " " + dataname + " " + format + " " + str(datasize) + " " + str(efc) + " " + str(m) + " " + str(k) + " " + str(dms) + " " + str(ncf) + " " + str(step)
+                                os.system(command)
 
             if (stage == "search"):
-                handle_data(dataname, efc_list, m_list, k, dms_list, ncf_list)
+                handle_data(dataname, efc_list, m_list, k, dms_list, ncf_list, reach_step_list)
 
 
 space_explore("build")

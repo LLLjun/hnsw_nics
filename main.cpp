@@ -14,7 +14,7 @@ using namespace std;
 // }
 
 void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res,
-                unsigned Dms = 0, unsigned Ncf = 0);
+                unsigned Dms = 0, unsigned Ncf = 0, unsigned Reach_step = 1);
 
 int main(int argc, char **argv) {
     
@@ -40,8 +40,9 @@ int main(int argc, char **argv) {
 
     unsigned Dms = atol(argv[8]);
     unsigned Ncf = atol(argv[9]);
+    unsigned Reach_step = stol(argv[10]);
     
-    hnsw_impl(stage, using_dataset, format, M_size, efc, neibor, k_res, Dms, Ncf);
+    hnsw_impl(stage, using_dataset, format, M_size, efc, neibor, k_res, Dms, Ncf, Reach_step);
 
     return 0;
 };

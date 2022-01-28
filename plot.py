@@ -29,7 +29,7 @@ def save_fig(path_fig, np_array, legend_list, columns):
     fig_acc.savefig(path_fig, dpi=300)
 
 
-def handle_data(dataname, efc_list, m_list, k, dms_list, ncf_list):
+def handle_data(dataname, efc_list, m_list, k, dms_list, ncf_list, reach_step_list):
     label = "expc2"
     datasize = 1
 
@@ -56,10 +56,11 @@ def handle_data(dataname, efc_list, m_list, k, dms_list, ncf_list):
 
                 for dms in dms_list:
                     for ncf in ncf_list:
-                        unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_dms" + str(dms) + "_ncf" + str(ncf) + "_k" + str(k) + "_search_rldt_pro.csv"
-                        df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
-                        data_list.append(df_feature.values.transpose())
-                        legend_list.append(unique_name)
+                        for step in reach_step_list:
+                            unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_dms" + str(dms) + "_ncf" + str(ncf) + "_reachstep" + str(step) + "_k" + str(k) + "_search_rldt_pro.csv"
+                            df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))
+                            data_list.append(df_feature.values.transpose())
+                            legend_list.append(unique_name)
 
                 # unique_name = dataname + str(datasize) + "m_ef" + str(efc) + "_M" + str(m) + "_k" + str(k) + "_search_sxi.csv"
                 # df_feature = pd.read_csv(os.path.join(path_dataset, unique_name))

@@ -209,7 +209,8 @@ void build_index(const string &dataname,  SpaceInterface<DTres> &s,
         // appr_alg->testSortMultiadd();
         // exit(0);
 #if RLDT
-        appr_alg->setHeuristic2(index_parameter["Dms"], index_parameter["Ncf"]);
+        appr_alg->setHeuristic2(index_parameter["Dms"], index_parameter["Ncf"], 
+                                index_parameter["Reach_step"]);
 #endif
 
 #if PLATG
@@ -393,7 +394,7 @@ void search_index(const string &dataname, SpaceInterface<DTres> &s,
 }
 
 void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size, size_t &efc, size_t &neibor, size_t &k_res,
-                unsigned Dms = 0, unsigned Ncf = 0){
+                unsigned Dms = 0, unsigned Ncf = 0, unsigned Reach_step = 1){
     string root_index = "/home/usr-xkIJigVq/vldb/hnsw_nics/graphindex/";
     string root_output = "/home/usr-xkIJigVq/vldb/hnsw_nics/output/";
 
@@ -431,7 +432,8 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
 #if RLDT
     string unique_name_b = using_dataset + to_string(subset_size_milllions) + 
                         "m_ef" + to_string(efConstruction) + "_M" + to_string(M) +
-                        "_dms" + to_string(Dms) + "_ncf" + to_string(Ncf);
+                        "_dms" + to_string(Dms) + "_ncf" + to_string(Ncf) + 
+                        "_reachstep" + to_string(Reach_step);
 #else
     string unique_name_b = using_dataset + to_string(subset_size_milllions) + 
                         "m_ef" + to_string(efConstruction) + "_M" + to_string(M);
@@ -469,6 +471,7 @@ void hnsw_impl(int stage, string &using_dataset, string &format, size_t &M_size,
     index_parameter["vecsize"] = vecsize;
     index_parameter["Dms"] = Dms;
     index_parameter["Ncf"] = Ncf;
+    index_parameter["Reach_step"] = Reach_step;
 
     map<string, string> index_string;
     index_string["using_dataset"] = using_dataset;
