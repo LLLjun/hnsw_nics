@@ -27,7 +27,8 @@ def space_explore(mode):
     format = ""
     k_list = [10]
     stage = "search"
-    efs_list = [120, 170, 300, 400, 1000]
+    # efs_list = [120, 170, 300, 400, 1000]
+    efs_list = [1000]
 
     for dataname in datasets:
         if dataname == "sift":
@@ -54,7 +55,7 @@ def space_explore(mode):
                             os.system(command)     
 
 
-space_explore("train")
-# space_explore("inference")
+# space_explore("train")
+space_explore("inference")
 
 # run_single()

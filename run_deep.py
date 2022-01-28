@@ -27,7 +27,8 @@ def space_explore(mode):
     format = ""
     k = 100
     stage = "search"
-    efs_list = [170, 210, 310, 450, 1000]
+    efs_list = [1000]
+    # efs_list = [210]
 
     for dataname in datasets:
         if dataname == "sift":
