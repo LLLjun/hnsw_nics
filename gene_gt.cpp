@@ -20,10 +20,13 @@ template<typename DTset, typename DTval, typename DTres>
 void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s, size_t &efConstruction, 
                     size_t &M, size_t &vecsize, size_t &vecdim, string &path_data, bool isSave = true){
     // 
+#if (!GETSAMPLE)
     if (exists_test(index)){
         printf("Index %s is existed \n", index.c_str());
         return;
-    } else {
+    } else 
+#endif
+    {
         // edit size
         // {
         //     DTset *massB = new DTset[vecsize * vecdim]();
@@ -47,15 +50,46 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
             printf("Error, failed to allo mmeory\n");
             exit(1);
         }
+#if GETSAMPLE
+        size_t begin_size = 1e7;
+        size_t sample_size = 1e5;
+        // if (dataname == "turing")
+        //     sample_size = 1e6;
+
+        string path_sample;
+        if (dataname == "deep")
+            path_sample = "/home/usr-xkIJigVq/DataSet/deep/sample100k/sample.100k.fbin";
+        else if (dataname == "sift")
+            path_sample = "/home/usr-xkIJigVq/DataSet/sift/sample100k/sample.100k.u8bin";
+        else if (dataname == "turing")
+            path_sample = "/home/usr-xkIJigVq/DataSet/turing/sample100k/sample.100k.fbin";
+
+#endif
 
         cout << "Loading base data:\n";
         if (dataname == "sift"){
             DTset *massB_set = new DTset[vecsize * vecdim]();
             LoadBinToArray<DTset>(path_data, massB_set, vecsize, vecdim);
+#if GETSAMPLE
+            // from 100M begin 10M + sample_size
+            DTset *massB_sample = new DTset[sample_size * vecdim]();
+            memcpy(massB_sample, massB_set + begin_size * vecdim, sample_size * vecdim * sizeof(DTset));
+            WriteBinToArray<DTset>(path_sample, massB_sample, sample_size, vecdim);
+            delete[] massB_sample;
+            exit(0);
+#endif
             TransIntToFloat<DTset>(massB, massB_set, vecsize, vecdim);
             delete[] massB_set;
         } else {
             LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
+#if GETSAMPLE
+            // from 100M begin 10M + sample_size
+            DTval *massB_sample = new DTval[sample_size * vecdim]();
+            memcpy(massB_sample, massB + begin_size * vecdim, sample_size * vecdim * sizeof(DTval));
+            WriteBinToArray<DTval>(path_sample, massB_sample, sample_size, vecdim);
+            delete[] massB_sample;
+            exit(0);
+#endif
         }
 
         cout << "Building index:\n";
@@ -82,9 +116,35 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
     } else {
         BruteforceSearch<DTres> *brute_alg = new BruteforceSearch<DTres>(&s, index);
 
+#if GETSAMPLEGT
+        size_t sample_size = 1e5;
+        // if (dataname == "turing")
+        //     sample_size = 1e6;
+
+        string path_sample;
+        if (dataname == "deep")
+            path_sample = "/home/usr-xkIJigVq/DataSet/deep/sample100k/sample.100k.fbin";
+        else if (dataname == "sift")
+            path_sample = "/home/usr-xkIJigVq/DataSet/sift/sample100k/sample.100k.u8bin";
+        else if (dataname == "turing")
+            path_sample = "/home/usr-xkIJigVq/DataSet/turing/sample100k/sample.100k.fbin";
+
+        string path_sample_gt;
+        if (dataname == "deep")
+            path_sample_gt = "/home/usr-xkIJigVq/DataSet/deep/sample100k/sample_gt.100k.bin";
+        else if (dataname == "sift")
+            path_sample_gt = "/home/usr-xkIJigVq/DataSet/sift/sample100k/sample_gt.100k.bin";
+        else if (dataname == "turing")
+            path_sample_gt = "/home/usr-xkIJigVq/DataSet/turing/sample100k/sample_gt.100k.bin";
+
+        qsize = sample_size;
+        path_q = path_sample;
+        path_gt = path_sample_gt;
+#endif
+
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
         DTval *massQ = new DTval[qsize * vecdim];
-        
+
         cout << "Loading queries:\n";
         if (dataname == "sift"){
             DTset *massQ_set = new DTset[qsize * vecdim]();
@@ -94,7 +154,6 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         } else {
             LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
         }
-
         printf("Load queries from %s done \n", path_q.c_str());
 
 #pragma omp parallel for

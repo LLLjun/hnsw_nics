@@ -13,3 +13,7 @@ typedef float DTRES;
 
 // for profile
 #define EXI true
+
+// from 100M sample 10m + 100k / 1m
+#define GETSAMPLE true
+#define GETSAMPLEGT true
