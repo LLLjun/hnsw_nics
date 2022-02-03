@@ -147,8 +147,8 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         param_aware["len_observe"] = 50;
         param_aware["curve_x"] = 3;
         param_aware["dist_thr"] = 0.002;
-        param_aware["std_thr"] = 0.02;
-        param_aware["order_n"] = 4;
+        param_aware["std_thr"] = 0.01;
+        param_aware["order_n"] = 3;
         param_aware["add_step"] = 6;
 
         appr_alg.setAwareParam(param_aware);

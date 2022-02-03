@@ -54,7 +54,7 @@ def space_explore(mode):
                         os.system(command)     
 
 
-space_explore("train")
-# space_explore("inference")
+# space_explore("train")
+space_explore("inference")
 
 # run_single()
