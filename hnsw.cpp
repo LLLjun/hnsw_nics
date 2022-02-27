@@ -63,26 +63,27 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     // for (int i = k; i < 30; i++) {
     //     efs.push_back(i);
     // }
-    for (int i = 10; i < 100; i += 10) {
+    for (int i = 10; i <= 150; i += 10) {
         efs.push_back(i);
     }
     // for (int i = 100; i < 500; i += 40) {
     //     efs.push_back(i);
     // }
-    cout << "ef\t" << "R@" << k << "\t" << "qps\t" << "hop_0\t" << "hop_L\n";
+    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "qps\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
+        appr_alg.metric_distance_computations = 0;
         clk_get stopw = clk_get();
 
         float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
         float time_us_per_query = stopw.getElapsedTimeus() / qsize;
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
+        float NDC_avg = 1.0f * appr_alg.metric_distance_computations / qsize;
 
-        cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t" 
-        << avg_hop_0 << "\t" << avg_hop_L << "\n";
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << 1e6 / time_us_per_query << "\n";
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
             break;
@@ -96,32 +97,39 @@ inline bool exists_test(const std::string &name) {
 }
 
 template<typename DTset, typename DTval, typename DTres>
-void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s, size_t &efConstruction, 
-                    size_t &M, size_t &vecsize, size_t &vecdim, string &path_data, bool isSave = true){
+void build_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string, bool isSave = true){
     // 
+    size_t efConstruction = index_parameter["efConstruction"];
+    size_t M = index_parameter["M"];
+    size_t vecsize = index_parameter["vecsize"];
+    size_t vecdim = index_parameter["vecdim"];
+    size_t qsize = index_parameter["qsize"];
+    
+    string path_data = index_string["path_data"];
+    string format = index_string["format"];
+    string index = index_string["index"];
+
     if (exists_test(index)){
         printf("Index %s is existed \n", index.c_str());
         return;
     } else {
 
         DTset *massB = new DTset[vecsize * vecdim]();
-
         cout << "Loading base data:\n";
-        ifstream inputB(path_data.c_str(), ios::binary);
-        for (size_t i = 0; i < vecsize; i++){
-            int expect_in;
-            if (dataname == "sift" || dataname == "gist" || dataname == "deep"){
-                inputB.read((char *) &expect_in, 4);
-                if (expect_in != vecdim) {
-                    cout << "file error \n";
-                    exit(1);
-                }
-            }
-            inputB.read((char *) (massB + i * vecdim), vecdim * sizeof(DTset));
+        if (format == "float"){
+            LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
+        } else if (format == "uint8"){
+            DTset *massB_int = new DTset[vecsize * vecdim]();
+            LoadBinToArray<DTset>(path_data, massB_int, vecsize, vecdim);
+            TransIntToFloat<DTset>(massB, massB_int, vecsize, vecdim);
+            delete[] massB_int;
+        } else {
+            printf("Error, unsupport format \n");
+            exit(1);
         }
-        inputB.close();
 
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, vecsize, M, efConstruction);
+        L2Space l2space(vecdim);
+        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, vecsize, M, efConstruction);
 #if PLATG
         unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
         appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
@@ -166,9 +174,19 @@ void build_index(const string &dataname, string &index, SpaceInterface<DTres> &s
 }
 
 template<typename DTset, typename DTval, typename DTres>
-void search_index(const string &dataname, string &index, SpaceInterface<DTres> &s, size_t &k, 
-                    size_t &qsize, size_t &vecdim, size_t &gt_maxnum, string &path_q, string &path_gt){
+void search_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
     // 
+    size_t k = index_parameter["k"];
+    size_t vecsize = index_parameter["vecsize"];
+    size_t qsize = index_parameter["qsize"];
+    size_t vecdim = index_parameter["vecdim"];
+    size_t gt_maxnum = index_parameter["gt_maxnum"];
+
+    string path_q = index_string["path_q"];
+    string format = index_string["format"];
+    string index = index_string["index"];
+    string path_gt = index_string["path_gt"];
+
     if (!exists_test(index)){
         printf("Error, index %s is unexisted \n", index.c_str());
         exit(1);
@@ -178,37 +196,22 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         DTset *massQ = new DTset[qsize * vecdim];
 
         cout << "Loading GT:\n";
-        ifstream inputGT(path_gt.c_str(), ios::binary);
-        for (int i = 0; i < qsize; i++) {
-            int t;
-            inputGT.read((char *) &t, 4);
-            inputGT.read((char *) (massQA + gt_maxnum * i), gt_maxnum * 4);
-            if (t != gt_maxnum) {
-                cout << "err";
-                return;
-            }
-        }
-        inputGT.close();
-        printf("Load GT from %s done \n", path_gt.c_str());
-        
+        LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
         cout << "Loading queries:\n";
-        ifstream inputQ(path_q.c_str(), ios::binary);
-        for (int i = 0; i < qsize; i++) {
-            if (dataname == "sift" || dataname == "gist" || dataname == "deep"){
-                int in = 0;
-                inputQ.read((char *) &in, 4);
-                if (in != vecdim) {
-                    cout << "file error" << vecdim << endl;
-                    exit(1);
-                }
-            }
-            // glove的queries没有维度信息
-            inputQ.read((char *) (massQ + i * vecdim), vecdim * sizeof(DTset));
+        if (format == "float"){
+            LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
+        } else if (format == "uint8"){
+            DTset *massQ_int = new DTset[qsize * vecdim]();
+            LoadBinToArray<DTset>(path_q, massQ_int, qsize, vecdim);
+            TransIntToFloat<DTset>(massQ, massQ_int, qsize, vecdim);
+            delete[] massQ_int;
+        } else {
+            printf("Error, unsupport format \n");
+            exit(1);
         }
-        inputQ.close();
-        printf("Load queries from %s done \n", path_q.c_str());
 
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&s, index, false);
+        L2Space l2space(vecdim);
+        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, index, false);
     
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
@@ -222,15 +225,15 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
 }
 
 void hnsw_impl(bool is_build, const string &using_dataset){
-    string prefix = "/home/ljun/anns/hnsw_nics/graphindex/";
+    string path_project = "/home/usr-xkIJigVq/nmp/hnsw_nics";
 #if PLATG
     string label = "plat/";
 #else
     string label = "base/";
 #endif
-    // support dataset: sift, gist, deep, glove, crawl
-
-    string pre_index = prefix + label + using_dataset;
+    string path_graphindex = path_project + "/graphindex/" + label;
+    
+    string pre_index = path_graphindex + using_dataset;
     if (access(pre_index.c_str(), R_OK|W_OK)){
         if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
             printf("Error, dir %s create failed \n", pre_index.c_str());
@@ -238,26 +241,36 @@ void hnsw_impl(bool is_build, const string &using_dataset){
         }
     }
 
-	size_t subset_size_milllions = 10;
-	size_t efConstruction = 60;
-	size_t M = 25;
+	size_t subset_size_milllions = 1;
+	size_t efConstruction = 200;
+	size_t M = 20;
     size_t k = 10;
 	
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
+
+    std::map<string, size_t> index_parameter;
+    index_parameter["subset_size_milllions"] = subset_size_milllions;
+    index_parameter["efConstruction"] = efConstruction;
+    index_parameter["M"] = M;
+    index_parameter["k"] = k;
+    index_parameter["vecsize"] = vecsize;
+
+    std::map<string, string> index_string;
+    index_string["format"] = "float";
     
     string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
-    CheckDataset(using_dataset, subset_size_milllions, vecsize, qsize, vecdim, gt_maxnum,
-                    path_q, path_data, path_gt);
+    index_string["index"] = hnsw_index;
+    CheckDataset(using_dataset, index_parameter, index_string);
 
     L2Space l2space(vecdim);
 
     if (is_build){
-        build_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, efConstruction, M, vecsize, vecdim, path_data);
+        build_index<DTSET, DTVAL, DTRES>(using_dataset, index_parameter, index_string);
     } else{
-        search_index<DTSET, DTVAL, DTRES>(using_dataset, hnsw_index, l2space, k, qsize, vecdim, gt_maxnum, path_q, path_gt);
+        search_index<DTSET, DTVAL, DTRES>(using_dataset, index_parameter, index_string);
     }
     return;
 }
