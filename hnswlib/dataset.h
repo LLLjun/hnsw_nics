@@ -2,86 +2,81 @@
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <map>
 
 using namespace std;
 
-void CheckDataset(const string &dataname, std::map<string, size_t> &index_parameter, std::map<string, string> &index_string,
-                size_t &subset_size_milllions, 
-                size_t &vecsize, size_t &qsize, size_t &vecdim, size_t &gt_maxnum,
-                string &path_q, string &path_data , string &path_gt){
+void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
+
+    size_t subset_size_milllions = index_parameter["subset_size_milllions"];
+    string path_dataset = "dataset/" + dataname + "/";
 
     if (dataname == "sift"){
-        qsize = 10000;
-        vecdim = 128;
-        gt_maxnum = 1000;
-        path_q = "dataset/bigann/bigann_query.bvecs";
-        path_data = "dataset/bigann/bigann_base.bvecs";
-        path_gt = "dataset/bigann/gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
+        index_parameter["qsize"] = 10000;
+        index_parameter["vecdim"] = 128;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = path_dataset + "query.public.10K.u8bin";
+        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.u8bin";
+        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else if (dataname == "gist"){
         if (subset_size_milllions > 1){
             printf("error: gist size set error.\n");
             exit(1);
         }
-        qsize = 1000;
-        vecdim = 960;
-        gt_maxnum = 100;
-        path_q = "dataset/gist/gist_query.fvecs";
-        path_data = "dataset/gist/gist_base.fvecs";
-        path_gt = "dataset/gist/gist_groundtruth.ivecs";
-    } else if (dataname == "deep"){
-        // if (subset_size_milllions > 100){
-        //     printf("error: deep size set error.\n");
-        //     exit(1);
-        // }
         index_parameter["qsize"] = 1000;
-        index_parameter["vecdim"] = 96;
+        index_parameter["vecdim"] = 960;
         index_parameter["gt_maxnum"] = 100;
-        qsize = 1000;
-        vecdim = 96;
-        gt_maxnum = 100;
-        index_string["path_q"] = "dataset/deep/deep1B_queries.fvecs";
-        index_string["path_data"] = "dataset/deep/deep_base/deep_base.fvecs";
-        index_string["path_gt"] = "dataset/deep/deep_gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";      
-        path_q = "dataset/deep/deep1B_queries.fvecs";
-        path_data = "dataset/deep/deep_base/deep_base.fvecs";
-        path_gt = "dataset/deep/deep_gnd/idx_" + to_string(subset_size_milllions) + "M.ivecs";
-    } else if (dataname == "glove"){
-        if (subset_size_milllions > 1){
-            printf("error: glove size set error.\n");
+        index_string["path_q"] = path_dataset + "gist_query.fvecs";
+        index_string["path_data"] = path_dataset + "gist_base.fvecs";
+        index_string["path_gt"] = path_dataset + "gist_groundtruth.ivecs";
+    } else if (dataname == "deep"){
+        if (subset_size_milllions > 100){
+            printf("error: deep size set error.\n");
             exit(1);
         }
-        // 1193515 1193517
-        vecsize = 1193515;
-        qsize = 10000;
-        // (25) 50 100 200
-        vecdim = 25;
-        gt_maxnum = 100;
-        path_q = "glove/glove" + to_string(vecdim) + "d_query.fvecs";
-        path_data = "glove/glove_base/glove" + to_string(vecdim) + "d_base.fvecs";
-        path_gt = dataname + "/gnd/idx_" + to_string(vecdim) + "d.ivecs";
+        index_parameter["qsize"] = 10000;
+        index_parameter["vecdim"] = 96;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = path_dataset + "query.public.10K.fbin";
+        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+    } else if (dataname == "turing"){
+        if (subset_size_milllions > 100){
+            printf("error: turing size set error.\n");
+            exit(1);
+        }
+        index_parameter["qsize"] = 100000;
+        index_parameter["vecdim"] = 100;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["path_q"] = path_dataset + "query100K.fbin";
+        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
         exit(1);
     }
-    // else if (dataname == "crawl"){
-    //     if (subset_size_milllions > 2){
-    //         printf("error: glove size set error.\n");
-    //         exit(1);
-    //     }
-    //     // 42 840
-    //     int tokens = 42;
-    //     if (tokens == 42){
-    //         vecsize = 1917495;
-    //     } else if(tokens == 840){
-    //         vecsize = 2196018;
-    //     }
-    //     qsize = 10000;
-    //     vecdim = 300;
-    //     gt_maxnum = 100;
-    //     sprintf(path_q, "crawl/crawl%dt_query.fvecs", tokens);
-    //     sprintf(path_data, "crawl/crawl_base/crawl%dt_base.fvecs", tokens);
-    //     sprintf(path_gt, "crawl/gnd/idx_%dt.ivecs", tokens);
-    // }
+}
+
+void SetPathStr(map<string, string> &index_string){
+    string dir_clu = index_string["dir_clu"];
+    string dir_fix = index_string["dir_fix"];
+    string dir_index = index_string["dir_index"];
+    // cluster data file path
+    index_string["path_clu_graphId_to_externalId"] = dir_clu + "/graph_externalId.bin";
+    index_string["path_clu_mass_graph"] = dir_clu + "/mass_graph.bin";
+    index_string["path_clu_mass_global"] = dir_clu + "/mass_global.bin";
+    index_string["path_clu_globalId_to_externalId"] = dir_clu + "/global_externalId.bin";
+
+    // quantization data file path
+    index_string["path_fix_mass_global"] = dir_fix + "/mass_global.bin";
+    index_string["path_fix_mass_Q_ssd"] = dir_fix + "/mass_Q_ssd.bin";
+    index_string["path_fix_mass_graph"] = dir_fix + "/mass_graph.bin";
+    index_string["path_fix_mass_Q_dram"] = dir_fix + "/mass_Q_dram.bin";
+    index_string["path_fix_flag_graph"] = dir_fix + "/flag_graph.bin";
+    index_string["path_fix_flag_Q_dram"] = dir_fix + "/flag_Q_dram.bin";
+
+    // index set file path
+    index_string["path_index_prefix"] = dir_index + "/index_bank_";
 }
 
 // load file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.
@@ -93,7 +88,7 @@ void LoadBinToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint3
         file_reader.read((char *) &nums_r, sizeof(uint32_t));
         file_reader.read((char *) &dims_r, sizeof(uint32_t));
         if ((nums != nums_r) || (dims != dims_r)){
-            printf("Error, file size is error, nums_r: %u, dims_r: %u\n", nums_r, dims_r);
+            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", file_path.c_str(), nums_r, dims_r);
             exit(1);
         }
     }
@@ -118,6 +113,31 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
 }
 
 template<typename data_T>
+void LoadVecsToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint32_t dims){
+    std::ifstream file_reader(file_path.c_str(), ios::binary);
+    for (size_t i = 0; i < nums; i++){
+        uint32_t dims_r;
+        file_reader.read((char *) &dims_r, sizeof(uint32_t));
+        if (dims != dims_r){
+            printf("Error, file size is error, dims_r: %u\n", dims_r);
+            exit(1);
+        }
+        file_reader.read((char *) (data_m + i * dims), dims * sizeof(data_T));
+    }
+    file_reader.close();
+    printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
+}
+
+template<typename data_T>
+void TransIntToFloat(float *dest, data_T *src, size_t &nums, size_t &dims){
+    for (size_t i = 0; i < nums; i++){
+        for (size_t j = 0; j < dims; j++){
+            dest[i * dims + j] = (float) src[i * dims + j];
+        }
+    }
+}
+
+template<typename data_T>
 uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     cout << "Comput the center point: \n";
     float *sum_m = new float[dims]();
@@ -133,13 +153,13 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
 
     float cur_max = std::numeric_limits<float>::max();
     uint32_t center_pt_id = 0;
-#pragma omp parallel for
+// #pragma omp parallel for
     for (size_t i = 0; i < nums; i++){
         float tmp_sum = 0;
         for (size_t j = 0; j < dims; j++){
-            tmp_sum += powf32((data_m[i * dims + j] - avg_m[j]), 2);
+            tmp_sum += powf((data_m[i * dims + j] - avg_m[j]), 2);
         }
-#pragma omp cratical
+// #pragma omp cratical
         {
             if (tmp_sum < cur_max){
                 cur_max = tmp_sum;

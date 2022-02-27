@@ -344,10 +344,10 @@ private:
                     min_factor = (float) min_T / _min_fac_fine;
                 _scale_factor_fine = min(max_factor, min_factor);
                 // to limit _scale_factor_fine
-                unsigned pp = round_float(log2f32((_scale_factor_fine / _scale_factor_coarse)));
+                unsigned pp = round_float(log2((_scale_factor_fine / _scale_factor_coarse)));
                 if (pp < 1)
                     pp = 1;
-                _proportion_single = (T)exp2f32(pp);
+                _proportion_single = (T)exp2(pp);
                 // _scale_factor_fine = (unsigned)(_scale_factor_fine / _scale_factor_coarse) * _scale_factor_coarse;
                 _scale_factor_fine = _proportion_single * _scale_factor_coarse;
             }
@@ -355,17 +355,17 @@ private:
             // todo
             printf("Error, unsupport non padding\n");
             exit(1);
-            int fixpointpos = (int) floorf32(log2f32(max_T / _max_fac_coarse));
+            int fixpointpos = (int) floor(log2(max_T / _max_fac_coarse));
             int fixpointneg = std::numeric_limits<int>::min();
             if (min_T != 0 && _min_fac_coarse != 0)
-                fixpointneg = (int) floorf32(log2f32(min_T / _min_fac_coarse));
+                fixpointneg = (int) floor(log2(min_T / _min_fac_coarse));
             int fixpoint = max(fixpointpos, fixpointneg);
             _scale_factor_coarse = pow(2, fixpoint);
 
-            fixpointpos = (int) floorf32(log2f32(max_T / _max_fac_fine));
+            fixpointpos = (int) floor(log2(max_T / _max_fac_fine));
             fixpointneg = std::numeric_limits<int>::min();
             if (min_T != 0 && _min_fac_fine != 0)
-                fixpointneg = (int) floorf32(log2f32(min_T / _min_fac_fine));
+                fixpointneg = (int) floor(log2(min_T / _min_fac_fine));
             fixpoint = max(fixpointpos, fixpointneg);
             _scale_factor_fine = pow(2, fixpoint);
         }
@@ -415,12 +415,12 @@ private:
         for (size_t i = 0; i < nums; i++){
             tmperr1 = 0;
             for(size_t j = 0; j < _vecdims; j++){
-                tmperr1 += powf32((floatp[i * _vecdims + j] - trans_floatp[i * _vecdims + j]), 2);
+                tmperr1 += pow((floatp[i * _vecdims + j] - trans_floatp[i * _vecdims + j]), 2);
                 // debug
                 // printf("%.5f -> %3d -> %.5f\n", 
                 //         floatp[i * _vecdims + j], fixp[i * _vecdims + j], trans_floatp[i * _vecdims + j]);
             }
-            tmperr2 += powf32(tmperr1, 0.5);
+            tmperr2 += pow(tmperr1, 0.5);
         }
         
         _quant_err = (_quant_err * _quant_nums + tmperr2) / (_quant_nums + nums);
@@ -439,12 +439,12 @@ private:
 
         for (size_t i = 0; i < nums; i++){
             for(size_t j = 0; j < _vecdims; j++){
-                tmperr += powf32((floatp[i * _vecdims + j] - trans_floatp[i * _vecdims + j]), 2);
+                tmperr += pow((floatp[i * _vecdims + j] - trans_floatp[i * _vecdims + j]), 2);
                 // debug
                 // printf("%.3f -> %d -> %.3f\n", 
                 //         floatp[i * _vecdims + j], fixp[i * _vecdims + j], trans_floatp[i * _vecdims + j]);
             }
-            _quant_err = (_quant_err * _quant_nums + powf32(tmperr, 0.5)) / (_quant_nums + 1);
+            _quant_err = (_quant_err * _quant_nums + pow(tmperr, 0.5)) / (_quant_nums + 1);
         }
         _quant_nums += nums;
 

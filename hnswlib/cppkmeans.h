@@ -57,7 +57,7 @@ class K_means{
             D = vecdim;
             fstdistfunc_ = s->get_dist_func();
             dist_func_param_ = s->get_dist_func_param();
-            printf("vecdim = %lu.\n", (*(size_t*)dist_func_param_));
+            // printf("vecdim = %lu.\n", (*(size_t*)dist_func_param_));
         }
 
         ~K_means(){
@@ -86,13 +86,15 @@ class K_means{
             in_cluster = new int[N]();
             cluster_label_num = new int[K]();
 
-            printf("Cluster Begin: clu_label_num=%d, clu_train_num=%d, clu_vecdim=%d.\n", K, N, D);
+            if (is_print)
+                printf("Cluster Begin: clu_label_num=%d, clu_train_num=%d, clu_vecdim=%d.\n", K, N, D);
 
             int clu_iter_count = 0;
             float clu_diff_bef = FLT_MAX;
             float clu_diff_now = 0.0;
 
-            printf("cluster error:\t");
+            if (is_print)
+                printf("cluster error:\t");
             while(fabs(clu_diff_now - clu_diff_bef) > 1e-5 && clu_iter_count < num_iters){   //比较前后两次迭代，若不相等继续迭代
                 clu_diff_bef = clu_diff_now;
                 // 获取当前的聚类中心点
@@ -112,11 +114,14 @@ class K_means{
                 
                 clu_diff_now = getDifference();
                 clu_iter_count++;
-                // printf("The %dth difference between data and center is: %.2f\n\n", clu_iter_count, clu_diff_now);
-                printf("-> %.2f\t", clu_diff_now);
-                fflush(stdout);
+                
+                if (is_print){
+                    printf("-> %.2f\t", clu_diff_now);
+                    fflush(stdout);
+                }
             }
-            printf("\ncluster %d iters\n\n", clu_iter_count);
+            if (is_print)
+                printf("\ncluster %d iters\n\n", clu_iter_count);
 
             // trans sample id to origin id
             if (is_sample_train){
@@ -126,22 +131,12 @@ class K_means{
             }
 
             // output result
-            // if (is_print){
-            //     printf("Per label number in cluster program is :\n");
-            // }
             for (int cur_lab = 0; cur_lab < K; cur_lab++){
                 cluster_label_num[cur_lab] = cluster_dist_id[cur_lab].size();
                 if(cluster_label_num[cur_lab] == 0){
                     printf("Error: there is zero in cluster_label_num.\n");
                     exit(1);
                 }
-                // if (is_print){
-                //     printf("%d\t", cluster_label_num[cur_lab]);
-                //     if (cur_lab == (K - 1)){
-                //         printf("\n");
-                //     }
-                // }
-
             }
 
             // free struct

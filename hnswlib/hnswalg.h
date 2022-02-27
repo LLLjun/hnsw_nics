@@ -58,7 +58,7 @@ namespace hnswlib {
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);
 
-
+            has_usefix_ = false;
 
             //initializations for special treatment of the first node
             enterpoint_node_ = -1;
@@ -126,7 +126,7 @@ namespace hnswlib {
 
         bool has_deletions_;
 
-
+        bool has_usefix_;
         size_t label_offset_;
         size_t flag_offset_;
         DISTFUNC<dist_t> fstdistfunc_;
@@ -307,7 +307,7 @@ namespace hnswlib {
 //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
                 if(collect_metrics){
                     metric_hops++;
-                    metric_distance_computations+=size;
+                    // metric_distance_computations+=size;
                 }
 
 #ifdef USE_SSE
@@ -326,6 +326,7 @@ namespace hnswlib {
                                  _MM_HINT_T0);////////////
 #endif
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        metric_distance_computations++;
 
                         visited_array[candidate_id] = visited_array_tag;
 
@@ -390,7 +391,7 @@ namespace hnswlib {
                     dist_t curdist =
                             fstdistfunc_(getDataByInternalId(second_pair.second),
                                          getDataByInternalId(curent_pair.second),
-                                         dist_func_param_, nullptr, nullptr);;
+                                         dist_func_param_, nullptr, nullptr);
                     if (curdist < dist_to_query) {
                         good = false;
                         break;
@@ -1265,7 +1266,7 @@ namespace hnswlib {
         }
 
         /*
-        replace feature and add fix flag
+            replace feature and add fix flag
         */
         // template<typename DTfix>
         void ReplaceFeature(const DTFDRAM *fix_feature, const uint8_t *fix_flag, size_t &nums){
@@ -1273,6 +1274,7 @@ namespace hnswlib {
                 printf("Error, replace num not match \n");
                 exit(1);
             }
+            has_usefix_ = true;
 
             // to do: space_l2
             size_t dims = *((size_t *)dist_func_param_);

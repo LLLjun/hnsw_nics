@@ -12,7 +12,8 @@ typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;
 typedef int8_t DTFDRAM;
-typedef int16_t DTFSSD;
+// typedef int16_t DTFSSD;
+
 // 计算
 typedef int8_t  FCP8;
 typedef int16_t FCP16;
@@ -21,8 +22,17 @@ typedef int64_t FCP64;
 
 
 #define NUM_BANKS 8
-#define NUM_PERSPNODE 10
+#define NUM_PERSPNODE 1
 #define NUM_CLUSTER_TRAIN 1e5
+
+#define USEFIX true
+
+#if USEFIX
+typedef int16_t DTFSSD;
+#else
+typedef float DTFSSD;
+#endif
+
 
 // 非均匀量化的倍数，目前需要手动给
 #define PORP 2

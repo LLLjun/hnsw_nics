@@ -170,7 +170,6 @@ namespace hnswlib {
     class L2Space : public SpaceInterface<float> {
 
         DISTFUNC<float> fstdistfunc_;
-        // DISTFUNCFLAG<float> xx;
         size_t data_size_;
         size_t dim_;
     public:
@@ -197,11 +196,6 @@ namespace hnswlib {
         DISTFUNC<float> get_dist_func() {
             return fstdistfunc_;
         }
-
-        // DISTFUNCFLAG<float> get_dist_func_flag() {
-        //     exit(1);
-        //     return xx;
-        // }
 
         void *get_dist_func_param() {
             return &dim_;
@@ -339,10 +333,9 @@ namespace hnswlib {
             else {
                 printf("Error, no support\n");
                 exit(1);
-                // fstdistfunc_ = L2SqrI;
             }
             dim_ = dim;
-            data_size_ = dim * sizeof(DTFSSD);
+            data_size_ = dim * sizeof(FCP16);
         }
 
         size_t get_data_size() {
@@ -440,7 +433,6 @@ namespace hnswlib {
 
     class L2SpaceIntFlag : public SpaceInterface<FCP32> {
 
-        // DISTFUNCFLAG<FCP32> fstdistfunc_;
         DISTFUNC<FCP32> fstdistfunc_;
         size_t data_size_;
         size_t dim_;
@@ -448,12 +440,10 @@ namespace hnswlib {
         L2SpaceIntFlag(size_t dim) {
             if(dim % 4 == 0) {
                 fstdistfunc_ = L2SqrIntFlag4x;
-                // xx = L2SqrSSD4x<FCP8, FCP16, FCP32>;
             }
             else {
                 printf("Error, no support\n");
                 exit(1);
-                // fstdistfunc_ = L2SqrI;
             }
             dim_ = dim;
             data_size_ = dim * sizeof(FCP8);
@@ -463,12 +453,7 @@ namespace hnswlib {
             return data_size_;
         }
 
-        // DISTFUNCFLAG<FCP32> get_dist_func_flag() {
-        //     return fstdistfunc_;
-        // }
-
         DISTFUNC<FCP32> get_dist_func() {
-            // exit(1);
             return fstdistfunc_;
         }
 
