@@ -23,9 +23,10 @@ typedef int64_t FCP64;
 
 #define NUM_BANKS 8
 #define NUM_PERSPNODE 1
-#define NUM_CLUSTER_TRAIN 1e5
+#define NUM_CLUSTER_TRAIN 4e5
 
-#define USEFIX true
+#define USEFIX false
+#define USEHSG true
 
 #if USEFIX
 typedef int16_t DTFSSD;
@@ -33,6 +34,10 @@ typedef int16_t DTFSSD;
 typedef float DTFSSD;
 #endif
 
+#if USEHSG
+#define NUM_HSG_NODE 1e5
+#define NUM_HSG_K 20
+#endif
 
 // 非均匀量化的倍数，目前需要手动给
 #define PORP 2

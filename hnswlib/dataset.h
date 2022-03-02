@@ -77,6 +77,11 @@ void SetPathStr(map<string, string> &index_string){
 
     // index set file path
     index_string["path_index_prefix"] = dir_index + "/index_bank_";
+#if USEHSG
+    index_string["path_clu_hsgId_to_graphId"] = dir_clu + "/hsgId_to_graphId.bin";
+    index_string["path_clu_mass_hsg"] = dir_clu + "/mass_hsg.bin";
+    index_string["path_index_hsg"] = dir_index + "/index_hsg.bin";
+#endif
 }
 
 // load file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.

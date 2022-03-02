@@ -16,7 +16,7 @@ using namespace hnswlib;
 
 template<typename DTres>
 static void
-get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim, 
+get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim,
         vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     (vector<std::priority_queue<std::pair<DTres, labeltype >>>(qsize)).swap(answers);
     cout << qsize << "\n";
@@ -84,7 +84,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
 
-        cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t" 
+        cout << ef << "\t" << recall << "\t" << 1e6 / time_us_per_query << "\t"
         << avg_hop_0 << "\t" << avg_hop_L << "\n";
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
@@ -109,7 +109,7 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
 
     size_t vecsize = index_parameter["vecsize"];
     size_t vecdim = index_parameter["vecdim"];
-    
+
     string path_data = index_string["path_data"];
     string dir_clu = index_string["dir_clu"];
     string format = index_string["format"];
@@ -131,6 +131,7 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
     // graphId_to_externalId.size = num_banks * vecsize_dram_per_bank
     unsigned *graphId_to_externalId = new unsigned[vecsize_dram_total]();
     // when storage, mass_bank for dram-only, mass_graph for dram-ssd
+    DTset *mass_graph = new DTset[vecsize_dram_total * vecdim]();
     DTset **mass_bank = gene_array<DTset>(num_banks, vecsize_ssd_per_bank, vecdim);
 
     cout << "Loading base data:\n";
@@ -151,15 +152,16 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
 
     int *externalId_to_bankLabel = new int[vecsize]();
     int **bankLabel_to_externalId = gene_array<int>(num_banks, vecsize_ssd_per_bank);
-    
+
     // vecsize -> num_banks * vecsize_ssd_per_bank
     K_means<DTset, DTres> *BankMeans = new K_means<DTset, DTres>(&l2_kmeans, vecdim);
-    
+
     uint32_t num_sample = NUM_CLUSTER_TRAIN < vecsize ? NUM_CLUSTER_TRAIN : vecsize;
     DTset *mass_sample = new DTset[num_sample * vecdim]();
     std::vector<uint32_t> sample_list;
     for (uint32_t i = 0; i < vecsize; i++)
         sample_list.push_back(i);
+    srand((unsigned int)time(NULL));
     random_shuffle(sample_list.begin(), sample_list.end());
     sample_list.resize(num_sample);
     std::vector<uint32_t>(sample_list).swap(sample_list);
@@ -203,20 +205,25 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
         printf("Only-DRAM cluster...\n");
 
         WriteBinToArray<unsigned>(path_clu_graphId_to_externalId, graphId_to_externalId, num_banks, vecsize_dram_per_bank);
-        ofstream mass_graph_writer(path_clu_mass_graph.c_str());
-        mass_graph_writer.write((char *) &vecsize_dram_total, sizeof(unsigned));
-        mass_graph_writer.write((char *) &vecdim, sizeof(unsigned));
-        for (int i = 0; i < num_banks; i++){
-            mass_graph_writer.write((char *) mass_bank[i], vecsize_dram_per_bank * vecdim * sizeof(DTset));
-        }
-        mass_graph_writer.close();
+        for (int i = 0; i < num_banks; i++)
+            memcpy(mass_graph + i * vecsize_dram_per_bank * vecdim,
+                    mass_bank[i], vecsize_dram_per_bank * vecdim * sizeof(DTset));
+        WriteBinToArray<DTset>(path_clu_mass_graph, mass_graph, vecsize_dram_total, vecdim);
+        
+        // ofstream mass_graph_writer(path_clu_mass_graph.c_str());
+        // mass_graph_writer.write((char *) &vecsize_dram_total, sizeof(unsigned));
+        // mass_graph_writer.write((char *) &vecdim, sizeof(unsigned));
+        // for (int i = 0; i < num_banks; i++){
+        //     mass_graph_writer.write((char *) mass_bank[i], vecsize_dram_per_bank * vecdim * sizeof(DTset));
+        // }
+        // mass_graph_writer.close();
         delete[] graphId_to_externalId;
 
     } else {
         printf("DRAM-SSD cluster...\n");
 
         // ***
-        DTset *mass_graph = new DTset[vecsize_dram_total * vecdim]();
+        
         // globalId_to_externalId.size = vecsize_dram_total * num_perspnode
         unsigned *globalId_to_externalId = new unsigned[vecsize]();
         DTset *mass_global = new DTset[vecsize * vecdim]();
@@ -230,7 +237,7 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
             K_means<DTset, DTres> *GraphMeans = new K_means<DTset, DTres>(&l2_kmeans, vecdim);
             GraphMeans->train_cluster(vecsize_dram_per_bank, vecsize_ssd_per_bank, num_perspnode,
                                         num_iters, x, mass_bank[bank_id], false, (bank_id == 0));
-            
+
             // get clu_to_inter
             uint32_t *clu_pos = new uint32_t[vecsize_dram_per_bank]();
             for (size_t j = 0; j < vecsize_ssd_per_bank; j++){
@@ -241,7 +248,7 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
             }
             for (size_t i = 0; i < vecsize_dram_per_bank; i++){
                 if (clu_pos[i] != num_perspnode){
-                    printf("Error, cluster super node: %u, its num: %u, expect: %u \n", 
+                    printf("Error, cluster super node: %u, its num: %u, expect: %u \n",
                             (bank_id * vecsize_dram_per_bank + i), clu_pos[i], num_perspnode);
                     exit(1);
                 }
@@ -253,13 +260,13 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
             for (size_t bg_node_id = 0; bg_node_id < vecsize_dram_per_bank; bg_node_id++){
                 size_t sp_node_id = bank_id * vecsize_dram_per_bank + bg_node_id;
                 graphId_to_externalId[sp_node_id] = bankLabel_to_externalId[bank_id][clu_to_inter[bg_node_id][0]];
-                memcpy(mass_graph + vecdim * sp_node_id, 
+                memcpy(mass_graph + vecdim * sp_node_id,
                         mass_bank[bank_id] + vecdim * GraphMeans->cluster_center_id[bg_node_id], vecdim * sizeof(DTset));
 
                 for (size_t i = 0; i < num_perspnode; i++){
-                    globalId_to_externalId[sp_node_id * num_perspnode + i] = 
+                    globalId_to_externalId[sp_node_id * num_perspnode + i] =
                         bankLabel_to_externalId[bank_id][clu_to_inter[bg_node_id][i]];
-                    memcpy(mass_global + vecdim * (sp_node_id * num_perspnode + i), 
+                    memcpy(mass_global + vecdim * (sp_node_id * num_perspnode + i),
                             mass_bank[bank_id] + vecdim * clu_to_inter[bg_node_id][i], vecdim * sizeof(DTset));
                 }
             }
@@ -269,7 +276,7 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
 
         }
 
-        printf("Cluster %u banks base data: %u to graph level: %u * %u is done\n", 
+        printf("Cluster %u banks base data: %u to graph level: %u * %u is done\n",
                 num_banks, vecsize_ssd_per_bank, vecsize_dram_per_bank, num_perspnode);
 
         WriteBinToArray<unsigned>(path_clu_graphId_to_externalId, graphId_to_externalId, num_banks, vecsize_dram_per_bank);
@@ -277,11 +284,44 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
         WriteBinToArray<DTset>(path_clu_mass_global, mass_global, vecsize, vecdim);
         WriteBinToArray<unsigned>(path_clu_globalId_to_externalId, globalId_to_externalId, vecsize_dram_total, num_perspnode);
         delete[] graphId_to_externalId;
-        delete[] mass_graph;
         delete[] mass_global;
         delete[] globalId_to_externalId;
     }
 
+#if USEHSG
+    // generate HSG data
+    printf("generate hsg data ...\n");
+    size_t vecsize_hsg_total = NUM_HSG_NODE;
+    size_t vecsize_hsg_perbank = vecsize_hsg_total / num_banks;
+
+    unsigned *hsgId_to_graphId = new unsigned[vecsize_hsg_total]();
+    DTset *mass_hsg = new DTset[vecsize_hsg_total * vecdim]();
+
+    for (int bk_i = 0; bk_i < num_banks; bk_i++){
+        // DTset *mass_graph_bk_i = mass_graph + bk_i * vecsize_dram_per_bank * vecdim;
+
+        vector<uint32_t> rand_generater;
+        for (uint32_t j = 0; j < vecsize_dram_per_bank; j++)
+            rand_generater.push_back(j);
+        srand((unsigned int)time(NULL));
+        random_shuffle(rand_generater.begin(), rand_generater.end());
+        rand_generater.resize(vecsize_hsg_perbank);
+
+        for (int i = 0; i < vecsize_hsg_perbank; i++){
+            unsigned hsgId = bk_i * vecsize_hsg_perbank + i;
+            unsigned graphId = bk_i * vecsize_dram_per_bank + rand_generater[i];
+            hsgId_to_graphId[hsgId] = graphId;
+
+            memcpy(mass_hsg + hsgId * vecdim, mass_graph + graphId * vecdim, vecdim * sizeof(DTset));
+        }
+    }
+    WriteBinToArray<unsigned>(index_string["path_clu_hsgId_to_graphId"], hsgId_to_graphId, num_banks, vecsize_hsg_perbank);
+    WriteBinToArray<DTset>(index_string["path_clu_mass_hsg"], mass_hsg, vecsize_hsg_total, vecdim);
+    delete[] hsgId_to_graphId;
+    delete[] mass_hsg;
+#endif
+
+    delete[] mass_graph;
     freearray<DTset>(mass_bank, num_banks);
     freearray<int>(bankLabel_to_externalId, num_banks);
     printf("file in %s generate is done \n", dir_clu.c_str());
@@ -298,7 +338,7 @@ void fix_to_dram_ssd(const string &dataname, map<string, size_t> &index_paramete
     size_t vecsize = index_parameter["vecsize"];
     size_t vecdim = index_parameter["vecdim"];
     size_t qsize = index_parameter["qsize"];
-    
+
     string path_q = index_string["path_q"];
     string dir_clu = index_string["dir_clu"];
     string dir_fix = index_string["dir_fix"];
@@ -321,7 +361,7 @@ void fix_to_dram_ssd(const string &dataname, map<string, size_t> &index_paramete
     string path_fix_mass_Q_dram = index_string["path_fix_mass_Q_dram"];
     string path_fix_flag_graph = index_string["path_fix_flag_graph"];
     string path_fix_flag_Q_dram = index_string["path_fix_flag_Q_dram"];
-    
+
 
     DTset *massQ = new DTset[qsize * vecdim];
     cout << "Loading queries:\n";
@@ -348,10 +388,10 @@ void fix_to_dram_ssd(const string &dataname, map<string, size_t> &index_paramete
     QuantDRAM->FixDataPoint(mass_graph, vecsize_dram_total, vecsize_dram_total);
     QuantDRAM->AddFullDataToFix(mass_graph, mass_fix_graph, vecsize_dram_total, 0);
     QuantDRAM->AddFullDataToFix(massQ, mass_fix_Q_dram, qsize, 1);
-    
-    printf("Quantization error is %.3f, quantzation number is %d, overflow number is %d\n", 
+
+    printf("Quantization error is %.3f, quantzation number is %d, overflow number is %d\n",
             QuantDRAM->_quant_err, QuantDRAM->_quant_nums, QuantDRAM->_overflow_nums);
-    
+
     if (mkdir(dir_fix.c_str(), S_IRWXU) != 0) {
         printf("Error, dir %s create failed \n", dir_fix.c_str());
         exit(1);
@@ -368,7 +408,7 @@ void fix_to_dram_ssd(const string &dataname, map<string, size_t> &index_paramete
     if (num_perspnode > 1){
         printf("Quantization for SSD, %d base data and %d queries.\n", vecsize, qsize);
 
-        DTFSSD *mass_fix_global = new DTFSSD[vecsize * vecdim]();        
+        DTFSSD *mass_fix_global = new DTFSSD[vecsize * vecdim]();
         DTFSSD *mass_fix_Q_ssd = new DTFSSD[qsize * vecdim]();
 
         DTset *mass_global = new DTset[vecsize * vecdim]();
@@ -379,9 +419,9 @@ void fix_to_dram_ssd(const string &dataname, map<string, size_t> &index_paramete
         QuantSSD->AddFullDataToFix(mass_global, mass_fix_global, vecsize);
         QuantSSD->AddFullDataToFix(massQ, mass_fix_Q_ssd, qsize);
 
-        printf("Quantization error is %.3f, quantzation number is %d, overflow number is %d\n", 
+        printf("Quantization error is %.3f, quantzation number is %d, overflow number is %d\n",
                 QuantSSD->_quant_err, QuantSSD->_quant_nums, QuantSSD->_overflow_nums);
-        
+
         WriteBinToArray<DTFSSD>(path_fix_mass_global, mass_fix_global, vecsize, vecdim);
         WriteBinToArray<DTFSSD>(path_fix_mass_Q_ssd, mass_fix_Q_ssd, qsize, vecdim);
 
@@ -406,7 +446,7 @@ void construct_to_dram(const string &dataname, map<string, size_t> &index_parame
     size_t vecsize = index_parameter["vecsize"];
     size_t vecdim = index_parameter["vecdim"];
     size_t qsize = index_parameter["qsize"];
-    
+
     string dir_index = index_string["dir_index"];
     string format = index_string["format"];
 
@@ -456,7 +496,7 @@ void construct_to_dram(const string &dataname, map<string, size_t> &index_parame
 #if PLATG
         unsigned center_id = compArrayCenter<DTset>(massbase, vecsize_dram_per_bank, vecdim);
         appr_alg[bank_i]->addPoint((void *) (massbase + center_id * vecdim), (size_t) center_id);
-        // todo: add flag 
+        // todo: add flag
 #else
         appr_alg[bank_i]->addPoint((void *) (massbase), (size_t) 0);
 #endif
@@ -504,6 +544,44 @@ void construct_to_dram(const string &dataname, map<string, size_t> &index_parame
     delete[] flag_fix_graph;
 #endif
 
+#if USEHSG
+    // construct hsg
+    printf("construction hsg ...\n");
+    size_t vecsize_hsg_total = NUM_HSG_NODE;
+    size_t vecsize_hsg_perbank = vecsize_hsg_total / num_banks;
+
+    unsigned *hsgId_to_graphId = new unsigned[vecsize_hsg_total]();
+    DTset *mass_hsg = new DTset[vecsize_hsg_total * vecdim]();
+    LoadBinToArray<unsigned>(index_string["path_clu_hsgId_to_graphId"], hsgId_to_graphId, num_banks, vecsize_hsg_perbank);
+    LoadBinToArray<DTset>(index_string["path_clu_mass_hsg"], mass_hsg, vecsize_hsg_total, vecdim);
+    
+    HierarchicalNSW<DTres> *appr_hsg = new HierarchicalNSW<DTres>(&l2space, vecsize_hsg_total, M, efConstruction);
+    unsigned center_id = compArrayCenter<DTset>(mass_hsg, vecsize_hsg_total, vecdim);
+    appr_hsg->addPoint((void *) (mass_hsg + center_id * vecdim), (size_t) hsgId_to_graphId[center_id]);
+
+    clk_get stopw_full = clk_get();
+#pragma omp parallel for
+    for (size_t i = 1; i < vecsize_hsg_total; i++) {
+#if PLATG
+        size_t ic;
+        if (i <= center_id)
+            ic = i - 1;
+        else
+            ic = i;
+        appr_hsg->addPoint((void *) (mass_hsg + ic * vecdim), hsgId_to_graphId[ic]);
+#else
+        appr_hsg->addPoint((void *) (mass_hsg + i * vecdim), hsgId_to_graphId[i]);
+#endif
+    }
+    cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
+    if (isSave)
+        appr_hsg->saveIndex(index_string["path_index_hsg"]);
+
+    delete[] hsgId_to_graphId;
+    delete[] mass_hsg;
+
+#endif
+
     printf("Build index in dir %s is succeed \n", dir_index.c_str());
 }
 
@@ -525,7 +603,7 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
     size_t vecsize = index_parameter["vecsize"];
     size_t vecdim = index_parameter["vecdim"];
     size_t qsize = index_parameter["qsize"];
-    
+
     string path_data = index_string["path_data"];
     string dir_clu = index_string["dir_clu"];
     string dir_fix = index_string["dir_fix"];
@@ -537,7 +615,7 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
     size_t vecsize_dram_per_bank = vecsize_dram_total / num_banks;
     size_t vecsize_ssd_per_bank = vecsize / num_banks;
 
-    
+
     // Cluster Data
     if (!access(dir_clu.c_str(), R_OK|W_OK)){
         printf("dir %s is existed \n", dir_clu.c_str());
@@ -587,13 +665,13 @@ float evaluate_recall(unsigned *massQA, vector<vector<labeltype>> &result_final,
                 collect++;
         }
     }
-    
+
     return (float) collect / (qsize * k);
 }
 
-void evaluate_recall(unsigned *massQA, vector<vector<labeltype>> &result, size_t &k, 
+void evaluate_recall(unsigned *massQA, vector<vector<labeltype>> &result, size_t &k,
                     priority_queue<pair<size_t, int>> &ground_perbank, size_t &num_banks){
-    
+
     unordered_set<unsigned> gt;
     for (int i = 0; i < k; i++)
         gt.emplace(massQA[i]);
@@ -615,7 +693,7 @@ void evaluate_recall(unsigned *massQA, vector<vector<labeltype>> &result, size_t
 
 template<typename DTset, typename DTval, typename DTres>
 void search_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
-    // 
+    //
     size_t k = index_parameter["k"];
     size_t vecsize = index_parameter["vecsize"];
     size_t qsize = index_parameter["qsize"];
@@ -647,7 +725,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
     string path_q = index_string["path_q"];
     string format = index_string["format"];
 #endif
-    
+
     string path_index_prefix = index_string["path_index_prefix"];
 
     if (access(dir_index.c_str(), R_OK|W_OK)){
@@ -710,6 +788,9 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             string path_index = path_index_prefix + to_string(bank_i) + ".bin";
             appr_alg[bank_i] = new HierarchicalNSW<DTres>(&l2float, path_index, false);
         }
+#if USEHSG
+        HierarchicalNSW<DTres> *appr_hsg = new HierarchicalNSW<DTres>(&l2float, index_string["path_index_hsg"], false);
+#endif
 #endif
 
         unsigned *graphId_to_externalId = nullptr;
@@ -729,14 +810,12 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         }
 
         printf("Search begin ... \n");
-        cout << "efs_bank\t" << "R@" << to_string(k) << "\tNDC_avg" <<"\n";
+        cout << "efs_bank\t" << "R@" << to_string(k) << "\tNDC_avg" << "\tNDC_max" <<"\n";
 
         // size_t efs_bank = 150;
         vector<size_t> efs_bank_list;
         // efs_bank_list.push_back(90);
-        for (size_t i = 10; i <= 20; i += 10)
-            efs_bank_list.push_back(i);
-        for (size_t i = 30; i <= 90; i += 30)
+        for (size_t i = 10; i <= 90; i += 10)
             efs_bank_list.push_back(i);
 
         for (size_t efs_bank : efs_bank_list){
@@ -757,7 +836,10 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                 appr_alg[i]->setEf(efs_bank);
                 appr_alg[i]->metric_distance_computations = 0;
             }
-
+#if USEHSG
+            appr_hsg->setEf(NUM_HSG_K);
+            appr_hsg->metric_distance_computations = 0;
+#endif
 
             for (size_t q_i = 0; q_i < qsize; q_i++){
                 // search stage 1: in DRAM
@@ -765,22 +847,49 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 #if USEFIX
                 std::vector<std::priority_queue<std::pair<FCP32, labeltype>>> return_bank(num_banks);
                 std::priority_queue<std::pair<FCP32, labeltype>> result_dram;
+                char *query_c = massQ + q_i * len_per_query_comb;
 #else
                 std::vector<std::priority_queue<std::pair<DTres, labeltype>>> return_bank(num_banks);
                 std::priority_queue<std::pair<DTres, labeltype>> result_dram;
+                DTset *query_c = massQ + q_i * vecdim;
+#endif
+
+#if USEHSG
+                vector<size_t> efs_perbank_byhsg(num_banks, 0);
+                // 这里的 labeltype 就是 bank_id
+                priority_queue<pair<DTres, labeltype>> return_hsg = appr_hsg->searchKnn(query_c, NUM_HSG_K);
+
+                while (!return_hsg.empty()){
+                    size_t bk_id = (size_t) (return_hsg.top().second / vecsize_dram_per_bank);
+                    efs_perbank_byhsg[bk_id]++;
+                    return_hsg.pop();
+                }
+
+                // for (int i = 0; i < num_banks; i++)
+                //     printf("%d\t", efs_perbank_byhsg[i]);
+                // printf("\n");
+
+                for (int i = 0; i < num_banks; i++)
+                    efs_perbank_byhsg[i] = (size_t) (1.0f * efs_perbank_byhsg[i] / NUM_HSG_K * efs_bank);
+
 #endif
 
                 omp_set_num_threads(num_banks);
 #pragma omp parallel for
                 for (size_t bank_i = 0; bank_i < num_banks; bank_i++){
                     // appr_alg[bank_i]->setThr(&thr_global);
-#if USEFIX
-                    char *query_c = massQ + q_i * len_per_query_comb;
-#else
-                    DTset *query_c = massQ + q_i * vecdim;
+#if USEHSG
+                    if (efs_perbank_byhsg[bank_i] == 0)
+                        // continue;
+                        appr_alg[bank_i]->setEf(k);
+                    else
+                        appr_alg[bank_i]->setEf(efs_perbank_byhsg[bank_i]);
 #endif
-                    // todo 
-                    return_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, efs_bank);
+
+                    if (num_perspnode == 1)
+                        return_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, k);
+                    else
+                        return_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, efs_bank);
 #pragma omp critical
                     {
                         // merge result
@@ -789,15 +898,15 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                             result_dram.emplace(std::make_pair(return_bank[bank_i].top().first, graphId));
                             if (num_perspnode == 1 && return_bank[bank_i].size() <= k)
                                 result_bank[q_i][bank_i].push_back(graphId_to_externalId[graphId]);
-                            
+
                             return_bank[bank_i].pop();
                         }
-                        // 
+                        //
                         while(result_dram.size() > efs_dram)
                             result_dram.pop();
                     }
                 }
-                
+
                 if (num_perspnode == 1){
                     while (!result_dram.empty()){
                         if (result_dram.size() <= k)
@@ -835,7 +944,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                     L2Space l2ssd(vecdim);
                     BruteforceSearch<DTres>* brute_alg = new BruteforceSearch<DTres>(&l2ssd, (size_t)(efs_real * num_perspnode));
 #endif
-                    
+
                     omp_set_num_threads(omp_get_num_procs());
         // #pragma omp parallel for
                     for (size_t i = 0; i < (efs_real * num_perspnode); i++){
@@ -861,11 +970,21 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             }
 
             size_t NDC = 0;
-            for (int i = 0; i < num_banks; i++)
+            size_t NDC_maxbank = 0;
+            for (int i = 0; i < num_banks; i++){
                 NDC += appr_alg[i]->metric_distance_computations;
-            
+                NDC_maxbank = max<size_t>(NDC_maxbank, appr_alg[i]->metric_distance_computations);
+            }
             float recall = evaluate_recall(massQA, result_final, qsize, k, gt_maxnum);
-            cout << efs_bank << "\t" << recall << "\t" << (float) NDC / qsize << "\n";
+
+#if USEHSG
+            size_t NDC_hsg = appr_hsg->metric_distance_computations;
+            cout << efs_bank << "\t" << recall << "\t" << (float) NDC / qsize << "\t"
+                 << (float) NDC_maxbank / qsize << "\t" << (float) NDC_hsg / qsize << "\n";
+#else
+            cout << efs_bank << "\t" << recall << "\t" << (float) NDC / qsize << "\t"
+                 << (float) NDC_maxbank / qsize << "\n";
+#endif
 
             // 测试不同bank对召回率的贡献度
             // vector<priority_queue<pair<size_t, int>>> recall_bank(qsize);
@@ -891,13 +1010,13 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 
 
         }
-        
+
         printf("Search index %s is succeed \n", dir_index.c_str());
     }
 }
 
 // need to support:
-// 
+//
 
 void hnsw_impl(bool is_build, const string &using_dataset){
     string path_project = "/home/usr-xkIJigVq/nmp/hnsw_nics";
@@ -908,12 +1027,16 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 	size_t subset_size_milllions = 1;
 	size_t efConstruction = 200;
 	size_t M = 20;
+    if (using_dataset == "gist"){
+        efConstruction = 300;
+        M = 30;
+    }
     size_t k = 10;
-	
+
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
-    
+
 
     size_t num_banks = NUM_BANKS;
     size_t num_perspnode = NUM_PERSPNODE;
@@ -938,7 +1061,7 @@ void hnsw_impl(bool is_build, const string &using_dataset){
             |--fix_data
             |--index
     */
-    string unique_name = using_dataset + to_string(subset_size_milllions) + 
+    string unique_name = using_dataset + to_string(subset_size_milllions) +
                         "m_bk" + to_string(num_banks) + "spn" + to_string(num_perspnode);
     string dir_this = path_graphindex + "/" + unique_name;
     if (access(dir_this.c_str(), R_OK|W_OK)){
@@ -947,7 +1070,7 @@ void hnsw_impl(bool is_build, const string &using_dataset){
             exit(1);
         }
     }
-    
+
     index_string["dir_clu"] = dir_this + "/clu_data";
     index_string["dir_fix"] = dir_this + "/fix_data";
 #if USEFIX
@@ -958,7 +1081,7 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 
     CheckDataset(using_dataset, index_parameter, index_string);
     SetPathStr(index_string);
-    
+
     // index_string["gt_id"] = "/home/ljun/anns/hnsw_nics/graphindex/brute/deep/deep100k_gt_id.bin";
     // index_string["gt_dist"] = "/home/ljun/anns/hnsw_nics/graphindex/brute/deep/deep100k_gt_dist.bin";
     // index_parameter["gt_maxnum"] = 10;

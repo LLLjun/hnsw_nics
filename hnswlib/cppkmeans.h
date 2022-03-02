@@ -330,6 +330,7 @@ class K_means{
             for (int i = 0; i < data_num; i++){
                 random_list[i] = i;
             }
+            srand((unsigned int)time(NULL));
             random_shuffle(random_list.begin(), random_list.end());
             for (int i = 0; i < data_num; i++){
                 data_list.push(random_list[i]);

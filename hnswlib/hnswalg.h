@@ -1013,6 +1013,7 @@ namespace hnswlib {
                 // Checking if the element with the same label already exists
                 // if so, updating it *instead* of creating a new element.
                 std::unique_lock <std::mutex> templock_curr(cur_element_count_guard_);
+#if USEHSG
                 auto search = label_lookup_.find(label);
                 if (search != label_lookup_.end()) {
                     tableint existingInternalId = search->second;
@@ -1027,7 +1028,7 @@ namespace hnswlib {
                     
                     return existingInternalId;
                 }
-
+#endif
                 if (cur_element_count >= max_elements_) {
                     throw std::runtime_error("The number of elements exceeds the specified limit");
                 };
