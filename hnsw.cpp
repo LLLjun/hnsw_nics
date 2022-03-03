@@ -75,7 +75,11 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
-        clk_get stopw = clk_get();
+#if PROFILE
+        appr_alg.time_PDC = 0;
+        appr_alg.time_sort = 0;
+#endif
+        StopW stopw = StopW();
 
         float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
         float time_us_per_query = stopw.getElapsedTimeus() / qsize;
@@ -83,7 +87,15 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
         float NDC_avg = 1.0f * appr_alg.metric_distance_computations / qsize;
 
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << 1e6 / time_us_per_query << "\n";
+#if PROFILE
+        float TDC = appr_alg.time_PDC / qsize;
+        float Tsort = appr_alg.time_sort / qsize;
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t" <<
+                TDC << "\t" << Tsort << "\n";
+#else
+        // cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\n";
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << (1e6 / time_us_per_query) << "\n";
+#endif
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
             break;
@@ -138,8 +150,8 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
 #endif
         cout << "Building index:\n";
         int j1 = 0;
-        clk_get stopw = clk_get();
-        clk_get stopw_full = clk_get();
+        StopW stopw = StopW();
+        StopW stopw_full = StopW();
         size_t report_every = vecsize / 10;
 #pragma omp parallel for
         for (size_t i = 1; i < vecsize; i++) {

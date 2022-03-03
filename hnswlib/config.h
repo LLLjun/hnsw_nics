@@ -2,6 +2,7 @@
 // #define DIR(A) #A
 
 #define PLATG true
+#define PROFILE false
 
 #define MODE base
 

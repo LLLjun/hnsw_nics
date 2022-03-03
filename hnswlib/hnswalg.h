@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <list>
 #include "config.h"
+#include "profile.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -245,10 +246,19 @@ namespace hnswlib {
         mutable std::atomic<long> metric_distance_computations;
         mutable std::atomic<long> metric_hops;
         mutable std::atomic<long> metric_hops_L;
+#if PROFILE
+        // mutable std::atomic<float> time_PDC;
+        // mutable std::atomic<float> time_sort;
+        mutable double time_PDC;
+        mutable double time_sort;
+#endif
 
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
+#if PROFILE
+            clk_get stop_search = clk_get();
+#endif
             VisitedList *vl = visited_list_pool_->getFreeVisitedList();
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
@@ -306,11 +316,21 @@ namespace hnswlib {
                         metric_distance_computations++;
 
                         visited_array[candidate_id] = visited_array_tag;
+#if PROFILE
+                        stop_search.reset();
+#endif
 
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
+#if PROFILE
+                        time_PDC += stop_search.getElapsedTimeus();
+#endif
+
                         if (top_candidates.size() < ef || lowerBound > dist) {
+#if PROFILE
+                            stop_search.reset();
+#endif
                             candidate_set.emplace(-dist, candidate_id);
 #ifdef USE_SSE
                             _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
@@ -318,12 +338,15 @@ namespace hnswlib {
                                          _MM_HINT_T0);////////////////////////
 #endif
 
+
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
                                 top_candidates.emplace(dist, candidate_id);
 
                             if (top_candidates.size() > ef)
                                 top_candidates.pop();
-
+#if PROFILE
+                            time_sort += stop_search.getElapsedTimeus();
+#endif
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
                         }
@@ -992,7 +1015,7 @@ namespace hnswlib {
                         unmarkDeletedInternal(existingInternalId);
                     }
                     updatePoint(data_point, existingInternalId, 1.0);
-                    
+
                     return existingInternalId;
                 }
 
@@ -1011,7 +1034,7 @@ namespace hnswlib {
             int curlevel;
 #if PLATG
             curlevel = 0;
-#else      
+#else
             curlevel = getRandomLevel(mult_);
             if (level > 0)
                 curlevel = level;

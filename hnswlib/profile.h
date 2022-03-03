@@ -13,9 +13,13 @@ public:
         time_begin = std::chrono::steady_clock::now();
     }
 
-    float getElapsedTimeMicro() {
+    double getElapsedTimeus() {
         std::chrono::steady_clock::time_point time_end = std::chrono::steady_clock::now();
         return (std::chrono::duration_cast<std::chrono::microseconds>(time_end - time_begin).count());
+    }
+
+    double getElapsedTimes() {
+        return (1e-6 * getElapsedTimeus());
     }
 
     void reset() {
@@ -33,17 +37,17 @@ public:
         time_begin_s = ts.tv_sec;
         time_begin_ns = ts.tv_nsec;
     }
-    float getElapsedTimens() {
+    inline double getElapsedTimens() {
         clock_gettime(CLOCK_MONOTONIC, &ts);
         return ((ts.tv_sec - time_begin_s) * 1e9 + (ts.tv_nsec - time_begin_ns));
     }
-    float getElapsedTimeus() {
+    double getElapsedTimeus() {
         return (1e-3 * getElapsedTimens());
     }
-    float getElapsedTimems() {
+    double getElapsedTimems() {
         return (1e-6 * getElapsedTimens());
     }
-    float getElapsedTimes() {
+    double getElapsedTimes() {
         return (1e-9 * getElapsedTimens());
     }
     void reset() {
