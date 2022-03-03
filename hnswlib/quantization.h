@@ -185,6 +185,7 @@ public:
             std::vector<size_t> sample_list;
             for (size_t i = 0; i < nums; i++)
                 sample_list.push_back(i);
+            srand((unsigned int)time(NULL));
             random_shuffle(sample_list.begin(), sample_list.end());
             sample_list.resize(sample_nums);
             std::vector<size_t>(sample_list).swap(sample_list);
