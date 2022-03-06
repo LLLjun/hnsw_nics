@@ -9,7 +9,7 @@ using namespace std;
 void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
 
     size_t subset_size_milllions = index_parameter["subset_size_milllions"];
-    string path_dataset = "dataset/" + dataname + "/";
+    string path_dataset = "../dataset/" + dataname + "/";
 
     if (dataname == "sift"){
         index_parameter["qsize"] = 10000;

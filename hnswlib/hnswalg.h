@@ -252,6 +252,7 @@ namespace hnswlib {
         mutable double time_PDC;
         mutable double time_sort;
 #endif
+        // mutable std::atomic<long> hits_pre_comput;
 
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
@@ -279,6 +280,8 @@ namespace hnswlib {
 
             visited_array[ep_id] = visited_array_tag;
 
+            // tableint cache_id = std::numeric_limits<tableint>::max();
+
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
@@ -296,6 +299,11 @@ namespace hnswlib {
                     metric_hops++;
                     // metric_distance_computations+=size;
                 }
+
+                // if (cache_id == current_node_id)
+                //     hits_pre_comput++;
+                // if (!candidate_set.empty())
+                //     cache_id = candidate_set.top().second;
 
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);

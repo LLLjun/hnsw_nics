@@ -75,6 +75,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
+        // appr_alg.hits_pre_comput = 0;
 #if PROFILE
         appr_alg.time_PDC = 0;
         appr_alg.time_sort = 0;
@@ -86,6 +87,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
         float NDC_avg = 1.0f * appr_alg.metric_distance_computations / qsize;
+        // float hits = (float) appr_alg.hits_pre_comput / (appr_alg.metric_hops - 1);
 
 #if PROFILE
         float TDC = appr_alg.time_PDC / qsize;
@@ -94,7 +96,8 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
                 TDC << "\t" << Tsort << "\n";
 #else
         // cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\n";
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << (1e6 / time_us_per_query) << "\n";
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << (1e6 / time_us_per_query)
+        << "\n";
 #endif
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
