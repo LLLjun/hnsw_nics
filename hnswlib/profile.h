@@ -13,9 +13,13 @@ public:
         time_begin = std::chrono::steady_clock::now();
     }
 
-    double getElapsedTimeMicro() {
+    inline double getElapsedTimeus() {
         std::chrono::steady_clock::time_point time_end = std::chrono::steady_clock::now();
         return (std::chrono::duration_cast<std::chrono::microseconds>(time_end - time_begin).count());
+    }
+
+    double getElapsedTimes() {
+        return (1e-6 * getElapsedTimeus());
     }
 
     void reset() {

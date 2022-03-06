@@ -26,6 +26,7 @@ typedef int64_t FCP64;
 #define NUM_CLUSTER_TRAIN 1e5
 
 #define USEFIX false
+#define NOCLUSTER true
 
 #if USEFIX
 typedef int16_t DTFSSD;

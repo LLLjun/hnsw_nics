@@ -1,12 +1,14 @@
-from distutils import command
 import os
 
 def main():
     dataset = "deep"
     datasize = 1
-    stage = "search"
+    stage = "both"
 
-    command = "./main " + stage + " " + dataset
+    if stage == "both":
+        command = "./main build " + dataset + " && ./main search " + dataset
+    else:
+        command = "./main " + stage + " " + dataset
 
     os.system("cd build && make main && " + command)
 

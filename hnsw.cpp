@@ -153,6 +153,29 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
     int *externalId_to_bankLabel = new int[vecsize]();
     int **bankLabel_to_externalId = gene_array<int>(num_banks, vecsize_ssd_per_bank);
 
+
+#if NOCLUSTER
+    if (num_perspnode != 1){
+        printf("Error, unsuport.\n");
+        exit(1);
+    }
+
+    std::vector<uint32_t> sample_list;
+    for (uint32_t i = 0; i < vecsize; i++)
+        sample_list.push_back(i);
+    srand((unsigned int) time(NULL));
+    random_shuffle(sample_list.begin(), sample_list.end());
+
+    for (int i = 0; i < num_banks; i++){
+        for (int j = 0; j < vecsize_dram_per_bank; j++){
+            unsigned graph_id = i * vecsize_dram_per_bank + j;
+            unsigned external_id = sample_list[graph_id];
+            graphId_to_externalId[graph_id] = external_id;
+            memcpy(mass_bank[i] + j * vecdim, massB + external_id * vecdim, vecdim * sizeof(DTset));
+        }
+    }
+#else
+
     // vecsize -> num_banks * vecsize_ssd_per_bank
     K_means<DTset, DTres> *BankMeans = new K_means<DTset, DTres>(&l2_kmeans, vecdim);
 
@@ -196,6 +219,8 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
     delete[] mass_sample;
     delete[] massB;
     printf("Cluster base data: %u to bank level: %u * %u is done\n", vecsize, num_banks, vecsize_ssd_per_bank);
+#endif
+
     if (mkdir(dir_clu.c_str(), S_IRWXU) != 0) {
         printf("Error, dir %s create failed \n", dir_clu.c_str());
         exit(1);
@@ -727,7 +752,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         }
 
         printf("Search begin ... \n");
-        cout << "efs_bank\t" << "R@" << to_string(k) << "\tNDC_avg" << "\tNDC_max" <<"\n";
+        cout << "efs_bank\t" << "R@" << to_string(k) << "\tNDC_avg" << "\tNDC_max" << "\ttime(us)" <<"\n";
 
         // size_t efs_bank = 150;
         vector<size_t> efs_bank_list;
@@ -741,19 +766,26 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             for (int i = 0; i < qsize; i++)
                 result_bank[i].resize(num_banks);
 
-            size_t efs_dram = num_banks * efs_bank * EFS_PROP;
+            size_t k_dram;
+            if (num_perspnode == 1)
+                k_dram = k;
+            else
+                k_dram = num_banks * efs_bank * EFS_PROP;
+
             DTFSSD *mass_brute_ssd = nullptr;
             unsigned *id_brute_ssd = nullptr;
             if (num_perspnode > 1){
-                mass_brute_ssd = new DTFSSD[efs_dram * num_perspnode * vecdim]();
-                id_brute_ssd = new unsigned[efs_dram * num_perspnode]();
+                mass_brute_ssd = new DTFSSD[k_dram * num_perspnode * vecdim]();
+                id_brute_ssd = new unsigned[k_dram * num_perspnode]();
             }
 
+            omp_set_num_threads(num_banks);
             for (int i = 0; i < num_banks; i++){
                 appr_alg[i]->setEf(efs_bank);
                 appr_alg[i]->metric_distance_computations = 0;
             }
-
+            clk_get stop_full = clk_get();
+            float time_search_total = 0;
 
             for (size_t q_i = 0; q_i < qsize; q_i++){
                 // search stage 1: in DRAM
@@ -768,8 +800,8 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                 DTset *query_c = massQ + q_i * vecdim;
 #endif
 
-                omp_set_num_threads(num_banks);
-#pragma omp parallel for
+                
+// #pragma omp parallel for
                 for (size_t bank_i = 0; bank_i < num_banks; bank_i++){
                     // appr_alg[bank_i]->setThr(&thr_global);
 
@@ -778,20 +810,21 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                         return_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, k);
                     else
                         return_bank[bank_i] = appr_alg[bank_i]->searchKnn(query_c, efs_bank);
-#pragma omp critical
-                    {
-                        // merge result
-                        while (!return_bank[bank_i].empty()){
-                            unsigned graphId = bank_i * vecsize_dram_per_bank + return_bank[bank_i].top().second;
-                            result_dram.emplace(std::make_pair(return_bank[bank_i].top().first, graphId));
-                            if (num_perspnode == 1 && return_bank[bank_i].size() <= k)
-                                result_bank[q_i][bank_i].push_back(graphId_to_externalId[graphId]);
 
-                            return_bank[bank_i].pop();
-                        }
-                        //
-                        while(result_dram.size() > efs_dram)
+                }
+
+                // merge per bank's result
+                for (size_t bank_i = 0; bank_i < num_banks; bank_i++){
+                    while (!return_bank[bank_i].empty()){
+                        unsigned graphId = bank_i * vecsize_dram_per_bank + return_bank[bank_i].top().second;
+                        result_dram.emplace(std::make_pair(return_bank[bank_i].top().first, graphId));
+                        while(result_dram.size() > k_dram)
                             result_dram.pop();
+
+                        // if (num_perspnode == 1 && return_bank[bank_i].size() <= k)
+                        //     result_bank[q_i][bank_i].push_back(graphId_to_externalId[graphId]);
+
+                        return_bank[bank_i].pop();
                     }
                 }
 
@@ -804,9 +837,9 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 
                 } else {
                     // search in SSD
-                    size_t efs_real = std::min(efs_dram, result_dram.size());
-                    memset(mass_brute_ssd, 0, efs_dram * num_perspnode * vecdim * sizeof(DTFSSD));
-                    memset(id_brute_ssd, 0, efs_dram * num_perspnode * sizeof(unsigned));
+                    size_t efs_real = std::min(k_dram, result_dram.size());
+                    memset(mass_brute_ssd, 0, k_dram * num_perspnode * vecdim * sizeof(DTFSSD));
+                    memset(id_brute_ssd, 0, k_dram * num_perspnode * sizeof(unsigned));
 
                     ifstream inputBS(path_mass_global.c_str(), ios::binary);
                     uint32_t nums_r, dims_r;
@@ -856,6 +889,8 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                     }
                 }
             }
+            float time_per_query = stop_full.getElapsedTimeus() / qsize;
+            // time_per_query = time_search_total / qsize;
 
             size_t NDC = 0;
             size_t NDC_maxbank = 0;
@@ -865,7 +900,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             }
             float recall = evaluate_recall(massQA, result_final, qsize, k, gt_maxnum);
             cout << efs_bank << "\t" << recall << "\t" << (float) NDC / qsize << "\t"
-                 << (float) NDC_maxbank / qsize << "\n";
+                 << (float) NDC_maxbank / qsize << "\t" << time_per_query << "\n";
 
             // 测试不同bank对召回率的贡献度
             // vector<priority_queue<pair<size_t, int>>> recall_bank(qsize);
