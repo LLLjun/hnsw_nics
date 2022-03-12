@@ -9,5 +9,6 @@ var/
 
 experiment/
 graphindex/
+output/
 dataset
 .vscode/

@@ -8,8 +8,10 @@
 #include <assert.h>
 #include <unordered_set>
 #include <list>
+#include <map>
 #include "config.h"
 #include "profile.h"
+#include "mem.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -70,6 +72,7 @@ namespace hnswlib {
             size_links_per_element_ = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
             mult_ = 1 / log(1.0 * M_);
             revSize_ = 1.0 / mult_;
+
         }
 
         struct CompareByFirst {
@@ -135,6 +138,35 @@ namespace hnswlib {
 
         std::default_random_engine level_generator_;
         std::default_random_engine update_probability_generator_;
+
+#if MEMTRACE
+        /*
+            memory_organization:
+                |- query_data
+                |- data_level0
+                |- visited_list
+                |- result_queue
+                |- search_queue
+        */
+        mem<char>* main_mem;
+        mutable std::map<std::string, long long> mem_offest_sw;
+        mutable std::map<std::string, long long> mem_offest_hw;
+
+        void initMem(){
+            main_mem = new mem<char>();
+            mem_offest_sw["data_level0"] = (long long) data_level0_memory_;
+            std::cout << mem_offest_sw["data_level0"] << std::endl;
+
+            mem_offest_hw["query_data"] = 0;
+            mem_offest_hw["data_level0"] = (long long) ceil((float)data_size_ / MEM_ALIGNED) * MEM_ALIGNED;
+            mem_offest_hw["visited_list"] = mem_offest_hw["data_level0"] + 
+                                            (long long) ceil((float) max_elements_ * size_data_per_element_ / MEM_ALIGNED) * MEM_ALIGNED;
+            mem_offest_hw["result_queue"] = mem_offest_hw["visited_list"] + 
+                                            (long long) ceil((float) max_elements_ * sizeof(vl_type) / MEM_ALIGNED) * MEM_ALIGNED;
+            // mem_offest_hw["search_queue"] = mem_offest_hw["result_queue"] + 
+            //                                 ceil((float) efs * (sizeof(dist_t) + sizeof(tableint)) / MEM_ALIGNED) * MEM_ALIGNED;
+        }
+#endif
 
         inline labeltype getExternalLabel(tableint internal_id) const {
             labeltype return_label;
@@ -280,6 +312,19 @@ namespace hnswlib {
 
             visited_array[ep_id] = visited_array_tag;
 
+#if MEMTRACE
+            mem_offest_sw["query_data"] = (long long) data_point;
+            mem_offest_sw["visited_list"] = (long long) visited_array;
+
+            main_mem->add_trace((char *)data_point, (char *)data_point + data_size_,
+                                mem_offest_sw["query_data"], mem_offest_hw["query_data"], 'l');
+            main_mem->add_trace(getDataByInternalId(ep_id), getDataByInternalId(ep_id) + data_size_,
+                                mem_offest_sw["data_level0"], mem_offest_hw["data_level0"], 'l');
+            main_mem->add_trace((char *)(visited_array + ep_id), (char *)(visited_array + ep_id + 1),
+                                mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 'l');
+            main_mem->add_trace((char *)(visited_array + ep_id), (char *)(visited_array + ep_id + 1),
+                                mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 's');
+#endif
             // tableint cache_id = std::numeric_limits<tableint>::max();
 
             while (!candidate_set.empty()) {
@@ -304,22 +349,31 @@ namespace hnswlib {
                 //     hits_pre_comput++;
                 // if (!candidate_set.empty())
                 //     cache_id = candidate_set.top().second;
-
+#if (!MEMTRACE)
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
                 _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
                 _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
                 _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
+#endif
 
                 for (size_t j = 1; j <= size; j++) {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
+#if (!MEMTRACE)
 #ifdef USE_SSE
                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                                  _MM_HINT_T0);////////////
 #endif
+#endif
+
+#if MEMTRACE
+                    main_mem->add_trace((char *)(visited_array + candidate_id), (char *)(visited_array + candidate_id + 1),
+                                        mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 'l');
+#endif
+
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         metric_distance_computations++;
 
@@ -331,6 +385,15 @@ namespace hnswlib {
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
+#if MEMTRACE
+                        main_mem->add_trace((char *)(visited_array + candidate_id), (char *)(visited_array + candidate_id + 1),
+                                            mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 's');
+                        main_mem->add_trace((char *)data_point, (char *)data_point + data_size_,
+                                            mem_offest_sw["query_data"], mem_offest_hw["query_data"], 'l');
+                        main_mem->add_trace(currObj1, currObj1 + data_size_,
+                                            mem_offest_sw["data_level0"], mem_offest_hw["data_level0"], 'l');
+#endif
+
 #if PROFILE
                         time_PDC += stop_search.getElapsedTimeus();
 #endif
@@ -340,12 +403,14 @@ namespace hnswlib {
                             stop_search.reset();
 #endif
                             candidate_set.emplace(-dist, candidate_id);
+
+#if (!MEMTRACE)
 #ifdef USE_SSE
                             _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
                                          offsetLevel0_,///////////
                                          _MM_HINT_T0);////////////////////////
 #endif
-
+#endif
 
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
                                 top_candidates.emplace(dist, candidate_id);

@@ -3,6 +3,7 @@
 
 #define PLATG true
 #define PROFILE false
+#define MEMTRACE true
 
 #define MODE base
 

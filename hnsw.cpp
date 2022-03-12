@@ -13,7 +13,7 @@ using namespace hnswlib;
 
 template<typename DTres>
 static void
-get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim, 
+get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim,
         vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     (vector<std::priority_queue<std::pair<DTres, labeltype >>>(qsize)).swap(answers);
     cout << qsize << "\n";
@@ -32,8 +32,11 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
     size_t total = 0;
     //uncomment to test in parallel mode:
     //#pragma omp parallel for
+#if MEMTRACE
+    {   int i = 100;
+#else
     for (int i = 0; i < qsize; i++) {
-
+#endif
         std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
         std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
         unordered_set<labeltype> g;
@@ -60,15 +63,13 @@ static void
 test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    // for (int i = k; i < 30; i++) {
-    //     efs.push_back(i);
-    // }
-    for (int i = 10; i <= 150; i += 10) {
+#if MEMTRACE
+    efs.push_back(80);
+#else
+    for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
-    }
-    // for (int i = 100; i < 500; i += 40) {
-    //     efs.push_back(i);
-    // }
+#endif
+
     cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "qps\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -113,13 +114,13 @@ inline bool exists_test(const std::string &name) {
 
 template<typename DTset, typename DTval, typename DTres>
 void build_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string, bool isSave = true){
-    // 
+    //
     size_t efConstruction = index_parameter["efConstruction"];
     size_t M = index_parameter["M"];
     size_t vecsize = index_parameter["vecsize"];
     size_t vecdim = index_parameter["vecdim"];
     size_t qsize = index_parameter["qsize"];
-    
+
     string path_data = index_string["path_data"];
     string format = index_string["format"];
     string index = index_string["index"];
@@ -190,7 +191,7 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
 
 template<typename DTset, typename DTval, typename DTres>
 void search_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
-    // 
+    //
     size_t k = index_parameter["k"];
     size_t vecsize = index_parameter["vecsize"];
     size_t qsize = index_parameter["qsize"];
@@ -227,13 +228,22 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 
         L2Space l2space(vecdim);
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, index, false);
-    
+
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
+#if MEMTRACE
+        appr_alg->initMem();
+#endif
+
         cout << "Comput recall: \n";
         test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
+
+#if MEMTRACE
+        string file_mem_trace = "/home/usr-xkIJigVq/nmp/hnsw_nics/output/mem/trace.txt";
+        appr_alg->main_mem->write_file(file_mem_trace, appr_alg->main_mem->count_trace('a'));
+#endif
 
         printf("Search index %s is succeed \n", index.c_str());
     }
@@ -247,7 +257,7 @@ void hnsw_impl(bool is_build, const string &using_dataset){
     string label = "base/";
 #endif
     string path_graphindex = path_project + "/graphindex/" + label;
-    
+
     string pre_index = path_graphindex + using_dataset;
     if (access(pre_index.c_str(), R_OK|W_OK)){
         if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
@@ -260,7 +270,7 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 	size_t efConstruction = 200;
 	size_t M = 20;
     size_t k = 10;
-	
+
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
@@ -274,8 +284,8 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 
     std::map<string, string> index_string;
     index_string["format"] = "float";
-    
-    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
+
+    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) +
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
     index_string["index"] = hnsw_index;
     CheckDataset(using_dataset, index_parameter, index_string);
