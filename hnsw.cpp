@@ -99,8 +99,8 @@ inline bool exists_test(const std::string &name) {
 }
 
 /*
-    将 base vectors 首先聚类为num_banks个类，然后根据 num_perspnode 决定是否需要二次聚类
-    i.e.，num_perspnode = 1时仅采用DRAM
+    将 base vectors 首先聚类为num_banks个类, 然后根据 num_perspnode 决定是否需要二次聚类
+    i.e., num_perspnode = 1时仅采用DRAM
     input: base vectors
     output: mass_graph, (mass_globel)
 */
@@ -193,7 +193,7 @@ void cluster_to_dram_ssd(const string &dataname, map<string, size_t> &index_para
     }
     printf("actual size: %u, sample size: %u \n", vecsize, num_sample);
 
-    // 训练阶段为了精度，不设置上限
+    // 训练阶段为了精度, 不设置上限
     BankMeans->train_cluster(num_banks, num_sample, num_sample, num_iters, sample_list, mass_sample);
     BankMeans->forward_cluster(vecsize, vecsize_ssd_per_bank, massB, externalId_to_bankLabel);
     BankMeans->~K_means();
@@ -452,11 +452,17 @@ void construct_to_dram(const string &dataname, map<string, size_t> &index_parame
     string path_fix_flag_Q_dram = index_string["path_fix_flag_Q_dram"];
 
     // index set file path
-    string path_index_prefix = dir_index + "/index_bank_";
+    string path_index_prefix = index_string["path_index_prefix"];
 
 
     DTset *mass_graph = new DTset[vecsize_dram_total * vecdim]();
+#if EXTSSD
+    LoadBinToArray<DTset>(index_string["path_ext_mass_graph"], 
+                            mass_graph, vecsize_dram_total, vecdim);
+#else
     LoadBinToArray<DTset>(path_clu_mass_graph, mass_graph, vecsize_dram_total, vecdim);
+#endif
+
 #if USEFIX
     DTFDRAM *mass_fix_graph = new DTFDRAM[vecsize_dram_total * vecdim]();
     uint8_t *flag_fix_graph = new uint8_t[vecsize_dram_total * (unsigned)ceil(vecdim / 8)]();
@@ -530,15 +536,296 @@ void construct_to_dram(const string &dataname, map<string, size_t> &index_parame
     printf("Build index in dir %s is succeed \n", dir_index.c_str());
 }
 
-
-// need to support:
-// 分级量化，存储，均匀量化
-// 建多个图，label不连续
-// 对每个图进行量化，存储标志位
 /*
-
+    从kNN图上获取拓展点 node_ext
+    input: knn_graph
+    output: mass_ext, mass_other
 */
+#if EXTSSD
+template<typename DTset, typename DTval, typename DTres>
+void split_extend(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
+    size_t vecsize = index_parameter["vecsize"];
+    size_t vecdim = index_parameter["vecdim"];
 
+    string path_data = index_string["path_data"];
+    string path_knn_graph = index_string["path_knn_graph"];
+    string dir_ext = index_string["dir_ext"];
+    string format = index_string["format"];
+
+    size_t idg_ext = IDGEXT;
+    size_t num_ext_expect = index_parameter["num_ext_expect"];
+    size_t knn_dim_origin = index_parameter["knn_dim"];
+
+    string path_ext_graphId_to_externalId = index_string["path_ext_graphId_to_externalId"];
+    string path_ext_mass_graph = index_string["path_ext_mass_graph"];
+    string path_ext_mass_links = index_string["path_ext_mass_links"];
+
+    size_t knn_dim = KNNDIM;
+    // ***
+    unsigned *graphId_to_externalId = new unsigned[num_ext_expect]();
+    DTset *mass_graph = new DTset[num_ext_expect * vecdim]();
+    unsigned *graphId_to_Links = new unsigned[num_ext_expect * knn_dim]();
+
+    DTset *massB = new DTset[vecsize * vecdim]();
+    unsigned *mass_knn_origin = new unsigned[vecsize * knn_dim_origin]();
+
+    cout << "Loading base data and knn index:\n";
+    if (format == "float"){
+        LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
+    } else if (format == "uint8"){
+        DTset *massB_int = new DTset[vecsize * vecdim]();
+        LoadBinToArray<DTset>(path_data, massB_int, vecsize, vecdim);
+        TransIntToFloat<DTset>(massB, massB_int, vecsize, vecdim);
+        delete[] massB_int;
+    } else {
+        printf("Error, unsupport format \n");
+        exit(1);
+    }
+    LoadBinToArray<unsigned>(path_knn_graph, mass_knn_origin, vecsize, knn_dim_origin);
+
+    // resize mass_knn
+    unsigned* mass_knn = new unsigned[vecsize * knn_dim]();
+    for (int i = 0; i < vecsize; i++)
+        memcpy(mass_knn + knn_dim * i,
+                mass_knn_origin + knn_dim_origin * i, knn_dim * sizeof(unsigned));
+    delete[] mass_knn_origin;
+
+    // 分析kNN图上各个点的入度情况
+    vector<unsigned> externalId_to_Idg(vecsize);
+    vector<vector<unsigned>> externalId_to_Idg_List(vecsize);
+    for (unsigned i = 0; i < vecsize; i++){
+        for (unsigned j = 0; j < knn_dim; j++){
+            unsigned neighId = mass_knn[i * knn_dim + j];
+            externalId_to_Idg[neighId]++;
+            externalId_to_Idg_List[i].push_back(neighId);
+        }
+    }
+
+    // 分别记录idg等于0和小于等于idg_ext的数量
+    vector<unsigned> idg_0_list;
+    size_t idg_max = *max_element(externalId_to_Idg.begin(), externalId_to_Idg.end());
+    for (unsigned i = 0; i < vecsize; i++){
+        if (externalId_to_Idg[i] == 0)
+            idg_0_list.push_back(i);
+    }
+    vector<vector<unsigned>> IDG_to_externalId(idg_max + 1);
+    for (unsigned i = 0; i < vecsize; i++){
+        unsigned idg_c = externalId_to_Idg[i];
+        IDG_to_externalId[idg_c].push_back(i);
+    }
+    cout << "knn graph info, num(idg=0): " << idg_0_list.size() << "\t"
+         << "idg_max: " << idg_max << endl;
+
+    /*
+        选择策略如下, 每个点的入度要求为 idg_require (>= 1)
+        那么每个点的选择压力为 pressure, 计算方法为它所有邻居idg_require大于0的数量, 即最大值为knn_dim
+        每一轮将压力值最大的点, 分配到 expend_list
+            |- 对于它 *自身的* 所有入边, 入度要求降低. ps: 如果入度要求降低到0, 那么相应的入边的压力值减1
+            |- 对于它 *所有邻居* , 分配到 reached_list;
+                |- 对于这些邻居的入边, 入度要求降低. ps: 如果入度要求降低到0, 那么相应的入边的压力值减1
+    */
+
+    unordered_set<unsigned> extend_list;
+    unordered_set<unsigned> reached_list;
+    unsigned num_handle = 0;
+    unsigned num_over = 0;
+    // 初始化每个点当前的 入度要求 和 压力值
+    vector<int> idg_require(vecsize, idg_ext);
+    vector<int> pressure(vecsize, knn_dim);
+    for (int i = 0; i < vecsize; i++){
+        if (externalId_to_Idg[i] < idg_ext)
+            idg_require[i] = externalId_to_Idg[i];
+        if (externalId_to_Idg[i] == 0)
+            idg_require[i] = -1;
+    }
+
+    queue<unsigned>  queue_list;
+    vector<unsigned> push_list(vecsize);
+    for (int i = 0; i < vecsize; i++)
+        push_list[i] = i;
+    srand((unsigned int)time(NULL));
+    random_shuffle(push_list.begin(), push_list.end());
+    for (unsigned i : push_list)
+        queue_list.push(i);
+
+    while (true){
+        unsigned exter_i = max_element(pressure.begin(), pressure.end())
+                            - pressure.begin();
+        unsigned pressure_i = pressure[exter_i];
+
+
+        extend_list.emplace(exter_i);
+        pressure[exter_i] = -1;
+        for (unsigned to_exter_i : externalId_to_Idg_List[exter_i]){
+            if(pressure[to_exter_i] > 0)
+                pressure[to_exter_i]--;
+        }
+
+
+        for (int i = 0; i < knn_dim; i++){
+            unsigned neigh_i = mass_knn[exter_i * knn_dim + i];
+            if (pressure[neigh_i] != -1 && pressure[neigh_i] != -2){
+                reached_list.emplace(neigh_i);
+                pressure[neigh_i] = -2;
+
+                for (unsigned to_neigh_i : externalId_to_Idg_List[neigh_i]){
+                    if(pressure[to_neigh_i] > 0)
+                        pressure[to_neigh_i]--;
+                }
+            }
+        }
+
+        num_handle++;
+        if (num_handle % (vecsize / 1000) == 0){
+            cout << "num: " << num_handle << "\t"
+                << "pressure_i: " << pressure_i << "\t"
+                << "num of extend: " << extend_list.size() << "\t"
+                << "num of reached: " << reached_list.size() << "\t"
+                << "over: " << num_over << endl;
+        }
+
+        if(extend_list.size() + reached_list.size() == vecsize){
+            cout << "num: " << num_handle << "\t"
+                << "pressure_i: " << pressure_i << "\t"
+                << "num of extend: " << extend_list.size() << "\t"
+                << "num of reached: " << reached_list.size() << "\t"
+                << "over: " << num_over << endl;
+            break;
+        }
+    }
+
+    size_t num_extend = extend_list.size();
+    if (num_extend > num_ext_expect){
+        cout << "num_extend: " << num_extend << " is can't larger than " << num_ext_expect << endl;
+        exit(1);
+    } else{
+        int num_add = num_ext_expect - num_extend;
+        size_t idg_c = idg_max;
+        while (num_add > 0){
+            if (!IDG_to_externalId[idg_c].empty()){
+                for (unsigned exter_i : IDG_to_externalId[idg_c]){
+                    if (extend_list.find(exter_i) == extend_list.end()){
+                        extend_list.emplace(exter_i);
+                        num_add--;
+                        if (num_add <= 0)
+                            break;
+                    }
+                }
+            }
+            idg_c--;
+        }
+    }
+    if (extend_list.size() != num_ext_expect){
+        printf("Error, extend_list.size(): %u should equal to %u", extend_list.size(), num_ext_expect);
+        exit(1);
+    }
+
+    // 正确性测试
+    cout << "Check for Accuracy ... ";
+    // reached_list 是否正确
+    unordered_set<unsigned> cover_by_extend;
+    for (unsigned extend_id : extend_list){
+        for (int i = 0; i < knn_dim; i++){
+            unsigned exter_i = mass_knn[extend_id * knn_dim + i];
+            cover_by_extend.emplace(exter_i);
+        }
+    }
+    for (unsigned reached_id : reached_list){
+        if (cover_by_extend.find(reached_id) == cover_by_extend.end()){
+            cout << "exter_i: " << reached_id << " unreached\n";
+            // exit(0);
+        }
+    }
+    // 是否完整
+    for (unsigned exter_i = 0; exter_i < vecsize; exter_i++){
+        if (extend_list.find(exter_i) == extend_list.end() &&
+            reached_list.find(exter_i) == reached_list.end()){
+            cout << "exter_i: " << exter_i << "\t"
+                 << "pressure: " << pressure[exter_i] << "\t"
+                 << "IDG: " << externalId_to_Idg[exter_i] << endl;
+        }
+    }
+    cout << "done." <<endl;
+
+    cout << "num_handle: " << num_handle << "\t"
+         << "num of extend list: " << extend_list.size() << "\t"
+         << "num of reached list: " << reached_list.size() << endl;
+
+    // 存储
+    if (mkdir(dir_ext.c_str(), S_IRWXU) != 0) {
+        printf("Error, dir %s create failed \n", dir_ext.c_str());
+        exit(1);
+    }
+    size_t num_i = 0;
+    for (unsigned exter_i: extend_list){
+        graphId_to_externalId[num_i] = exter_i;
+        memcpy(mass_graph + num_i * vecdim,
+                massB + exter_i * vecdim, vecdim * sizeof(DTset));
+        memcpy(graphId_to_Links + num_i * knn_dim,
+                mass_knn + exter_i * knn_dim, knn_dim * sizeof(unsigned));
+
+        num_i++;
+    }
+    WriteBinToArray<unsigned>(path_ext_graphId_to_externalId, 
+                    graphId_to_externalId, num_ext_expect, 1);
+    WriteBinToArray<DTset>(path_ext_mass_graph, mass_graph, num_ext_expect, vecdim);
+    WriteBinToArray<unsigned>(path_ext_mass_links, graphId_to_Links, num_ext_expect, knn_dim);
+    cout << "Create extend stage done" << endl;
+    delete[] massB;
+    delete[] mass_graph;
+    delete[] graphId_to_externalId;
+    delete[] graphId_to_Links;
+
+    // 冗余性测试(可选)
+    cout << "Check for Redundancy ... " << endl;
+    size_t num_ry = 0;
+    vector<unsigned> valied_list;
+    for (unsigned extend_id : extend_list){
+        valied_list.push_back(extend_id);
+    }
+    for (unsigned extend_id : valied_list){
+        extend_list.erase(extend_id);
+        bool yes_self = false;
+        // 能否找到 extend_id, 即extend_id 的入边是否存在于 extend_list
+        for (unsigned to_extend_id : externalId_to_Idg_List[extend_id]){
+            if (extend_list.find(to_extend_id) != extend_list.end()){
+                yes_self = true;
+                break;
+            }
+        }
+
+        // extend_id 的邻居的入边, 是否存在于 extend_list
+        if (yes_self){
+            bool yes_neigh = true;
+            for (int i = 0; i < knn_dim; i++){
+                bool yes_i = false;
+                unsigned neigh_i = mass_knn[extend_id * knn_dim + i];
+                for (unsigned to_neigh_i : externalId_to_Idg_List[neigh_i]){
+                    if (extend_list.find(to_neigh_i) != extend_list.end()){
+                        yes_i = true;
+                        break;
+                    }
+                }
+                if (!yes_i){
+                    yes_neigh = false;
+                    break;
+                }
+            }
+            if (yes_neigh)
+                num_ry++;
+            else
+                yes_self = false;
+        }
+
+        if (!yes_self)
+            extend_list.emplace(extend_id);
+        // else
+        //     reached_list.emplace(extend_id);
+    }
+    cout << "redundancy number: " << num_ry << endl;
+
+}
+#endif
 
 template<typename DTset, typename DTval, typename DTres>
 void build_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string, bool isSave = true){
@@ -560,6 +847,16 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
     size_t vecsize_dram_per_bank = vecsize_dram_total / num_banks;
     size_t vecsize_ssd_per_bank = vecsize / num_banks;
 
+
+#if EXTSSD
+    string dir_ext = index_string["dir_ext"];
+    // Extend Data
+    if (!access(dir_ext.c_str(), R_OK|W_OK))
+        printf("dir %s is existed \n", dir_ext.c_str());
+    else 
+        split_extend<DTset, DTval, DTres>(dataname, index_parameter, index_string);
+
+#else
 
     // Cluster Data
     if (!access(dir_clu.c_str(), R_OK|W_OK)){
@@ -584,6 +881,8 @@ void build_index(const string &dataname, map<string, size_t> &index_parameter, m
     } else {
         fix_to_dram_ssd<DTset, DTval, DTres>(dataname, index_parameter, index_string);
     }
+#endif
+
 #endif
 
     if (!access(dir_index.c_str(), R_OK|W_OK)){
@@ -634,7 +933,7 @@ void evaluate_recall(unsigned *massQA, vector<vector<labeltype>> &result, size_t
 // need to support:
 // 多个图搜索过程中的通信
 // 多图结果排序
-// SSD 暴力求解，排序
+// SSD 暴力求解, 排序
 
 template<typename DTset, typename DTval, typename DTres>
 void search_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
@@ -733,11 +1032,28 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             string path_index = path_index_prefix + to_string(bank_i) + ".bin";
             appr_alg[bank_i] = new HierarchicalNSW<DTres>(&l2float, path_index, false);
         }
-#endif
 
         unsigned *graphId_to_externalId = nullptr;
         unsigned *globalId_to_externalId = nullptr;
         DTFSSD *mass_fix_Q_ssd = nullptr;
+
+#if EXTSSD
+        // Load Links for SSD saerch
+        size_t num_ext_expect = vecsize_dram_total;
+        size_t knn_dim = KNNDIM;
+        string path_ext_graphId_to_externalId = index_string["path_ext_graphId_to_externalId"];
+        string path_ext_mass_links = index_string["path_ext_mass_links"];
+
+        graphId_to_externalId = new unsigned[vecsize_dram_total]();
+        LoadBinToArray<unsigned>(path_ext_graphId_to_externalId, graphId_to_externalId, vecsize_dram_total, 1);
+        
+        unsigned* graphId_to_Links = new unsigned[num_ext_expect * knn_dim]();
+        LoadBinToArray<unsigned>(path_ext_mass_links, graphId_to_Links, num_ext_expect, knn_dim);
+#endif
+
+#endif
+
+
         // process for dram-only or dram-ssd
         if (num_perspnode == 1){
             graphId_to_externalId = new unsigned[vecsize_dram_total]();
@@ -746,18 +1062,24 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 #if USEFIX
             mass_fix_Q_ssd = new DTFSSD[qsize * vecdim]();
             LoadBinToArray<DTFSSD>(path_fix_mass_Q_ssd, mass_fix_Q_ssd, qsize, vecdim);
+#else
+            mass_fix_Q_ssd = new DTFSSD[qsize * vecdim]();
+            LoadBinToArray<DTFSSD>(path_q, mass_fix_Q_ssd, qsize, vecdim);
 #endif
+
+#if (!EXTSSD)
             globalId_to_externalId = new unsigned[vecsize]();
             LoadBinToArray<unsigned>(path_clu_globalId_to_externalId, globalId_to_externalId, vecsize_dram_total, num_perspnode);
+#endif
         }
 
         printf("Search begin ... \n");
-        cout << "efs_bank\t" << "R@" << to_string(k) << "\tNDC_avg" << "\tNDC_max" << "\ttime(us)" <<"\n";
+        cout << "efs_bk\t" << "R@" << to_string(k) << "\tNDC_avg" << "\tNDC_max" << "\tNDC_SSD" <<"\n";
 
         // size_t efs_bank = 150;
         vector<size_t> efs_bank_list;
         // efs_bank_list.push_back(90);
-        for (size_t i = 10; i <= 90; i += 10)
+        for (size_t i = 10; i <= 200; i += 10)
             efs_bank_list.push_back(i);
 
         for (size_t efs_bank : efs_bank_list){
@@ -766,17 +1088,27 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             for (int i = 0; i < qsize; i++)
                 result_bank[i].resize(num_banks);
 
+            // 从SSD中读取的点数
+            size_t efs_ssd_max = 1.0f * num_banks * efs_bank * num_perspnode * EFS_PROP;
+            size_t efs_ssd_cur;
             size_t k_dram;
             if (num_perspnode == 1)
                 k_dram = k;
-            else
-                k_dram = num_banks * efs_bank * EFS_PROP;
+            else{
+                k_dram = efs_ssd_max / num_perspnode;
+                efs_ssd_cur = k_dram * num_perspnode;
+            }
+
+#if EXTSSD
+            k_dram = efs_ssd_max / (knn_dim + 1);
+            efs_ssd_cur = k_dram * (knn_dim + 1);
+#endif
 
             DTFSSD *mass_brute_ssd = nullptr;
             unsigned *id_brute_ssd = nullptr;
             if (num_perspnode > 1){
-                mass_brute_ssd = new DTFSSD[k_dram * num_perspnode * vecdim]();
-                id_brute_ssd = new unsigned[k_dram * num_perspnode]();
+                mass_brute_ssd = new DTFSSD[efs_ssd_max * vecdim]();
+                id_brute_ssd = new unsigned[efs_ssd_max]();
             }
 
             omp_set_num_threads(num_banks);
@@ -786,6 +1118,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             }
             clk_get stop_full = clk_get();
             float time_search_total = 0;
+            size_t NDC_SSD = 0;
 
             for (size_t q_i = 0; q_i < qsize; q_i++){
                 // search stage 1: in DRAM
@@ -800,7 +1133,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                 DTset *query_c = massQ + q_i * vecdim;
 #endif
 
-                
+
 // #pragma omp parallel for
                 for (size_t bank_i = 0; bank_i < num_banks; bank_i++){
                     // appr_alg[bank_i]->setThr(&thr_global);
@@ -838,9 +1171,41 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                 } else {
                     // search in SSD
                     size_t efs_real = std::min(k_dram, result_dram.size());
-                    memset(mass_brute_ssd, 0, k_dram * num_perspnode * vecdim * sizeof(DTFSSD));
-                    memset(id_brute_ssd, 0, k_dram * num_perspnode * sizeof(unsigned));
+                    memset(mass_brute_ssd, 0, efs_ssd_max * vecdim * sizeof(DTFSSD));
+                    memset(id_brute_ssd, 0, efs_ssd_max * sizeof(unsigned));
 
+#if EXTSSD
+                    unordered_set<unsigned> ssd_node;
+                    for (size_t i = 0; i < efs_real; i++){
+                        unsigned graphId = result_dram.top().second;
+                        if (ssd_node.find(graphId_to_externalId[graphId]) == ssd_node.end())
+                            ssd_node.emplace(graphId_to_externalId[graphId]);
+                        for (int j = 0; j < knn_dim; j++){
+                            unsigned exter_i = graphId_to_Links[graphId * knn_dim + j];
+                            if (ssd_node.find(exter_i) == ssd_node.end())
+                                ssd_node.emplace(exter_i);
+                        }
+                        result_dram.pop();
+                    }
+
+                    ifstream inputBS(index_string["path_data"].c_str(), ios::binary);
+                    uint32_t nums_r, dims_r;
+                    inputBS.read((char *) &nums_r, sizeof(uint32_t));
+                    inputBS.read((char *) &dims_r, sizeof(uint32_t));
+                    if ((vecsize != nums_r) || (vecdim != dims_r)){
+                        printf("Error, file size is error, nums_r: %u, dims_r: %u\n", nums_r, dims_r);
+                        exit(1);
+                    }
+                    unsigned ssd_i = 0;
+                    for (unsigned exter_i : ssd_node){
+                        inputBS.seekg(exter_i * vecdim * sizeof(DTFSSD) + 2 * sizeof(unsigned), ios::beg);
+                        inputBS.read((char *)(mass_brute_ssd + ssd_i * vecdim), vecdim * sizeof(DTFSSD));
+                        id_brute_ssd[ssd_i] = exter_i;
+                        ssd_i++;
+                    }
+                    efs_ssd_cur = ssd_i;
+                    inputBS.close();
+#else
                     ifstream inputBS(path_mass_global.c_str(), ios::binary);
                     uint32_t nums_r, dims_r;
                     inputBS.read((char *) &nums_r, sizeof(uint32_t));
@@ -857,18 +1222,19 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                         memcpy(id_brute_ssd + i * num_perspnode, globalId_to_externalId + pos_r * num_perspnode, num_perspnode * sizeof(unsigned));
                     }
                     inputBS.close();
+#endif
 
 #if USEFIX
                     L2SpaceSSD l2ssd(vecdim);
-                    BruteforceSearch<FCP64>* brute_alg = new BruteforceSearch<FCP64>(&l2ssd, (size_t)(efs_real * num_perspnode));
+                    BruteforceSearch<FCP64>* brute_alg = new BruteforceSearch<FCP64>(&l2ssd, (size_t)(efs_ssd_cur));
 #else
                     L2Space l2ssd(vecdim);
-                    BruteforceSearch<DTres>* brute_alg = new BruteforceSearch<DTres>(&l2ssd, (size_t)(efs_real * num_perspnode));
+                    BruteforceSearch<DTres>* brute_alg = new BruteforceSearch<DTres>(&l2ssd, (size_t)(efs_ssd_cur));
 #endif
 
-                    omp_set_num_threads(omp_get_num_procs());
-        // #pragma omp parallel for
-                    for (size_t i = 0; i < (efs_real * num_perspnode); i++){
+                    // omp_set_num_threads(omp_get_num_procs());
+#pragma omp parallel for
+                    for (size_t i = 0; i < efs_ssd_cur; i++){
                         brute_alg->addPoint((void *) (mass_brute_ssd + i * vecdim), (size_t) id_brute_ssd[i]);
                         // for (size_t j = 0; j < gt_maxnum; j++){
                         //     if (massQA[q_i * gt_maxnum + j] == id_brute_ssd[i]){
@@ -877,6 +1243,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                         //     }
                         // }
                     }
+                    NDC_SSD += efs_ssd_cur;
 
 #if USEFIX
                     std::priority_queue<std::pair<FCP64, labeltype >> rs = brute_alg->searchKnn(mass_fix_Q_ssd + q_i * vecdim, k);
@@ -899,8 +1266,11 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                 NDC_maxbank = max<size_t>(NDC_maxbank, appr_alg[i]->metric_distance_computations);
             }
             float recall = evaluate_recall(massQA, result_final, qsize, k, gt_maxnum);
+
+
             cout << efs_bank << "\t" << recall << "\t" << (float) NDC / qsize << "\t"
-                 << (float) NDC_maxbank / qsize << "\t" << time_per_query << "\n";
+                 << (float) NDC_maxbank / qsize << "\t" 
+                 << (float) NDC_SSD / qsize << "\n";
 
             // 测试不同bank对召回率的贡献度
             // vector<priority_queue<pair<size_t, int>>> recall_bank(qsize);
@@ -989,6 +1359,14 @@ void hnsw_impl(bool is_build, const string &using_dataset){
     index_string["dir_index"] = dir_this + "/fix_ef" + to_string(efConstruction) + "m" + to_string(M);
 #else
     index_string["dir_index"] = dir_this + "/float_ef" + to_string(efConstruction) + "m" + to_string(M);
+#endif
+
+#if EXTSSD
+    index_string["dir_index"] += "_ext";
+    index_string["dir_ext"] = dir_this + "/ext_data";
+
+    index_parameter["num_ext_expect"] = 1e5;
+    index_parameter["knn_dim"] = 100;
 #endif
 
     CheckDataset(using_dataset, index_parameter, index_string);

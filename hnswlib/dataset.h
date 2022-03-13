@@ -11,6 +11,10 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
     size_t subset_size_milllions = index_parameter["subset_size_milllions"];
     string path_dataset = "../dataset/" + dataname + "/";
 
+#if EXTSSD
+    index_string["path_knn_graph"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/knng/nn_100.bin";
+#endif
+
     if (dataname == "sift"){
         index_parameter["qsize"] = 10000;
         index_parameter["vecdim"] = 128;
@@ -77,6 +81,12 @@ void SetPathStr(map<string, string> &index_string){
 
     // index set file path
     index_string["path_index_prefix"] = dir_index + "/index_bank_";
+
+#if EXTSSD
+    index_string["path_ext_graphId_to_externalId"] = index_string["dir_ext"] + "/graph_externalId.bin";
+    index_string["path_ext_mass_graph"] = index_string["dir_ext"] + "/mass_graph.bin";
+    index_string["path_ext_mass_links"] = index_string["dir_ext"] + "/mass_links.bin";
+#endif
 }
 
 // load file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.

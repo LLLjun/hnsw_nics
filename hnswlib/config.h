@@ -21,17 +21,23 @@ typedef int32_t FCP32;
 typedef int64_t FCP64;
 
 
-#define NUM_BANKS 8
-#define NUM_PERSPNODE 1
-#define NUM_CLUSTER_TRAIN 1e5
+#define NUM_BANKS           8
+#define NUM_PERSPNODE       10
+#define NUM_CLUSTER_TRAIN   1e5
 
-#define USEFIX false
-#define NOCLUSTER true
+#define USEFIX      false
+#define NOCLUSTER   true
+#define EXTSSD      true
 
 #if USEFIX
 typedef int16_t DTFSSD;
 #else
 typedef float DTFSSD;
+#endif
+
+#if EXTSSD
+#define IDGEXT      1
+#define KNNDIM      40
 #endif
 
 
