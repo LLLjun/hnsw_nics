@@ -35,18 +35,22 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 #if MEMTRACE
     {   int i = 100;
 #else
+    // omp_set_num_threads(80);
+// #pragma omp parallel for
     for (int i = 0; i < qsize; i++) {
 #endif
         std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
         std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
         unordered_set<labeltype> g;
-        total += gt.size();
-
+        
         while (gt.size()) {
             g.insert(gt.top().second);
             gt.pop();
         }
 
+// #pragma omp critical
+//         {
+        total += g.size();
         while (result.size()) {
             if (g.find(result.top().second) != g.end()) {
                 correct++;
@@ -54,6 +58,7 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
             }
             result.pop();
         }
+        // }
     }
     return 1.0f * correct / total;
 }
@@ -65,6 +70,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     vector<size_t> efs;// = { 10,10,10,10,10 };
 #if MEMTRACE
     efs.push_back(80);
+#elif AKNNG
+    for (int i = 200; i <= 700; i += 100)
+        efs.push_back(i);
 #else
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
@@ -270,6 +278,14 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 	size_t efConstruction = 200;
 	size_t M = 20;
     size_t k = 10;
+#if AKNNG
+    // subset_size_milllions = 10;
+    k = 100;
+    if (subset_size_milllions == 10){
+        efConstruction = 400;
+        M = 30;
+    }
+#endif
 
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;

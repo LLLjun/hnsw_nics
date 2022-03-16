@@ -386,7 +386,7 @@ void PriorityQueue::emplace(const float& dist, const unsigned& id){
                     mid = (low + high) / 2;
 #if MEMTRACE
                     queue_mem_->add_trace((char *)(&data_[mid]),
-                                    (char *)(&data_[mid+1]), offest_sw_, offest_hw_, 's');
+                                    (char *)(&data_[mid+1]), offest_sw_, offest_hw_, 'l');
 #endif
                     if (dist >= data_[mid].dist)
                         low = mid + 1;

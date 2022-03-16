@@ -30,8 +30,8 @@ int main(int argc, char **argv) {
             exit(1);
         }
     }
-    if (!is_build)
-        assignToThisCore(0);
+    // if (!is_build)
+    //     assignToThisCore(0);
     
     hnsw_impl(is_build, std::string(argv[2]));
 
