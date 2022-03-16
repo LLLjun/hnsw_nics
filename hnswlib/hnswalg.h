@@ -149,22 +149,22 @@ namespace hnswlib {
                 |- search_queue
         */
         mem<char>* main_mem;
-        mutable std::map<std::string, long long> mem_offest_sw;
-        mutable std::map<std::string, long long> mem_offest_hw;
 
         void initMem(){
             main_mem = new mem<char>();
-            mem_offest_sw["data_level0"] = (long long) data_level0_memory_;
-            std::cout << mem_offest_sw["data_level0"] << std::endl;
+            main_mem->mem_offest_sw["data_level0"] = (long long) data_level0_memory_;
+            std::cout << main_mem->mem_offest_sw["data_level0"] << std::endl;
 
-            mem_offest_hw["query_data"] = 0;
-            mem_offest_hw["data_level0"] = (long long) ceil((float)data_size_ / MEM_ALIGNED) * MEM_ALIGNED;
-            mem_offest_hw["visited_list"] = mem_offest_hw["data_level0"] + 
+            main_mem->mem_offest_hw["query_data"] = 0;
+            main_mem->mem_offest_hw["data_level0"] = (long long) ceil((float)data_size_ / MEM_ALIGNED) * MEM_ALIGNED;
+            main_mem->mem_offest_hw["visited_list"] = main_mem->mem_offest_hw["data_level0"] +
                                             (long long) ceil((float) max_elements_ * size_data_per_element_ / MEM_ALIGNED) * MEM_ALIGNED;
-            mem_offest_hw["result_queue"] = mem_offest_hw["visited_list"] + 
+            main_mem->mem_offest_hw["result_queue"] = main_mem->mem_offest_hw["visited_list"] +
                                             (long long) ceil((float) max_elements_ * sizeof(vl_type) / MEM_ALIGNED) * MEM_ALIGNED;
-            // mem_offest_hw["search_queue"] = mem_offest_hw["result_queue"] + 
+            // main_mem->mem_offest_hw["search_queue"] = main_mem->mem_offest_hw["result_queue"] +
             //                                 ceil((float) efs * (sizeof(dist_t) + sizeof(tableint)) / MEM_ALIGNED) * MEM_ALIGNED;
+
+            // std::cout << "address query_data : "
         }
 #endif
 
@@ -296,8 +296,22 @@ namespace hnswlib {
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
 
+#if REPLACEQ
+            PriorityQueue top_candidates(ef);
+            PriorityQueue candidate_set(ef * 20, true);
+
+#if MEMTRACE
+            main_mem->mem_offest_hw["search_queue"] = main_mem->mem_offest_hw["result_queue"] +
+                                ceil((float) ef * (sizeof(dist_t) + sizeof(tableint)) / MEM_ALIGNED) * MEM_ALIGNED;
+
+            top_candidates.initMem(main_mem, main_mem->mem_offest_hw["result_queue"]);
+            candidate_set.initMem(main_mem, main_mem->mem_offest_hw["search_queue"]);
+#endif
+
+#else
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
+#endif
 
             dist_t lowerBound;
             if (!has_deletions || !isMarkedDeleted(ep_id)) {
@@ -313,17 +327,17 @@ namespace hnswlib {
             visited_array[ep_id] = visited_array_tag;
 
 #if MEMTRACE
-            mem_offest_sw["query_data"] = (long long) data_point;
-            mem_offest_sw["visited_list"] = (long long) visited_array;
+            main_mem->mem_offest_sw["query_data"] = (long long) data_point;
+            main_mem->mem_offest_sw["visited_list"] = (long long) visited_array;
 
             main_mem->add_trace((char *)data_point, (char *)data_point + data_size_,
-                                mem_offest_sw["query_data"], mem_offest_hw["query_data"], 'l');
+                                "query_data", 'l');
             main_mem->add_trace(getDataByInternalId(ep_id), getDataByInternalId(ep_id) + data_size_,
-                                mem_offest_sw["data_level0"], mem_offest_hw["data_level0"], 'l');
+                                "data_level0", 'l');
             main_mem->add_trace((char *)(visited_array + ep_id), (char *)(visited_array + ep_id + 1),
-                                mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 'l');
+                                "visited_list", 'l');
             main_mem->add_trace((char *)(visited_array + ep_id), (char *)(visited_array + ep_id + 1),
-                                mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 's');
+                                "visited_list", 's');
 #endif
             // tableint cache_id = std::numeric_limits<tableint>::max();
 
@@ -371,7 +385,7 @@ namespace hnswlib {
 
 #if MEMTRACE
                     main_mem->add_trace((char *)(visited_array + candidate_id), (char *)(visited_array + candidate_id + 1),
-                                        mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 'l');
+                                        "visited_list", 'l');
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
@@ -387,11 +401,11 @@ namespace hnswlib {
 
 #if MEMTRACE
                         main_mem->add_trace((char *)(visited_array + candidate_id), (char *)(visited_array + candidate_id + 1),
-                                            mem_offest_sw["visited_list"], mem_offest_hw["visited_list"], 's');
+                                            "visited_list", 's');
                         main_mem->add_trace((char *)data_point, (char *)data_point + data_size_,
-                                            mem_offest_sw["query_data"], mem_offest_hw["query_data"], 'l');
+                                            "query_data", 'l');
                         main_mem->add_trace(currObj1, currObj1 + data_size_,
-                                            mem_offest_sw["data_level0"], mem_offest_hw["data_level0"], 'l');
+                                            "data_level0", 'l');
 #endif
 
 #if PROFILE
@@ -428,7 +442,25 @@ namespace hnswlib {
             }
 
             visited_list_pool_->releaseVisitedList(vl);
+
+            // while (!top_candidates.empty()){
+            //     std::cout << top_candidates.top().first << "\t" << top_candidates.top().second << std::endl;
+            //     top_candidates.pop();
+            // }
+            // exit(0);
+
+#if REPLACEQ
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_cp;
+            while (!top_candidates.empty()){
+                top_candidates_cp.emplace(top_candidates.top());
+                top_candidates.pop();
+            }
+            // candidate_set.~PriorityQueue();
+            // top_candidates.~PriorityQueue();
+            return top_candidates_cp;
+#else
             return top_candidates;
+#endif
         }
 
         void getNeighborsByHeuristic2(
