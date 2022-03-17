@@ -1049,6 +1049,9 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         
         unsigned* graphId_to_Links = new unsigned[num_ext_expect * knn_dim]();
         LoadBinToArray<unsigned>(path_ext_mass_links, graphId_to_Links, num_ext_expect, knn_dim);
+
+        DTFSSD* massB = new DTFSSD[vecsize * vecdim]();
+        LoadBinToArray<DTFSSD>(index_string["path_data"], massB, vecsize, vecdim);
 #endif
 
 #endif
@@ -1104,14 +1107,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             efs_ssd_cur = k_dram * (knn_dim + 1);
 #endif
 
-            DTFSSD *mass_brute_ssd = nullptr;
-            unsigned *id_brute_ssd = nullptr;
-            if (num_perspnode > 1){
-                mass_brute_ssd = new DTFSSD[efs_ssd_max * vecdim]();
-                id_brute_ssd = new unsigned[efs_ssd_max]();
-            }
-
-            omp_set_num_threads(num_banks);
+            // omp_set_num_threads(num_banks);
             for (int i = 0; i < num_banks; i++){
                 appr_alg[i]->setEf(efs_bank);
                 appr_alg[i]->metric_distance_computations = 0;
@@ -1120,6 +1116,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
             float time_search_total = 0;
             size_t NDC_SSD = 0;
 
+// #pragma omp parallel for
             for (size_t q_i = 0; q_i < qsize; q_i++){
                 // search stage 1: in DRAM
                 // FCP32 thr_global = std::numeric_limits<FCP32>::max();
@@ -1134,7 +1131,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 #endif
 
 
-// #pragma omp parallel for
+#pragma omp parallel for
                 for (size_t bank_i = 0; bank_i < num_banks; bank_i++){
                     // appr_alg[bank_i]->setThr(&thr_global);
 
@@ -1171,8 +1168,10 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                 } else {
                     // search in SSD
                     size_t efs_real = std::min(k_dram, result_dram.size());
-                    memset(mass_brute_ssd, 0, efs_ssd_max * vecdim * sizeof(DTFSSD));
-                    memset(id_brute_ssd, 0, efs_ssd_max * sizeof(unsigned));
+                    DTFSSD* mass_brute_ssd = new DTFSSD[efs_ssd_max * vecdim]();
+                    unsigned* id_brute_ssd = new unsigned[efs_ssd_max]();
+                    // memset(mass_brute_ssd, 0, efs_ssd_max * vecdim * sizeof(DTFSSD));
+                    // memset(id_brute_ssd, 0, efs_ssd_max * sizeof(unsigned));
 
 #if EXTSSD
                     unordered_set<unsigned> ssd_node;
@@ -1188,23 +1187,24 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                         result_dram.pop();
                     }
 
-                    ifstream inputBS(index_string["path_data"].c_str(), ios::binary);
-                    uint32_t nums_r, dims_r;
-                    inputBS.read((char *) &nums_r, sizeof(uint32_t));
-                    inputBS.read((char *) &dims_r, sizeof(uint32_t));
-                    if ((vecsize != nums_r) || (vecdim != dims_r)){
-                        printf("Error, file size is error, nums_r: %u, dims_r: %u\n", nums_r, dims_r);
-                        exit(1);
-                    }
+                    // ifstream inputBS(index_string["path_data"].c_str(), ios::binary);
+                    // uint32_t nums_r, dims_r;
+                    // inputBS.read((char *) &nums_r, sizeof(uint32_t));
+                    // inputBS.read((char *) &dims_r, sizeof(uint32_t));
+                    // if ((vecsize != nums_r) || (vecdim != dims_r)){
+                    //     printf("Error, file size is error, nums_r: %u, dims_r: %u\n", nums_r, dims_r);
+                    //     exit(1);
+                    // }
                     unsigned ssd_i = 0;
                     for (unsigned exter_i : ssd_node){
-                        inputBS.seekg(exter_i * vecdim * sizeof(DTFSSD) + 2 * sizeof(unsigned), ios::beg);
-                        inputBS.read((char *)(mass_brute_ssd + ssd_i * vecdim), vecdim * sizeof(DTFSSD));
+                        // inputBS.seekg(exter_i * vecdim * sizeof(DTFSSD) + 2 * sizeof(unsigned), ios::beg);
+                        // inputBS.read((char *)(mass_brute_ssd + ssd_i * vecdim), vecdim * sizeof(DTFSSD));
+                        memcpy(mass_brute_ssd + ssd_i * vecdim, massB + exter_i * vecdim, vecdim * sizeof(DTFSSD));
                         id_brute_ssd[ssd_i] = exter_i;
                         ssd_i++;
                     }
                     efs_ssd_cur = ssd_i;
-                    inputBS.close();
+                    // inputBS.close();
 #else
                     ifstream inputBS(path_mass_global.c_str(), ios::binary);
                     uint32_t nums_r, dims_r;
@@ -1254,6 +1254,10 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
                         result_final[q_i].push_back(rs.top().second);
                         rs.pop();
                     }
+
+                    delete[] mass_brute_ssd;
+                    delete[] id_brute_ssd;
+                    brute_alg->~BruteforceSearch();
                 }
             }
             float time_per_query = stop_full.getElapsedTimeus() / qsize;
@@ -1307,7 +1311,7 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 void hnsw_impl(bool is_build, const string &using_dataset){
     string path_project = "/home/usr-xkIJigVq/nmp/hnsw_nics";
 
-    string label = "dram-only";
+    string label = "extssd";
     string path_graphindex = path_project + "/graphindex/" + label;
 
 	size_t subset_size_milllions = 1;

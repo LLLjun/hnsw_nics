@@ -3,7 +3,7 @@ import os
 def main():
     dataset = "deep"
     datasize = 1
-    stage = "both"
+    stage = "search"
 
     if stage == "both":
         command = "./main build " + dataset + " && ./main search " + dataset
