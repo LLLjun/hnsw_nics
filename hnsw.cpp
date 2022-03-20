@@ -39,7 +39,12 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 // #pragma omp parallel for
     for (int i = 0; i < qsize; i++) {
 #endif
+
+#if MEMTRACE
+        std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnnMem(massQ + vecdim * i, k);
+#else
         std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+#endif
         std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
         unordered_set<labeltype> g;
         
@@ -78,7 +83,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         efs.push_back(i);
 #endif
 
-    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "qps\n";
+    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time(us)\n";
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
@@ -105,7 +110,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
                 TDC << "\t" << Tsort << "\n";
 #else
         // cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\n";
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << (1e6 / time_us_per_query)
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query
         << "\n";
 #endif
         if (recall > 1.0) {

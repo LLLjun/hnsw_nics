@@ -3,8 +3,8 @@
 
 #define PLATG       true
 #define PROFILE     false
-#define MEMTRACE    true
-#define REPLACEQ    true
+#define MEMTRACE    false
+#define REPLACEQ    false
 
 #define MODE base
 
