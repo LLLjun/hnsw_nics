@@ -9,9 +9,12 @@
 #include <unordered_set>
 #include <list>
 #include <map>
+#include <stack>
+#include "dataset.h"
 #include "config.h"
 #include "profile.h"
 #include "mem.h"
+#include "omp.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -365,10 +368,10 @@ namespace hnswlib {
                 //     cache_id = candidate_set.top().second;
 #if (!MEMTRACE)
 #ifdef USE_SSE
-                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
-                _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
-                _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
+                // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+                // _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+                // _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+                // _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
 #endif
 
@@ -377,9 +380,9 @@ namespace hnswlib {
 //                    if (candidate_id == 0) continue;
 #if (!MEMTRACE)
 #ifdef USE_SSE
-                    _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
-                    _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
-                                 _MM_HINT_T0);////////////
+                    // _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+                    // _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
+                    //              _MM_HINT_T0);////////////
 #endif
 #endif
 
@@ -420,9 +423,9 @@ namespace hnswlib {
 
 #if (!MEMTRACE)
 #ifdef USE_SSE
-                            _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                                         offsetLevel0_,///////////
-                                         _MM_HINT_T0);////////////////////////
+                            // _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                            //              offsetLevel0_,///////////
+                            //              _MM_HINT_T0);////////////////////////
 #endif
 #endif
 
@@ -1291,6 +1294,210 @@ namespace hnswlib {
             }
             return result;
         };
+
+// 支持rank-level的mapping
+#if RANKMAP
+        // 不同rank内的起始搜索点
+        std::vector<tableint> ept_rank;
+        std::vector<int> interId_to_rankId;
+        std::vector<std::vector<tableint>> rankId_to_interId;
+
+        void initRankMap(){
+            ept_rank.resize(NUM_RANKS);
+            interId_to_rankId.resize(cur_element_count);
+            rankId_to_interId.resize(NUM_RANKS);
+
+            // 图上的点到rank，暂时采用简单的mapping方式
+            size_t num_max_rank = ceil(1.0 * cur_element_count / NUM_RANKS);
+            size_t num_pad_rank = num_max_rank * NUM_RANKS - cur_element_count;
+            std::vector<size_t> offest_rank_start(NUM_RANKS);
+            offest_rank_start[0] = 0;
+            for (size_t i = 1; i < NUM_RANKS; i++){
+                if (i < (NUM_RANKS - num_pad_rank + 1))
+                    offest_rank_start[i] = offest_rank_start[i-1] + num_max_rank;
+                else
+                    offest_rank_start[i] = offest_rank_start[i-1] + (num_max_rank - 1);
+            }
+
+            for (tableint i = 0; i < cur_element_count; i++){
+                for (int j = (NUM_RANKS - 1); j >= 0; j--){
+                    if (i >= offest_rank_start[j]){
+                        interId_to_rankId[i] = j;
+                        rankId_to_interId[j].push_back(i);
+                        break;
+                    }
+                }
+            }
+
+            // 每个rank的起始点，暂时采用中心点
+            size_t vecdim = *(size_t *)(dist_func_param_);
+            float* mass_comput = new float[num_max_rank * vecdim]();
+            for (int i = 0; i < NUM_RANKS; i++){
+                unsigned rank_size = rankId_to_interId[i].size();
+                for (int j = 0; j < rank_size; j++){
+                    tableint cur_inter = rankId_to_interId[i][j];
+                    memcpy(mass_comput + j * vecdim, getDataByInternalId(cur_inter), vecdim * sizeof(float));
+                }
+                unsigned center = compArrayCenter<float>(mass_comput, rank_size, vecdim);
+                ept_rank[i] = interId_to_rankId[center];
+            }
+            delete[] mass_comput;
+
+            // omp_set_num_threads(NUM_RANKS);
+            stats = new QueryStats;
+        }
+
+        /*
+            detail infomation
+        */
+        struct QueryStats {
+            double hlc_us = 0;
+            double rank_us = 0;
+            double n_max_NDC = 1;
+        };
+
+        QueryStats* stats = nullptr;
+
+
+        /*
+            input: query, k
+            output: result
+        */
+        std::priority_queue<std::pair<dist_t, labeltype >>
+        searchParaRank(const void *query_data, size_t k) const {
+
+            std::priority_queue<std::pair<dist_t, labeltype >> result;
+            if (cur_element_count == 0) return result;
+            size_t ef = std::max(ef_, k);
+
+            size_t num_ranks = NUM_RANKS;
+
+            // HLC level
+            // visited list
+            VisitedList *vl = visited_list_pool_->getFreeVisitedList();
+            vl_type *visited_array = vl->mass;
+            vl_type visited_array_tag = vl->curV;
+
+            // priority queue
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
+            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
+
+            // rank buffer
+            std::vector<std::stack<tableint>> buffer_rank_alloc(num_ranks);
+            std::vector<std::stack<std::pair<dist_t, tableint>>> buffer_rank_gather(num_ranks);
+
+            dist_t lowerBound = std::numeric_limits<dist_t>::max();
+            std::pair<size_t, int*> candidate_neighbors;
+
+            // launch stage
+            bool islaunch = true;
+            metric_distance_computations += num_ranks;
+            clk_get clk_query = clk_get();
+            // volatile bool flag = true;
+
+            for (int i = 0; i < num_ranks; i++){
+                tableint currObj = ept_rank[i];
+                dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
+                visited_array[currObj] = visited_array_tag;
+                buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
+            }
+            if (stats != nullptr)
+                stats->hlc_us += clk_query.getElapsedTimeus();
+
+            // running stage
+            while (!candidate_set.empty() || islaunch) {
+                islaunch = false;
+
+                if (stats != nullptr)
+                    clk_query.reset();
+
+
+                for (int i = 0; i < num_ranks; i++){
+                    while (!buffer_rank_gather[i].empty()){
+                        dist_t dist = buffer_rank_gather[i].top().first;
+                        tableint candidate_id = buffer_rank_gather[i].top().second;
+                        buffer_rank_gather[i].pop();
+
+                        if (top_candidates.size() < ef || lowerBound > dist) {
+                            candidate_set.emplace(-dist, candidate_id);
+                            top_candidates.emplace(dist, candidate_id);
+
+                            if (top_candidates.size() > ef)
+                                top_candidates.pop();
+
+                            if (!top_candidates.empty())
+                                lowerBound = top_candidates.top().first;
+                        }
+                    }
+                }
+
+                std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
+                if ((-current_node_pair.first) > lowerBound) {
+                    // flag = false;
+                    break;
+                }
+                candidate_set.pop();
+
+                // 读取候选者的邻居信息
+                tableint current_node_id = current_node_pair.second;
+                candidate_neighbors.second = (int *) get_linklist0(current_node_id);
+                candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+
+                // 分配邻居to rank
+                for (size_t j = 1; j <= candidate_neighbors.first; j++) {
+                    int candidate_id = *(candidate_neighbors.second + j);
+
+                    if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        visited_array[candidate_id] = visited_array_tag;
+                        int rank_id = interId_to_rankId[candidate_id];
+                        buffer_rank_alloc[rank_id].push(candidate_id);
+                    }
+                }
+
+                if (stats != nullptr){
+                    stats->hlc_us += clk_query.getElapsedTimeus();
+                    size_t n_max = 0;
+                    for (std::stack<tableint>& bra: buffer_rank_alloc){
+                        n_max = std::max(n_max, bra.size());
+                        metric_distance_computations += bra.size();
+                    }
+                    stats->n_max_NDC += n_max;
+
+                    clk_query.reset();
+                }
+
+
+                for (int i = 0; i < num_ranks; i++){
+                    while (!buffer_rank_alloc[i].empty()){
+                        tableint currObj = buffer_rank_alloc[i].top();
+                        buffer_rank_alloc[i].pop();
+
+                        dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
+                        buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
+                    }
+                }
+
+                if (stats != nullptr)
+                    stats->rank_us += clk_query.getElapsedTimeus();
+
+            }
+
+            visited_list_pool_->releaseVisitedList(vl);
+
+            while (top_candidates.size() > k) {
+                top_candidates.pop();
+            }
+            while (top_candidates.size() > 0) {
+                std::pair<dist_t, tableint> rez = top_candidates.top();
+                result.push(std::pair<dist_t, labeltype>(rez.first, getExternalLabel(rez.second)));
+                top_candidates.pop();
+            }
+            return result;
+        };
+
+#endif
+
+
 
         void checkIntegrity(){
             int connections_checked=0;

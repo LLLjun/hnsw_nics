@@ -2,13 +2,13 @@ from distutils import command
 import os
 
 def main():
-    dataset = "turing"
+    dataset = "deep"
 
-    stage = "build"
+    # stage = "build"
 
-    command = "./main " + stage + " " + dataset
+    # command = "./main " + stage + " " + dataset
 
-    os.system("cd build && make main && " + command)
+    # os.system("cd build && make main && " + command)
 
 
     stage = "search"

@@ -35,11 +35,17 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 #if MEMTRACE
     {   int i = 100;
 #else
-    // omp_set_num_threads(80);
+
+//     omp_set_num_threads(8);
 // #pragma omp parallel for
     for (int i = 0; i < qsize; i++) {
 #endif
+
+#if RANKMAP
+        std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchParaRank(massQ + vecdim * i, k);
+#else
         std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+#endif
         std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
         unordered_set<labeltype> g;
         
@@ -48,17 +54,17 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
             gt.pop();
         }
 
-// #pragma omp critical
-//         {
-        total += g.size();
-        while (result.size()) {
-            if (g.find(result.top().second) != g.end()) {
-                correct++;
-            } else {
+#pragma omp critical
+        {
+            total += g.size();
+            while (result.size()) {
+                if (g.find(result.top().second) != g.end()) {
+                    correct++;
+                } else {
+                }
+                result.pop();
             }
-            result.pop();
         }
-        // }
     }
     return 1.0f * correct / total;
 }
@@ -78,7 +84,12 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         efs.push_back(i);
 #endif
 
-    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "qps\n";
+    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t"
+#if RANKMAP
+    << "NDC_max\t" << "hlc_us\t" << "rank_us\t"
+#endif
+    << endl;
+
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
         appr_alg.metric_hops = 0;
@@ -89,7 +100,14 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         appr_alg.time_PDC = 0;
         appr_alg.time_sort = 0;
 #endif
-        StopW stopw = StopW();
+
+#if RANKMAP
+        appr_alg.stats->n_max_NDC = 1;
+        appr_alg.stats->hlc_us = 0;
+        appr_alg.stats->rank_us = 0;
+#endif
+
+        clk_get stopw = clk_get();
 
         float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
         float time_us_per_query = stopw.getElapsedTimeus() / qsize;
@@ -104,9 +122,13 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t" <<
                 TDC << "\t" << Tsort << "\n";
 #else
-        // cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\n";
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << (1e6 / time_us_per_query)
-        << "\n";
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t"
+#if RANKMAP
+        << appr_alg.stats->n_max_NDC / qsize << "\t"
+        << appr_alg.stats->hlc_us / qsize << "\t"
+        << appr_alg.stats->rank_us / qsize << "\t"
+#endif
+        << endl;
 #endif
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
@@ -245,6 +267,10 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         appr_alg->initMem();
 #endif
 
+#if RANKMAP
+        appr_alg->initRankMap();
+#endif
+
         cout << "Comput recall: \n";
         test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
 
@@ -259,11 +285,12 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 
 void hnsw_impl(bool is_build, const string &using_dataset){
     string path_project = "/home/usr-xkIJigVq/nmp/hnsw_nics";
-#if PLATG
-    string label = "plat/";
+#if RANKMAP
+    string label = "rank-map/";
 #else
-    string label = "base/";
+    string label = "plat/";
 #endif
+
     string path_graphindex = path_project + "/graphindex/" + label;
 
     string pre_index = path_graphindex + using_dataset;

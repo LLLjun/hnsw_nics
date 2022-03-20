@@ -3,8 +3,8 @@
 
 #define PLATG       true
 #define PROFILE     false
-#define MEMTRACE    true
-#define REPLACEQ    true
+#define MEMTRACE    false
+#define REPLACEQ    false
 
 #define MODE base
 
@@ -15,4 +15,12 @@ typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;
 
-#define AKNNG        false
+#define AKNNG       false
+
+// rank-level的映射
+#define RANKMAP     true
+
+#if RANKMAP
+#define NUM_RANKS   8
+#define RAM_RANK_GB 1
+#endif
