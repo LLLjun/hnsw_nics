@@ -84,11 +84,12 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         efs.push_back(i);
 #endif
 
-    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t"
+    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t";
 #if RANKMAP
-    << "NDC_max\t" << "hlc_us\t" << "rank_us\t"
+    if (appr_alg.stats != nullptr) 
+        cout << "NDC_max\t" << "hlc_us\t" << "rank_us\t";
 #endif
-    << endl;
+    cout << endl;
 
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -102,15 +103,17 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 #endif
 
 #if RANKMAP
-        appr_alg.stats->n_max_NDC = 1;
-        appr_alg.stats->hlc_us = 0;
-        appr_alg.stats->rank_us = 0;
+        if (appr_alg.stats != nullptr) {
+            appr_alg.stats->n_max_NDC = 1;
+            appr_alg.stats->hlc_us = 0;
+            appr_alg.stats->rank_us = 0;
+        }
 #endif
 
-        clk_get stopw = clk_get();
+        Timer stopw = Timer();
 
         float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
-        float time_us_per_query = stopw.getElapsedTimeus() / qsize;
+        float time_us_per_query = (double) stopw.getElapsedTimeus() / qsize;
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
         float NDC_avg = 1.0f * appr_alg.metric_distance_computations / qsize;
@@ -122,13 +125,15 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t" <<
                 TDC << "\t" << Tsort << "\n";
 #else
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t"
+        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t";
 #if RANKMAP
-        << appr_alg.stats->n_max_NDC / qsize << "\t"
-        << appr_alg.stats->hlc_us / qsize << "\t"
-        << appr_alg.stats->rank_us / qsize << "\t"
+        if (appr_alg.stats != nullptr) {
+            cout << appr_alg.stats->n_max_NDC / qsize << "\t";
+            cout << appr_alg.stats->hlc_us / qsize << "\t";
+            cout << appr_alg.stats->rank_us / qsize << "\t";
+        }
 #endif
-        << endl;
+        cout << endl;
 #endif
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
