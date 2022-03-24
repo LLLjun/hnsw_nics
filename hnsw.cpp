@@ -86,8 +86,10 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
     cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t";
 #if RANKMAP
-    if (appr_alg.stats != nullptr) 
-        cout << "NDC_max\t" << "hlc_us\t" << "rank_us\t";
+    if (appr_alg.stats != nullptr) {
+        cout << "hlc_us\t" << "rank_us\t" << "sort_us\t" << "visited_us\t";
+        cout << "NDC_max\t" << "old_r\t";
+    }
 #endif
     cout << endl;
 
@@ -107,6 +109,10 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
             appr_alg.stats->n_max_NDC = 1;
             appr_alg.stats->hlc_us = 0;
             appr_alg.stats->rank_us = 0;
+            appr_alg.stats->sort_us = 0;
+            appr_alg.stats->visited_us = 0;
+            appr_alg.stats->n_hops = 0;
+            appr_alg.stats->n_use_old = 0;
         }
 #endif
 
@@ -128,9 +134,13 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t";
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
-            cout << appr_alg.stats->n_max_NDC / qsize << "\t";
             cout << appr_alg.stats->hlc_us / qsize << "\t";
             cout << appr_alg.stats->rank_us / qsize << "\t";
+            cout << appr_alg.stats->sort_us / qsize << "\t";
+            cout << appr_alg.stats->visited_us / qsize << "\t";
+
+            cout << appr_alg.stats->n_max_NDC / qsize << "\t";
+            cout << appr_alg.stats->n_use_old / appr_alg.stats->n_hops << "\t";
         }
 #endif
         cout << endl;
