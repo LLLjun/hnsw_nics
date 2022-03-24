@@ -1438,7 +1438,18 @@ namespace hnswlib {
 
             // rank buffer
             std::vector<std::stack<tableint>> buffer_rank_alloc(num_ranks);
+            std::pair<dist_t, tableint> compare_node;
+            bool alloc_flag;
+
             std::vector<std::stack<std::pair<dist_t, tableint>>> buffer_rank_gather(num_ranks);
+
+            std::vector<std::vector<std::pair<dist_t, tableint>>> buffer_rank_min(num_ranks);
+            for (int i = 0; i < num_ranks; i++)
+                buffer_rank_min[i].resize(2);
+            std::vector<int> gather_flag(num_ranks, 0);
+
+            std::pair<dist_t, tableint> search_node;
+
 
             // 本轮搜索的邻居list信息
             std::pair<size_t, int*> candidate_neighbors;
@@ -1448,7 +1459,7 @@ namespace hnswlib {
             for (int i = 0; i < num_ranks; i++){
                 tableint currObj = ept_rank[i];
                 dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
-                
+
                 buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
             }
             if (stats != nullptr){
@@ -1478,84 +1489,232 @@ namespace hnswlib {
             }
             sort(retset.begin(), retset.begin() + std::min(num_ranks, l_search));
 
+            retset[0].flag = false;
+            tableint current_node_id = retset[0].id;
+            candidate_neighbors.second = (int *) get_linklist0(current_node_id);
+            candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+            // 分配邻居to rank
+            for (size_t j = 1; j <= candidate_neighbors.first; j++) {
+                int candidate_id = *(candidate_neighbors.second + j);
+
+                if (!(visited_array[candidate_id] == visited_array_tag)) {
+                    visited_array[candidate_id] = visited_array_tag;
+                    int rank_id = interId_to_rankId[candidate_id];
+                    buffer_rank_alloc[rank_id].push(candidate_id);
+                }
+            }
+
+            alloc_flag = true;
+            if (num_ranks > 1){
+                compare_node.first = retset[1].distance;
+                compare_node.second = retset[1].id;
+            } else
+                compare_node = std::make_pair<dist_t, tableint>(std::numeric_limits<dist_t>::max(),
+                                                                std::numeric_limits<tableint>::max());
+
+            if (stats != nullptr){
+                stats->hlc_us += clk_query.getElapsedTimeus();
+                size_t n_max = 0;
+                for (std::stack<tableint>& bra: buffer_rank_alloc){
+                    n_max = std::max(n_max, bra.size());
+                    metric_distance_computations += bra.size();
+                }
+                stats->n_max_NDC += n_max;
+            }
+
             // running stage
+            int run_flag = -1;
+            int compare_flag = -1;
             int k = 0;
             int cur_list_size = num_ranks;
-            while (k < cur_list_size){
-                int nk = cur_list_size;
 
-                if (retset[k].flag){
-                    retset[k].flag = false;
+            // 跳跃排序
+            int num_valid_compare = 0;
+            std::vector<std::pair<int, tableint>> to_compare_node(2);
 
-                    // 读取候选者的邻居信息
-                    tableint current_node_id = retset[k].id;
-                    candidate_neighbors.second = (int *) get_linklist0(current_node_id);
-                    candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+            // k 始终指向当前 retset 中最靠前的且 flag == true 的点的位置
 
-                    // 分配邻居to rank
-                    for (size_t j = 1; j <= candidate_neighbors.first; j++) {
-                        int candidate_id = *(candidate_neighbors.second + j);
 
-                        if (!(visited_array[candidate_id] == visited_array_tag)) {
-                            visited_array[candidate_id] = visited_array_tag;
-                            int rank_id = interId_to_rankId[candidate_id];
-                            buffer_rank_alloc[rank_id].push(candidate_id);
+            while (true) {
+                if (stats != nullptr)
+                    clk_query.reset();
+
+                // rank-level 并行计算距离
+                // 需要准备好 buffer_rank_alloc 和 compare_node
+                for (int i = 0; i < num_ranks; i++){
+                    // 内部选择两个最小值
+                    buffer_rank_min[i][0] = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
+                    buffer_rank_min[i][1] = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
+
+                    while (!buffer_rank_alloc[i].empty()){
+                        tableint currObj = buffer_rank_alloc[i].top();
+                        buffer_rank_alloc[i].pop();
+                        dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
+                        buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
+
+                        if (curdist < buffer_rank_min[i][1].first){
+                            if (curdist < buffer_rank_min[i][0].first){
+                                buffer_rank_min[i][1] = buffer_rank_min[i][0];
+                                buffer_rank_min[i][0].first = curdist;
+                                buffer_rank_min[i][0].second = currObj;
+                            } else {
+                                buffer_rank_min[i][1].first = curdist;
+                                buffer_rank_min[i][1].second = currObj;
+                            }
                         }
                     }
 
-                    if (stats != nullptr){
-                        stats->hlc_us += clk_query.getElapsedTimeus();
-                        size_t n_max = 0;
-                        for (std::stack<tableint>& bra: buffer_rank_alloc){
-                            n_max = std::max(n_max, bra.size());
-                            metric_distance_computations += bra.size();
-                        }
-                        stats->n_max_NDC += n_max;
-
-                        clk_query.reset();
+                    gather_flag[i] = 0;
+                    dist_t limit_dist = compare_node.first;
+                    for (std::pair<dist_t, tableint> mindist : buffer_rank_min[i]){
+                        if (mindist.first > limit_dist)
+                            break;
+                        gather_flag[i]++;
                     }
+                }
+                if (stats != nullptr){
+                    stats->rank_us += clk_query.getElapsedTimeus();
+                    clk_query.reset();
+                }
 
-                    for (int i = 0; i < num_ranks; i++){
-                        while (!buffer_rank_alloc[i].empty()){
-                            tableint currObj = buffer_rank_alloc[i].top();
-                            buffer_rank_alloc[i].pop();
-
-                            dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
-                            buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
-                        }
-                    }
-
-                    if (stats != nullptr){
-                        stats->rank_us += clk_query.getElapsedTimeus();
-                        clk_query.reset();
-                    }
-
-                    for (int i = 0; i < num_ranks; i++){
-                        while (!buffer_rank_gather[i].empty()){
-                            dist_t dist = buffer_rank_gather[i].top().first;
-                            tableint candidate_id = buffer_rank_gather[i].top().second;
-                            buffer_rank_gather[i].pop();
-                            if (dist >= retset[cur_list_size - 1].distance && (cur_list_size == l_search))
-                                continue;
-
-                            Neighbor nn(candidate_id, dist, true);
-                            int r = InsertIntoPool(retset.data(), cur_list_size, nn);
-                            if (cur_list_size < l_search)
-                                ++cur_list_size;
-                            if (r < nk)
-                                nk = r;
+                // 快速获取下一轮的搜索点
+                run_flag = -1;
+                for (int i = 0; i < num_ranks; i++){
+                    if (gather_flag[i] > 0){
+                        dist_t local_min_dist = buffer_rank_min[i][0].first;
+                        if (run_flag == -1){
+                            run_flag = i;
+                            search_node = buffer_rank_min[i][0];
+                        } else if (search_node.first > local_min_dist){
+                            run_flag = i;
+                            search_node = buffer_rank_min[i][0];
                         }
                     }
                 }
+
+                if (run_flag == -1 && (!alloc_flag || num_valid_compare == 0))
+                    break;
+
+                // 如果大于等于0，需要等排序完成后再 set flag
+                if (run_flag >= 0){
+                    gather_flag[run_flag]--;
+                    buffer_rank_min[run_flag][0] = buffer_rank_min[run_flag][1];
+                } else {
+                    if (alloc_flag){
+                        // if (retset[to_compare_node[0].first].flag == false){
+                        //     printf("error to_compare_node\n");
+                        //     exit(1);
+                        // }
+
+                        retset[to_compare_node[0].first].flag = false;
+                        search_node = compare_node;
+                    }
+                }
+
+
+
+                // std::cout << k << "\t" << search_node.second << "\t" << search_node.first << std::endl;
+
+                tableint current_node_id = search_node.second;
+                candidate_neighbors.second = (int *) get_linklist0(current_node_id);
+                candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+                // 分配邻居to rank
+                for (size_t j = 1; j <= candidate_neighbors.first; j++) {
+                    int candidate_id = *(candidate_neighbors.second + j);
+
+                    if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        visited_array[candidate_id] = visited_array_tag;
+                        int rank_id = interId_to_rankId[candidate_id];
+                        buffer_rank_alloc[rank_id].push(candidate_id);
+                    }
+                }
+
+                // 快速获取本轮的比较点
+                // 未处理异常
+                if (num_valid_compare > 1){
+                    alloc_flag = true;
+                    compare_flag = -1;
+                    int next_k;
+                    if (run_flag >= 0)
+                        next_k = to_compare_node[0].first;
+                    else
+                        next_k = to_compare_node[1].first;
+                    compare_node.first = retset[next_k].distance;
+                    compare_node.second = retset[next_k].id;
+                    for (int i = 0; i < num_ranks; i++){
+                        if (compare_node.first > buffer_rank_min[i][0].first){
+                            compare_flag = i;
+                            compare_node = buffer_rank_min[i][0];
+                        }
+                    }
+                } else {
+                    alloc_flag = false;
+                    compare_flag = -1;
+                    compare_node.first = retset[cur_list_size-1].distance;
+                    compare_node.second = retset[cur_list_size-1].id;
+                    for (int i = 0; i < num_ranks; i++){
+                        if (compare_node.first > buffer_rank_min[i][0].first){
+                            alloc_flag = true;
+                            compare_flag = i;
+                            compare_node = buffer_rank_min[i][0];
+                        }
+                    }
+                }
+
+
+
+                if (stats != nullptr){
+                    stats->hlc_us += clk_query.getElapsedTimeus();
+                    size_t n_max = 0;
+                    for (std::stack<tableint>& bra: buffer_rank_alloc){
+                        n_max = std::max(n_max, bra.size());
+                        metric_distance_computations += bra.size();
+                    }
+                    stats->n_max_NDC += n_max;
+
+                    clk_query.reset();
+                }
+
+
+                int nk = cur_list_size;
+                // 可以overlap的部分
+                // 更新队列
+                for (int i = 0; i < num_ranks; i++){
+                    while (!buffer_rank_gather[i].empty()){
+                        dist_t dist = buffer_rank_gather[i].top().first;
+                        tableint candidate_id = buffer_rank_gather[i].top().second;
+                        buffer_rank_gather[i].pop();
+                        if (dist >= retset[cur_list_size - 1].distance && (cur_list_size == l_search))
+                            continue;
+
+                        Neighbor nn(candidate_id, dist, true);
+                        int r = InsertIntoPool(retset.data(), cur_list_size, nn);
+                        if (cur_list_size < l_search)
+                            ++cur_list_size;
+                        if (r < nk)
+                            nk = r;
+                    }
+                }
+                if (run_flag >= 0)
+                    retset[nk].flag = false;
                 if (nk <= k)
                     k = nk;
-                else
-                    ++k;
-            }
 
+                num_valid_compare = 0;
+                while (k < cur_list_size){
+                    if (retset[k].flag){
+                        to_compare_node[num_valid_compare] = std::make_pair(k, retset[k].id);
+                        num_valid_compare++;
+                        if (num_valid_compare == 2)
+                            break;
+                    }
+                    k++;
+                }
+
+            }
             visited_list_pool_->releaseVisitedList(vl);
             for (int i = 0; i < K; i++)
-                result.push(std::pair<dist_t, labeltype>(retset[i].distance, 
+                result.push(std::pair<dist_t, labeltype>(retset[i].distance,
                             getExternalLabel(retset[i].id)));
 
             return result;
