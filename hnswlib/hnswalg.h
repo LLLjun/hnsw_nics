@@ -1408,6 +1408,7 @@ namespace hnswlib {
             double hlc_us = 0;
             double rank_us = 0;
             double n_max_NDC = 1;
+            double n_hops = 0;
         };
 
         QueryStats* stats = nullptr;
@@ -1448,7 +1449,7 @@ namespace hnswlib {
             for (int i = 0; i < num_ranks; i++){
                 tableint currObj = ept_rank[i];
                 dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
-                
+
                 buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
             }
             if (stats != nullptr){
@@ -1511,6 +1512,7 @@ namespace hnswlib {
                             metric_distance_computations += bra.size();
                         }
                         stats->n_max_NDC += n_max;
+                        stats->n_hops++;
 
                         clk_query.reset();
                     }
@@ -1555,7 +1557,7 @@ namespace hnswlib {
 
             visited_list_pool_->releaseVisitedList(vl);
             for (int i = 0; i < K; i++)
-                result.push(std::pair<dist_t, labeltype>(retset[i].distance, 
+                result.push(std::pair<dist_t, labeltype>(retset[i].distance,
                             getExternalLabel(retset[i].id)));
 
             return result;
