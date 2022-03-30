@@ -48,13 +48,12 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 #endif
         std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
         unordered_set<labeltype> g;
-        
         while (gt.size()) {
             g.insert(gt.top().second);
             gt.pop();
         }
 
-#pragma omp critical
+// #pragma omp critical
         {
             total += g.size();
             while (result.size()) {
@@ -87,7 +86,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t";
 #if RANKMAP
     if (appr_alg.stats != nullptr) {
-        cout << "hlc_us\t" << "rank_us\t" << "sort_us\t" << "visited_us\t";
+        cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
         cout << "NDC_max\t" << "old_r\t";
     }
 #endif
@@ -106,7 +105,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
-            appr_alg.stats->n_max_NDC = 1;
+            appr_alg.stats->n_max_NDC = 0;
             appr_alg.stats->hlc_us = 0;
             appr_alg.stats->rank_us = 0;
             appr_alg.stats->sort_us = 0;
@@ -134,9 +133,9 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t";
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
-            cout << appr_alg.stats->hlc_us / qsize << "\t";
             cout << appr_alg.stats->rank_us / qsize << "\t";
             cout << appr_alg.stats->sort_us / qsize << "\t";
+            cout << appr_alg.stats->hlc_us / qsize << "\t";
             cout << appr_alg.stats->visited_us / qsize << "\t";
 
             cout << appr_alg.stats->n_max_NDC / qsize << "\t";

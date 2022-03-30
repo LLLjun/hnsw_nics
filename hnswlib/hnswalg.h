@@ -1354,30 +1354,32 @@ namespace hnswlib {
 #if RANKMAP
         // 不同rank内的起始搜索点
         std::vector<tableint> ept_rank;
-        std::vector<int> interId_to_rankId;
+        std::vector<int> interId_to_rankLabel;
+        // 仅仅只是为了转换中心点
         std::vector<std::vector<tableint>> rankId_to_interId;
 
         void initRankMap(){
-            ept_rank.resize(NUM_RANKS);
-            interId_to_rankId.resize(cur_element_count);
-            rankId_to_interId.resize(NUM_RANKS);
+            int num_ranks = NUM_RANKS;
+            ept_rank.resize(num_ranks);
+            interId_to_rankLabel.resize(cur_element_count);
+            rankId_to_interId.resize(num_ranks);
 
             // 图上的点到rank，暂时采用简单的mapping方式
-            size_t num_max_rank = ceil(1.0 * cur_element_count / NUM_RANKS);
-            size_t num_pad_rank = num_max_rank * NUM_RANKS - cur_element_count;
-            std::vector<size_t> offest_rank_start(NUM_RANKS);
+            size_t num_max_rank = ceil(1.0 * cur_element_count / num_ranks);
+            size_t num_pad_rank = num_max_rank * num_ranks - cur_element_count;
+            std::vector<size_t> offest_rank_start(num_ranks);
             offest_rank_start[0] = 0;
-            for (size_t i = 1; i < NUM_RANKS; i++){
-                if (i < (NUM_RANKS - num_pad_rank + 1))
+            for (size_t i = 1; i < num_ranks; i++){
+                if (i < (num_ranks - num_pad_rank + 1))
                     offest_rank_start[i] = offest_rank_start[i-1] + num_max_rank;
                 else
                     offest_rank_start[i] = offest_rank_start[i-1] + (num_max_rank - 1);
             }
 
             for (tableint i = 0; i < cur_element_count; i++){
-                for (int j = (NUM_RANKS - 1); j >= 0; j--){
+                for (int j = (num_ranks - 1); j >= 0; j--){
                     if (i >= offest_rank_start[j]){
-                        interId_to_rankId[i] = j;
+                        interId_to_rankLabel[i] = j;
                         rankId_to_interId[j].push_back(i);
                         break;
                     }
@@ -1387,16 +1389,19 @@ namespace hnswlib {
             // 每个rank的起始点，暂时采用中心点
             size_t vecdim = *(size_t *)(dist_func_param_);
             float* mass_comput = new float[num_max_rank * vecdim]();
-            for (int i = 0; i < NUM_RANKS; i++){
+            for (int i = 0; i < num_ranks; i++){
                 unsigned rank_size = rankId_to_interId[i].size();
                 for (int j = 0; j < rank_size; j++){
                     tableint cur_inter = rankId_to_interId[i][j];
                     memcpy(mass_comput + j * vecdim, getDataByInternalId(cur_inter), vecdim * sizeof(float));
                 }
                 unsigned center = compArrayCenter<float>(mass_comput, rank_size, vecdim);
-                ept_rank[i] = interId_to_rankId[center];
+                ept_rank[i] = rankId_to_interId[i][center];
             }
             delete[] mass_comput;
+            std::vector<std::vector<tableint>>().swap(rankId_to_interId);
+
+            mem_rank_alloc = new tableint[num_ranks * maxM0_]();
 
             stats = new QueryStats;
         }
@@ -1409,12 +1414,13 @@ namespace hnswlib {
             double rank_us = 0;
             double sort_us = 0;
             double visited_us = 0;
-            double n_max_NDC = 1;
+            double n_max_NDC = 0;
             double n_hops = 0;
             double n_use_old = 0;
         };
 
         QueryStats* stats = nullptr;
+        tableint* mem_rank_alloc = nullptr;
 
 
         /*
@@ -1441,7 +1447,11 @@ namespace hnswlib {
             std::vector<Neighbor> retset(l_search + 1);
 
             // rank buffer
-            std::vector<std::stack<tableint>> buffer_rank_alloc(num_ranks);
+            std::vector<std::pair<int, tableint*>> buffer_rank_alloc(num_ranks);
+            for (int i = 0; i < num_ranks; i++){
+                buffer_rank_alloc[i].first = 0;
+                buffer_rank_alloc[i].second = mem_rank_alloc + i * maxM0_;
+            }
             std::vector<std::stack<std::pair<dist_t, tableint>>> buffer_rank_gather(num_ranks);
 
             // 本轮搜索的邻居list信息
@@ -1452,162 +1462,115 @@ namespace hnswlib {
             std::vector<std::pair<dist_t, tableint>> buffer_rank_min(num_ranks);
             std::pair<dist_t, tableint> retset_min;
 
+            for (int i = 0; i < num_ranks; i++){
+                tableint currObj = ept_rank[i];
+                visited_array[currObj] = visited_array_tag;
+            }
+
+
             // launch stage
             clk_get clk_query = clk_get();
-
-            // for (int i = 0; i < num_ranks; i++) {
-            //     tableint currObj = ept_rank[i];
-            //     buffer_rank_alloc[i].push(currObj);
-            //     visited_array[currObj] = visited_array_tag;
-            // }
-            // retset_min = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
 
             for (int i = 0; i < num_ranks; i++){
                 tableint currObj = ept_rank[i];
                 dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
                 buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
+                buffer_rank_min[i] = std::make_pair(curdist, currObj);
             }
             if (stats != nullptr){
-                metric_distance_computations += num_ranks;
                 stats->rank_us += clk_query.getElapsedTimeus();
-                clk_query.reset();
-            }
-
-            for (int i = 0; i < num_ranks; i++){
-                tableint currObj = buffer_rank_gather[i].top().second;
-                dist_t curdist = buffer_rank_gather[i].top().first;
-                buffer_rank_gather[i].pop();
-                visited_array[currObj] = visited_array_tag;
-
-                if (i < l_search){
-                    retset[i].id = currObj;
-                    retset[i].distance = curdist;
-                    retset[i].flag = true;
-                } else {
-                    sort(retset.begin(), retset.begin() + l_search);
-                    if (curdist >= retset[l_search - 1].distance)
-                        continue;
-                    retset[l_search - 1].id = currObj;
-                    retset[l_search - 1].distance = curdist;
-                    retset[l_search - 1].flag = true;
-                }
-            }
-            sort(retset.begin(), retset.begin() + std::min(num_ranks, l_search));
-
-            if (stats != nullptr)
-                stats->hlc_us += clk_query.getElapsedTimeus();
-
-            retset[0].flag = false;
-            tableint current_node_id = retset[0].id;
-            candidate_neighbors.second = (int *) get_linklist0(current_node_id);
-            candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
-            // 分配邻居to rank
-            for (size_t j = 1; j <= candidate_neighbors.first; j++) {
-                int candidate_id = *(candidate_neighbors.second + j);
-
-                if (!(visited_array[candidate_id] == visited_array_tag)) {
-                    visited_array[candidate_id] = visited_array_tag;
-                    int rank_id = interId_to_rankId[candidate_id];
-                    buffer_rank_alloc[rank_id].push(candidate_id);
-                }
-            }
-
-            if (num_ranks == 1)
-                retset_min = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
-            else {
-                retset_min.first = retset[1].distance;
-                retset_min.second = retset[1].id;
-            }
-
-            if (stats != nullptr){
-                size_t n_max = 0;
-                for (std::stack<tableint>& bra: buffer_rank_alloc){
-                    n_max = std::max(n_max, bra.size());
-                    metric_distance_computations += bra.size();
-                }
-                stats->n_max_NDC += n_max;
+                stats->n_max_NDC++;
+                metric_distance_computations += num_ranks;
             }
 
             // running stage
-            int min_flag = -1;
             int k = 0;
-            int cur_list_size = num_ranks;
+            int cur_list_size = 0;
+
+            int min_flag = -1;
+            retset_min = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
 
             // k 始终指向当前 retset 中最靠前的且 flag == true 的点的位置
             while (true) {
+
+                // step0: 选出最近点
+                // 快速获取下一轮的搜索点
                 if (stats != nullptr)
                     clk_query.reset();
 
-                // rank-level 并行计算距离
-                for (int i = 0; i < num_ranks; i++){
-                    // 内部选择最小值
-                    buffer_rank_min[i] = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
+                std::pair<dist_t, int> ranks_min(buffer_rank_min[0].first, 0);
+                for (int i = 1; i < num_ranks; i++){
+                    dist_t local_min_dist = buffer_rank_min[i].first;
+                    if (ranks_min.first > local_min_dist)
+                        ranks_min = std::make_pair(buffer_rank_min[i].first, i);
+                }
 
-                    while (!buffer_rank_alloc[i].empty()){
-                        tableint currObj = buffer_rank_alloc[i].top();
-                        buffer_rank_alloc[i].pop();
-                        dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
-                        buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
-
-                        if (curdist < buffer_rank_min[i].first){
-                            buffer_rank_min[i].first = curdist;
-                            buffer_rank_min[i].second = currObj;
+                if (ranks_min.first < retset_min.first){
+                    min_flag = ranks_min.second;
+                    search_node = buffer_rank_min[min_flag];
+                } else {
+                    if (k < cur_list_size) {
+                        min_flag = -1;
+                        search_node = retset_min;
+                    } else {
+                        if (cur_list_size == l_search)
+                            break;
+                        else {
+                            min_flag = ranks_min.second;
+                            search_node = buffer_rank_min[min_flag];
                         }
                     }
                 }
-                if (stats != nullptr){
-                    stats->rank_us += clk_query.getElapsedTimeus();
-                    clk_query.reset();
-                }
 
-                // 快速获取下一轮的搜索点
-                min_flag = -1;
-                search_node = retset_min;
-                for (int i = 0; i < num_ranks; i++){
-                    dist_t local_min_dist = buffer_rank_min[i].first;
-                    if (search_node.first > local_min_dist){
-                        min_flag = i;
-                        search_node = buffer_rank_min[i];
+#if OPT_VISITED
+                if (min_flag == -1){
+                    for (size_t j = 1; j <= candidate_neighbors.first; j++) {
+                        int candidate_id = *(candidate_neighbors.second + j);
+                        visited_array[candidate_id] = visited_array_tag;
+                    }
+                } else {
+                    for (int i = 0; i < num_ranks; i++)
+                        buffer_rank_alloc[i].first = 0;
+
+                    candidate_neighbors.second = (int *) get_linklist0(search_node.second);
+                    candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+
+                    for (size_t j = 1; j <= candidate_neighbors.first; j++) {
+                        int candidate_id = *(candidate_neighbors.second + j);
+
+                        if (!(visited_array[candidate_id] == visited_array_tag)) {
+                            visited_array[candidate_id] = visited_array_tag;
+                            int rank_label = interId_to_rankLabel[candidate_id];
+                            int len_buffer = buffer_rank_alloc[rank_label].first;
+                            buffer_rank_alloc[rank_label].second[len_buffer] = candidate_id;
+                            buffer_rank_alloc[rank_label].first++;
+                        }
                     }
                 }
-
-                if (min_flag == -1){
-                    if (k == cur_list_size)
-                        break;
-                    retset[k].flag = false;
-                }
-
-                if (stats != nullptr){
-                    stats->hlc_us += clk_query.getElapsedTimeus();
-                    clk_query.reset();
-                }
-
-                tableint current_node_id = search_node.second;
-                candidate_neighbors.second = (int *) get_linklist0(current_node_id);
+#else
+                candidate_neighbors.second = (int *) get_linklist0(search_node.second);
                 candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
-                // 分配邻居to rank
+
                 for (size_t j = 1; j <= candidate_neighbors.first; j++) {
                     int candidate_id = *(candidate_neighbors.second + j);
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         visited_array[candidate_id] = visited_array_tag;
-                        int rank_id = interId_to_rankId[candidate_id];
-                        buffer_rank_alloc[rank_id].push(candidate_id);
+                        int rank_label = interId_to_rankLabel[candidate_id];
+                        int len_buffer = buffer_rank_alloc[rank_label].first;
+                        buffer_rank_alloc[rank_label].second[len_buffer] = candidate_id;
+                        buffer_rank_alloc[rank_label].first++;
                     }
                 }
-
-                // std::cout << current_node_id << "\t" << search_node.first << std::endl;
+#endif
 
                 if (stats != nullptr){
-                    if (min_flag == -1)
-                        stats->visited_us += clk_query.getElapsedTimeus();
-                    else
-                        stats->hlc_us += clk_query.getElapsedTimeus();
+                    stats->hlc_us += clk_query.getElapsedTimeus();
 
-                    size_t n_max = 0;
-                    for (std::stack<tableint>& bra: buffer_rank_alloc){
-                        n_max = std::max(n_max, bra.size());
-                        metric_distance_computations += bra.size();
+                    int n_max = 0;
+                    for (std::pair<int, tableint*>& bra: buffer_rank_alloc){
+                        n_max = std::max(n_max, bra.first);
+                        metric_distance_computations += bra.first;
                     }
                     stats->n_max_NDC += n_max;
 
@@ -1618,9 +1581,10 @@ namespace hnswlib {
                     clk_query.reset();
                 }
 
-                int nk = cur_list_size;
-                // 可以overlap的部分
+                // std::cout << search_node.second << "\t" << search_node.first << std::endl;
+
                 // 更新队列
+                int nk = cur_list_size;
                 for (int i = 0; i < num_ranks; i++){
                     while (!buffer_rank_gather[i].empty()){
                         dist_t dist = buffer_rank_gather[i].top().first;
@@ -1637,12 +1601,11 @@ namespace hnswlib {
                             nk = r;
                     }
                 }
-                if (min_flag >= 0)
-                    retset[nk].flag = false;
                 if (nk <= k)
                     k = nk;
-                else
-                    ++k;
+
+                retset[k].flag = false;
+                k++;
 
                 while (k < cur_list_size){
                     if (retset[k].flag){
@@ -1657,8 +1620,48 @@ namespace hnswlib {
                     retset_min.second = retset[cur_list_size-1].id;
                 }
 
-                if (stats != nullptr)
+                if (stats != nullptr) {
                     stats->sort_us += clk_query.getElapsedTimeus();
+                    clk_query.reset();
+                }
+
+                // rank-level 并行计算距离
+                for (int i = 0; i < num_ranks; i++){
+                    // 内部选择最小值
+                    buffer_rank_min[i] = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
+
+                    for (int j = 0; j < buffer_rank_alloc[i].first; j++) {
+                        tableint currObj = buffer_rank_alloc[i].second[j];
+                        dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
+                        buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
+
+                        if (curdist < buffer_rank_min[i].first)
+                            buffer_rank_min[i] = std::make_pair(curdist, currObj);
+                    }
+                    buffer_rank_alloc[i].first = 0;
+                }
+                if (stats != nullptr){
+                    stats->rank_us += clk_query.getElapsedTimeus();
+                    clk_query.reset();
+                }
+
+#if OPT_VISITED
+                // release sort, 预先缓存 retset_min 的邻居列表
+                candidate_neighbors.second = (int *) get_linklist0(retset_min.second);
+                candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+                for (size_t j = 1; j <= candidate_neighbors.first; j++) {
+                    int candidate_id = *(candidate_neighbors.second + j);
+                    if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        // visited_array[candidate_id] = visited_array_tag;
+                        int rank_label = interId_to_rankLabel[candidate_id];
+                        int len_buffer = buffer_rank_alloc[rank_label].first;
+                        buffer_rank_alloc[rank_label].second[len_buffer] = candidate_id;
+                        buffer_rank_alloc[rank_label].first++;
+                    }
+                }
+                if (stats != nullptr)
+                    stats->visited_us += clk_query.getElapsedTimeus();
+#endif
 
             }
             visited_list_pool_->releaseVisitedList(vl);

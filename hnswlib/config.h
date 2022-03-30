@@ -23,4 +23,5 @@ typedef float DTRES;
 #if RANKMAP
 #define NUM_RANKS   1
 #define RAM_RANK_GB 1
+#define OPT_VISITED true
 #endif
