@@ -1354,30 +1354,32 @@ namespace hnswlib {
 #if RANKMAP
         // 不同rank内的起始搜索点
         std::vector<tableint> ept_rank;
-        std::vector<int> interId_to_rankId;
+        std::vector<int> interId_to_rankLabel;
+        // 仅仅只是为了转换中心点
         std::vector<std::vector<tableint>> rankId_to_interId;
 
         void initRankMap(){
-            ept_rank.resize(NUM_RANKS);
-            interId_to_rankId.resize(cur_element_count);
-            rankId_to_interId.resize(NUM_RANKS);
+            int num_ranks = NUM_RANKS;
+            ept_rank.resize(num_ranks);
+            interId_to_rankLabel.resize(cur_element_count);
+            rankId_to_interId.resize(num_ranks);
 
             // 图上的点到rank，暂时采用简单的mapping方式
-            size_t num_max_rank = ceil(1.0 * cur_element_count / NUM_RANKS);
-            size_t num_pad_rank = num_max_rank * NUM_RANKS - cur_element_count;
-            std::vector<size_t> offest_rank_start(NUM_RANKS);
+            size_t num_max_rank = ceil(1.0 * cur_element_count / num_ranks);
+            size_t num_pad_rank = num_max_rank * num_ranks - cur_element_count;
+            std::vector<size_t> offest_rank_start(num_ranks);
             offest_rank_start[0] = 0;
-            for (size_t i = 1; i < NUM_RANKS; i++){
-                if (i < (NUM_RANKS - num_pad_rank + 1))
+            for (size_t i = 1; i < num_ranks; i++){
+                if (i < (num_ranks - num_pad_rank + 1))
                     offest_rank_start[i] = offest_rank_start[i-1] + num_max_rank;
                 else
                     offest_rank_start[i] = offest_rank_start[i-1] + (num_max_rank - 1);
             }
 
             for (tableint i = 0; i < cur_element_count; i++){
-                for (int j = (NUM_RANKS - 1); j >= 0; j--){
+                for (int j = (num_ranks - 1); j >= 0; j--){
                     if (i >= offest_rank_start[j]){
-                        interId_to_rankId[i] = j;
+                        interId_to_rankLabel[i] = j;
                         rankId_to_interId[j].push_back(i);
                         break;
                     }
@@ -1387,16 +1389,17 @@ namespace hnswlib {
             // 每个rank的起始点，暂时采用中心点
             size_t vecdim = *(size_t *)(dist_func_param_);
             float* mass_comput = new float[num_max_rank * vecdim]();
-            for (int i = 0; i < NUM_RANKS; i++){
+            for (int i = 0; i < num_ranks; i++){
                 unsigned rank_size = rankId_to_interId[i].size();
                 for (int j = 0; j < rank_size; j++){
                     tableint cur_inter = rankId_to_interId[i][j];
                     memcpy(mass_comput + j * vecdim, getDataByInternalId(cur_inter), vecdim * sizeof(float));
                 }
                 unsigned center = compArrayCenter<float>(mass_comput, rank_size, vecdim);
-                ept_rank[i] = interId_to_rankId[center];
+                ept_rank[i] = rankId_to_interId[i][center];
             }
             delete[] mass_comput;
+            std::vector<std::vector<tableint>>().swap(rankId_to_interId);
 
             stats = new QueryStats;
         }
@@ -1407,7 +1410,7 @@ namespace hnswlib {
         struct QueryStats {
             double hlc_us = 0;
             double rank_us = 0;
-            double n_max_NDC = 1;
+            double n_max_NDC = 0;
             double n_hops = 0;
         };
 
@@ -1438,7 +1441,12 @@ namespace hnswlib {
             std::vector<Neighbor> retset(l_search + 1);
 
             // rank buffer
-            std::vector<std::stack<tableint>> buffer_rank_alloc(num_ranks);
+            tableint* mem_rank_alloc = new tableint[num_ranks * maxM0_]();
+            std::vector<std::pair<int, tableint*>> buffer_rank_alloc(num_ranks);
+            for (int i = 0; i < num_ranks; i++){
+                buffer_rank_alloc[i].first = 0;
+                buffer_rank_alloc[i].second = mem_rank_alloc + i * maxM0_;
+            }
             std::vector<std::stack<std::pair<dist_t, tableint>>> buffer_rank_gather(num_ranks);
 
             // 本轮搜索的邻居list信息
@@ -1453,8 +1461,9 @@ namespace hnswlib {
                 buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
             }
             if (stats != nullptr){
-                metric_distance_computations += num_ranks;
                 stats->rank_us += clk_query.getElapsedTimeus();
+                stats->n_max_NDC++;
+                metric_distance_computations += num_ranks;
                 clk_query.reset();
             }
 
@@ -1499,17 +1508,19 @@ namespace hnswlib {
 
                         if (!(visited_array[candidate_id] == visited_array_tag)) {
                             visited_array[candidate_id] = visited_array_tag;
-                            int rank_id = interId_to_rankId[candidate_id];
-                            buffer_rank_alloc[rank_id].push(candidate_id);
+                            int rank_label = interId_to_rankLabel[candidate_id];
+                            int len_buffer = buffer_rank_alloc[rank_label].first;
+                            buffer_rank_alloc[rank_label].second[len_buffer] = candidate_id;
+                            buffer_rank_alloc[rank_label].first++;
                         }
                     }
 
                     if (stats != nullptr){
                         stats->hlc_us += clk_query.getElapsedTimeus();
-                        size_t n_max = 0;
-                        for (std::stack<tableint>& bra: buffer_rank_alloc){
-                            n_max = std::max(n_max, bra.size());
-                            metric_distance_computations += bra.size();
+                        int n_max = 0;
+                        for (std::pair<int, tableint*>& bra: buffer_rank_alloc){
+                            n_max = std::max(n_max, bra.first);
+                            metric_distance_computations += bra.first;
                         }
                         stats->n_max_NDC += n_max;
                         stats->n_hops++;
@@ -1518,13 +1529,13 @@ namespace hnswlib {
                     }
 
                     for (int i = 0; i < num_ranks; i++){
-                        while (!buffer_rank_alloc[i].empty()){
-                            tableint currObj = buffer_rank_alloc[i].top();
-                            buffer_rank_alloc[i].pop();
+                        for (int j = 0; j < buffer_rank_alloc[i].first; j++) {
+                            tableint currObj = buffer_rank_alloc[i].second[j];
 
                             dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
                             buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
                         }
+                        buffer_rank_alloc[i].first = 0;
                     }
 
                     if (stats != nullptr){
@@ -1555,6 +1566,7 @@ namespace hnswlib {
                     ++k;
             }
 
+            delete[] mem_rank_alloc;
             visited_list_pool_->releaseVisitedList(vl);
             for (int i = 0; i < K; i++)
                 result.push(std::pair<dist_t, labeltype>(retset[i].distance,

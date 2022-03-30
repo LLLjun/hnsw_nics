@@ -36,7 +36,7 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
     {   int i = 100;
 #else
 
-//     omp_set_num_threads(8);
+//     omp_set_num_threads(3);
 // #pragma omp parallel for
     for (int i = 0; i < qsize; i++) {
 #endif
@@ -87,7 +87,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t";
 #if RANKMAP
     if (appr_alg.stats != nullptr) {
-        cout << "hlc_us\t" << "rank_us\t";
+        cout << "rank_us\t" << "hlc_us\t";
         cout << "NDC_max\t" << "n_hops\t";
     }
 #endif
@@ -106,7 +106,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
-            appr_alg.stats->n_max_NDC = 1;
+            appr_alg.stats->n_max_NDC = 0;
             appr_alg.stats->hlc_us = 0;
             appr_alg.stats->rank_us = 0;
             appr_alg.stats->n_hops = 0;
@@ -131,8 +131,8 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t";
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
-            cout << appr_alg.stats->hlc_us / qsize << "\t";
             cout << appr_alg.stats->rank_us / qsize << "\t";
+            cout << appr_alg.stats->hlc_us / qsize << "\t";
             cout << appr_alg.stats->n_max_NDC / qsize << "\t";
             cout << appr_alg.stats->n_hops / qsize << "\t";
         }
