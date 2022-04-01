@@ -4,7 +4,6 @@
 #define PLATG       true
 #define PROFILE     false
 #define MEMTRACE    false
-#define REPLACEQ    false
 
 #define MODE base
 
@@ -15,7 +14,6 @@ typedef float DTSET;
 typedef float DTVAL;
 typedef float DTRES;
 
-#define AKNNG       false
 
 // rank-level的映射
 #define RANKMAP     true

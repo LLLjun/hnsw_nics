@@ -299,10 +299,6 @@ namespace hnswlib {
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
 
-#if REPLACEQ
-            PriorityQueue top_candidates(ef);
-            PriorityQueue candidate_set(ef * 20, true);
-
 #if MEMTRACE
             main_mem->mem_offest_hw["search_queue"] = main_mem->mem_offest_hw["result_queue"] +
                                 ceil((float) ef * (sizeof(dist_t) + sizeof(tableint)) / MEM_ALIGNED) * MEM_ALIGNED;
@@ -311,10 +307,8 @@ namespace hnswlib {
             candidate_set.initMem(main_mem, main_mem->mem_offest_hw["search_queue"]);
 #endif
 
-#else
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
-#endif
 
             dist_t lowerBound;
             if (!has_deletions || !isMarkedDeleted(ep_id)) {
@@ -362,10 +356,6 @@ namespace hnswlib {
                     // metric_distance_computations+=size;
                 }
 
-                // if (cache_id == current_node_id)
-                //     hits_pre_comput++;
-                // if (!candidate_set.empty())
-                //     cache_id = candidate_set.top().second;
 #if (!MEMTRACE)
 #ifdef USE_SSE
                 // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -446,24 +436,7 @@ namespace hnswlib {
 
             visited_list_pool_->releaseVisitedList(vl);
 
-            // while (!top_candidates.empty()){
-            //     std::cout << top_candidates.top().first << "\t" << top_candidates.top().second << std::endl;
-            //     top_candidates.pop();
-            // }
-            // exit(0);
-
-#if REPLACEQ
-            std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates_cp;
-            while (!top_candidates.empty()){
-                top_candidates_cp.emplace(top_candidates.top());
-                top_candidates.pop();
-            }
-            // candidate_set.~PriorityQueue();
-            // top_candidates.~PriorityQueue();
-            return top_candidates_cp;
-#else
             return top_candidates;
-#endif
         }
 
         void getNeighborsByHeuristic2(

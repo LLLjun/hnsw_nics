@@ -75,9 +75,6 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
     vector<size_t> efs;// = { 10,10,10,10,10 };
 #if MEMTRACE
     efs.push_back(80);
-#elif AKNNG
-    for (int i = 200; i <= 700; i += 100)
-        efs.push_back(i);
 #else
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
@@ -319,14 +316,6 @@ void hnsw_impl(bool is_build, const string &using_dataset){
 	size_t efConstruction = 200;
 	size_t M = 20;
     size_t k = 10;
-#if AKNNG
-    // subset_size_milllions = 10;
-    k = 100;
-    if (subset_size_milllions == 10){
-        efConstruction = 400;
-        M = 30;
-    }
-#endif
 
     size_t vecsize = subset_size_milllions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
