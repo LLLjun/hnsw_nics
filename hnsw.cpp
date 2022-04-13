@@ -54,7 +54,7 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
             gt.pop();
         }
 
-#pragma omp critical
+// #pragma omp critical
         {
             total += g.size();
             while (result.size()) {
@@ -84,11 +84,11 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         efs.push_back(i);
 #endif
 
-    cout << "efs\t" << "R@" << k << "\t" << "NDC_avg\t" << "time_us" << "\t";
+    cout << "efs\t" << "R@" << k << "\t" << "time_us" << "\t";
 #if RANKMAP
     if (appr_alg.stats != nullptr) {
         cout << "rank_us\t" << "hlc_us\t";
-        cout << "NDC_max\t" << "n_hops\t";
+        cout << "NDC_avg\t" << "NDC_max\t" << "n_hops\t";
     }
 #endif
     cout << endl;
@@ -128,11 +128,12 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
         cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t" <<
                 TDC << "\t" << Tsort << "\n";
 #else
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t";
+        cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
             cout << appr_alg.stats->rank_us / qsize << "\t";
             cout << appr_alg.stats->hlc_us / qsize << "\t";
+            cout << NDC_avg << "\t";
             cout << appr_alg.stats->n_max_NDC / qsize << "\t";
             cout << appr_alg.stats->n_hops / qsize << "\t";
         }
