@@ -5,555 +5,362 @@
 #include <stdlib.h>
 #include <random>
 #include <cstring>
+// #include <omp.h>
 
 using namespace std;
 
-template <typename T>
-class DirectQuant{
+/*
+    0. 数据集分布分析
+    1. 使用 base vectors 确定量化 scale
+    2. factor_flag 存储在 vector 中，factor 应当尽可能是2的整数倍 （支持不带单粒度）
+    3. 复用现有的距离计算接口
+*/
+
+template <typename TQ>
+class VectorQuant{
 public:
-    // 直接量化
-    size_t _vecdims;
-    float _max_real, _min_real;
-    float _max_fac_coarse, _min_fac_coarse;
-    float _scale_factor_coarse;
-    
-    // 双粒度量化
-    bool _isTwoRangeQuant;
-    float _max_fac_fine, _min_fac_fine;
-    float _scale_factor_fine;
-    T _proportion_single;       // _scale_factor_fine / _scale_factor_coarse
+    float _scale;
+    int _factor_bit, _factor_value;
 
-    size_t _vecsize, _querysize;
-    size_t _coarse_table_len;
-    // std::vector<std::vector<uint8_t>> CoarseTableBase;
-    // std::vector<std::vector<uint8_t>> CoarseTableQuery;
-    uint8_t* CoarseTableBase = nullptr;
-    uint8_t* CoarseTableQuery = nullptr;
-    uint8_t one_bit_to_value[8] = {128, 64, 32, 16, 8, 4, 2, 1};
-
-    bool _isEvalFix;
-    float _quant_err = 0;
-    size_t _quant_nums = 0;
-    size_t _overflow_nums = 0;
-
-    bool _isQmethodPad = true;
-    
-
-    T max_T = std::numeric_limits<T>::max();
-    T min_T = std::numeric_limits<T>::min();
-
-    int _quant_bits;
-
-    DirectQuant(size_t vecdims, bool two_range, bool qmethod_pad, bool evalfix, size_t n_base=0, size_t n_query=0){
+    VectorQuant(size_t vecdims, bool issigned, bool uniform){
         _vecdims = vecdims;
-        _isTwoRangeQuant = two_range;
-        _isQmethodPad = qmethod_pad;
-        _isEvalFix = evalfix;
-        _quant_bits = 8 * sizeof(T);
-        
-        printf("[%d]-bit Quantization.\n", _quant_bits);
-        if (two_range)
-            CreateCoarseTable(n_base, n_query);
-    }
+        _uniform = uniform;
+        _issigned = issigned;
+        _quant_bits = 8 * sizeof(TQ);
 
-
-
-    // 必须是完整的一个矩阵，并添加量化粒度的标志
-    void AddFullDataToFix(const float *floatp, T *fixp, size_t nums, uint8_t masstype){
-        if (!_isTwoRangeQuant){
-            printf("Error, Need TwoRange Quantization Table\n");
-            exit(1);
+        if (_uniform)
+            printf("Quantization use [%d]-bit uniform method.\n", _quant_bits);
+        else {
+            _quant_bits--;
+            printf("Quantization use [%d]-bit non-uniform method.\n", _quant_bits);
         }
-        // masstype: 0-basedata, 1-query
-        if (masstype == 0){
-            float2fix_impl(floatp, fixp, nums, CoarseTableBase);
-        } else if (masstype == 1){
-            float2fix_impl(floatp, fixp, nums, CoarseTableQuery);
+
+        // todo: 目前是采用了绝对不溢出&&对称的方案
+        if (_issigned) {
+            _max_TQ = pow(2, _quant_bits-1) - 1;
+            _min_TQ = -_max_TQ;
         } else {
-            printf("error\n");
-            exit(1);
-        }
-        printf("Add full data to fix for %d mass ok\n", masstype);
-    }
-
-    void AddFullDataToFix(const float *floatp, T *fixp, size_t nums){
-        if (_isTwoRangeQuant){
-            printf("Error, Non TwoRange Quantization Table\n");
-            exit(1);
-        }
-        float2fix_impl(floatp, fixp, nums);
-        printf("Add full data to fix data done.\n");
-    }
-
-    uint8_t TableIDToFlag(uint8_t *CoarseTable, size_t cur_id, size_t cur_pos){
-        uint8_t flag_id = (uint8_t) (cur_pos / 8);
-        uint8_t bit_id = (uint8_t) (cur_pos % 8);
-        uint8_t flag_add = one_bit_to_value[bit_id];
-
-        uint8_t final_flag = CoarseTable[cur_id * _coarse_table_len + flag_id] & flag_add;
-
-        if (final_flag == 0){
-            return (uint8_t) 0;
-        } else if(final_flag == flag_add){
-            return (uint8_t) 1;
-        } else {
-            printf("error in TableIDToFlag\n");
-            printf("before value: %d, after value: %d\n", 
-                    CoarseTable[cur_id * _coarse_table_len + flag_id], final_flag);
-            exit(1);
+            _max_TQ = pow(2, _quant_bits) - 1;
+            _min_TQ = 0;
         }
     }
 
-    // 已有粗粒度表格，返回缩放因子，用于计算误差
-    void TableIdToFactorList(size_t table_id, float* id_factor_list,
-                            uint8_t *CoarseTable){
+    ~VectorQuant() {}
 
-        uint8_t table_flag;
-        for (size_t i = 0; i < _vecdims; i++){
-            table_flag = TableIDToFlag(CoarseTable, table_id, i);
-            
-            if (table_flag == 0){
-                id_factor_list[i] = _scale_factor_fine;
-            } else if (table_flag == 1){
-                id_factor_list[i] = _scale_factor_coarse;
-            } else{
-                printf("error in TableIdToFactorList\n");
-                printf("table flag: %d\n", table_flag);
-                exit(1);
-            }
+    void FixInit(const float *p_data, size_t nums, size_t nums_sample);
+    void FloatToFix(const float *p_data, TQ *p_data_TQ, size_t nums, bool is_eval = false);
+    void GetDistrib(const float* p_data, int nums, int num_divide, vector<pair<float, float>> &v_distrib, int dim_prof = -1);
+
+private:
+    // base info
+    size_t _vecdims;
+    TQ _max_TQ, _min_TQ;
+    float _max_real, _min_real;
+    float _max_range;
+    int _quant_bits;
+    bool _issigned;
+    //
+    bool _uniform;
+    float _bound;
+
+    inline TQ round_float(float number){
+        return (number > 0.0) ? floor(number + 0.5) : ceil(number - 0.5);
+    }
+
+    inline float decode_TQ(TQ data_TQ){
+        if (_uniform)
+            return data_TQ / _scale;
+        else {
+            TQ move = data_TQ & 0x0001;
+            if (move == 1)
+                return (data_TQ >> 1) / _scale;
+            else
+                return (data_TQ >> 1) / _scale / _factor_value;
         }
     }
 
-    // 已有粗粒度表格，返回比例倍数，用于计算
-    void TableIdToProportionList(size_t table_id, T* id_proportion_list, uint8_t *CoarseTable){
-        // if (table_id > CoarseTable.size()){
-        //     printf("error in Table Id ToProportionList\n");
-        //     printf("query id: %d, CoarseTable size: %d,\n", table_id, CoarseTable.size());
-        //     exit(1);
-        // }
+    void GetScale(const float* p_data, int nums);
+    void GetSF(const float* p_data, int nums, int num_divide = -1, float divide_val = 0);
+    void EvalFix(const float *p_data, const TQ *p_data_TQ, int nums, vector<float>& quant_err);
+    void GetFactor(vector<pair<float, float>>& v_distrib, vector<pair<int, float>>& v_factor);
 
-        for (size_t cur_pos = 0; cur_pos < _vecdims; cur_pos++){
-            uint8_t flag_id = (uint8_t) (cur_pos / 8);
-            uint8_t bit_id = (uint8_t) (cur_pos % 8);
-            uint8_t flag_add = one_bit_to_value[bit_id];
+};
 
-            uint8_t final_flag = CoarseTable[table_id * _coarse_table_len + flag_id] & flag_add;
-
-            if (final_flag == 0){
-                id_proportion_list[cur_pos] = 1;
-            } else if(final_flag == flag_add){
-                id_proportion_list[cur_pos] = _proportion_single;
-            } else {
-                printf("error in Table Id ToProportionList\n");
-                printf("table flag: %d\n", final_flag);
-                exit(1);
-            }
-        }
-    }
-
-    void TableIdToTransFloatData(size_t table_id, float* in_pt, float* trans_pt, uint8_t *CoarseTable){
-        // if (table_id > CoarseTable.size()){
-        //     printf("error in Table Id ToProportionList\n");
-        //     printf("query id: %d, CoarseTable size: %d,\n", table_id, CoarseTable.size());
-        //     exit(1);
-        // }
-
-        for (size_t cur_pos = 0; cur_pos < _vecdims; cur_pos++){
-            uint8_t flag_id = (uint8_t) (cur_pos / 8);
-            uint8_t bit_id = (uint8_t) (cur_pos % 8);
-            uint8_t flag_add = one_bit_to_value[bit_id];
-
-            uint8_t final_flag = CoarseTable[table_id * _coarse_table_len + flag_id] & flag_add;
-
-            if (final_flag == 0){
-                trans_pt[cur_pos] = in_pt[cur_pos];
-            } else if(final_flag == flag_add){
-                trans_pt[cur_pos] = in_pt[cur_pos] * _proportion_single;
-            } else {
-                printf("error in Table Id ToProportionList\n");
-                printf("table flag: %d\n", final_flag);
-                exit(1);
-            }
-        }
-    }
 
     // 第一次定点，必须调用这个函数
-    void FixDataPoint(const float *floatp, size_t nums, size_t sample_nums){
-        if (nums > sample_nums){
-            printf("Get scale factor: using sample data size is %d\n", sample_nums);
-            float* sample_datas = new float[sample_nums * _vecdims];
+    template <typename TQ>
+    void VectorQuant<TQ>::FixInit(const float *p_data, size_t nums, size_t nums_sample){
+        int num_divide = -1;
+        float divide_val = 0;
+        if (!_uniform){
+            num_divide = 32;
+            divide_val = 0.97;
+        }
+
+        if (nums > nums_sample){
+            printf("Get scale: using sample data size is %d\n", nums_sample);
+            float* p_data_init = new float[nums_sample * _vecdims];
             std::vector<size_t> sample_list;
             for (size_t i = 0; i < nums; i++)
                 sample_list.push_back(i);
             srand((unsigned int)time(NULL));
             random_shuffle(sample_list.begin(), sample_list.end());
-            sample_list.resize(sample_nums);
+            sample_list.resize(nums_sample);
             std::vector<size_t>(sample_list).swap(sample_list);
 
-            for (size_t i = 0; i < sample_nums; i++) {
+            for (size_t i = 0; i < nums_sample; i++) {
                 size_t data_id = sample_list[i];
-                memcpy(sample_datas + i * _vecdims, floatp + data_id * _vecdims, _vecdims * sizeof(float));
+                memcpy(p_data_init + i * _vecdims, p_data + data_id * _vecdims, _vecdims * sizeof(float));
             }
-            GetFactor(sample_datas, sample_nums);
-            delete[] sample_datas;
+
+            GetSF(p_data_init, nums_sample, num_divide, divide_val);
+            delete[] p_data_init;
         } else{
             printf("Get scale factor: using all data size is %d\n", nums);
-            GetFactor(floatp, nums);
+            GetSF(p_data, nums, num_divide, divide_val);
         }
     }
 
+    template <typename TQ>
+    void VectorQuant<TQ>::FloatToFix(const float *p_data, TQ *p_data_TQ, size_t nums, bool is_eval) {
+        printf("Quant %d float data to TQ is doing\n", nums);
 
-    // 前提：需要获取最值
-    float DatasetDistrib(const float *floatp, size_t nums, size_t num_distrib, size_t sample_nums, float divide_val){
-        std::vector<std::vector<size_t>> dims_to_distrib(_vecdims);
-        std::vector<float> offest(num_distrib + 1);
-        printf("offest data:\n");
-        if (_min_fac_coarse >= 0){
-            offest[0] = 0;
-            for (size_t i = 1; i <= num_distrib; i++){
-                offest[i] = _max_fac_coarse * i / num_distrib;
-            } 
-        } else{
-            if (num_distrib % 2 != 0){
-                printf("Error. num_distrib must be devide 2.\n");
+        size_t overflow_nums = 0;
+
+// #pragma omp parallel for
+        for (size_t i = 0; i < nums; i++){
+            for (size_t j = 0; j < _vecdims; j++){
+                float cur_point_scale = p_data[i * _vecdims + j] * _scale;
+
+                if (_uniform) {
+                    if ((cur_point_scale >= (float)_min_TQ) && (cur_point_scale <= (float)_max_TQ))
+                        p_data_TQ[i * _vecdims + j] = round_float(cur_point_scale);
+                    else {
+                        if (cur_point_scale > (float)_max_TQ)
+                            p_data_TQ[i * _vecdims + j] = _max_TQ;
+                        else if (cur_point_scale < (float)_min_TQ)
+                            p_data_TQ[i * _vecdims + j] = _min_TQ;
+// #pragma critical
+{
+                        overflow_nums++;
+}
+                    }
+                } else {
+                    TQ cur_point_T;
+                    int move = 0;
+                    if ((cur_point_scale >= (float)_min_TQ) && (cur_point_scale <= (float)_max_TQ)) {
+                        if (abs(cur_point_scale) <= _bound)
+                            cur_point_T = round_float(cur_point_scale * _factor_value);
+                        else {
+                            cur_point_T = round_float(cur_point_scale);
+                            move = 1;
+                        }
+                    }
+                    else {
+                        if (cur_point_scale > (float)_max_TQ)
+                            p_data_TQ[i * _vecdims + j] = _max_TQ;
+                        else if (cur_point_scale < (float)_min_TQ)
+                            p_data_TQ[i * _vecdims + j] = _min_TQ;
+
+// #pragma critical
+{
+                        overflow_nums++;
+}
+                    }
+
+                    // todebug
+                    if (move)
+                        p_data_TQ[i * _vecdims + j] = (TQ)((cur_point_T << 1) | 0x0001);
+                    else
+                        p_data_TQ[i * _vecdims + j] = (TQ)((cur_point_T << 1) & 0xfffe);
+                }
+            }
+        }
+        printf("Quant %d float data to TQ done, over nums is %u\n", nums, overflow_nums);
+
+        if (is_eval){
+            vector<float> quant_err;
+            EvalFix(p_data, p_data_TQ, nums, quant_err);
+            printf("[Fix Error] Avg: %.10f, Min: %.10f, Max: %.10f \n",
+                        quant_err[0], quant_err[1], quant_err[2]);
+        }
+    }
+
+    template <typename TQ>
+    void VectorQuant<TQ>::GetDistrib(const float* p_data, int nums, int num_divide, vector<pair<float, float>> &v_distrib, int dim_prof) {
+        v_distrib.resize(num_divide + 1, make_pair(0, 0));
+        vector<uint64_t> v_sum(num_divide, 0);
+
+        if (_issigned){
+            float abs_real = max(_max_real, abs(_min_real));
+            if (num_divide % 2 != 0){
+                printf("Error. num_divide must be devide 2.\n");
                 exit(1);
             }
-            size_t num_d2 = num_distrib / 2;
-            offest[num_d2] = 0;
-            for (size_t i = 1; i <= num_d2; i++){
-                offest[num_d2 + i] = _max_fac_coarse * i / num_d2;
-                offest[num_d2 - i] = -offest[num_d2 + i];
-            }
-        }
-        for (size_t i = 0; i <= num_distrib; i++){
-            printf("%.3f\t", offest[i]);
-        } 
-        printf("\n");
-
-        // dims_to_distrib
-        for (size_t i = 0; i < _vecdims; i++){
-            dims_to_distrib[i].resize(num_distrib, 0);
-
-            for (size_t j = 0; j < nums; j++){
-                float dataf = floatp[i + j * _vecdims];
-                size_t pos_i = 0;
-                if (dataf != _min_real){
-                    while(dataf > offest[pos_i]){
-                        if (dataf <= offest[pos_i+1])
-                            break;
-                        pos_i++;
-                    }
-                }
-                dims_to_distrib[i][pos_i]++;
-            }
-            {
-                size_t num_t = 0;
-                for (size_t j = 0; j < num_distrib; j++){
-                    num_t += dims_to_distrib[i][j];
-                }
-                if (num_t != nums){
-                    printf("dims_to_distrib sum error, dim: %d, num_t: %d, nums: %d\n", i, num_t, nums);
-                    exit(1);
-                }
-            }
-        }
-
-        size_t tmp_num = 0;
-        size_t fine_quant_nums = (size_t) nums * _vecdims * divide_val;
-        float fine_quant_value;
-
-        if (_min_fac_coarse >= 0){
-            for (size_t i = 0; i < num_distrib; i++){
-                for (size_t j = 0; j < _vecdims; j++){
-                    tmp_num += dims_to_distrib[j][i];
-                }
-                if (tmp_num >= fine_quant_nums){
-                    fine_quant_value = offest[i+1];
-                    break;
-                }
+            int num_d2 = num_divide / 2;
+            v_distrib[num_d2].first = 0;
+            for (int i = 1; i <= num_d2; i++){
+                v_distrib[num_d2 + i].first = abs_real * i / num_d2;
+                v_distrib[num_d2 - i].first = -v_distrib[num_d2 + i].first;
             }
         } else {
-            size_t num_d2 = num_distrib / 2;
-            for (size_t i = 0; i < num_d2; i++){
-                for (size_t j = 0; j < _vecdims; j++){
-                    tmp_num += dims_to_distrib[j][num_d2 + i];
-                    if (i != 0)
-                        tmp_num += dims_to_distrib[j][num_d2 - i];
-                }
-                if (tmp_num >= fine_quant_nums){
-                    fine_quant_value = offest[num_d2+i+1];
-                    break;
-                }
-                if (i == (num_d2 - 1))
-                    fine_quant_value = offest[num_distrib];
+            v_distrib[0].first = 0;
+            for (size_t i = 1; i <= num_divide; i++){
+                v_distrib[i].first = _max_real * i / num_divide;
             }
         }
-        printf("fine quantization val: %.2f, expect num: %d, fine num: %d, fine value: %.3f\n",
-                divide_val, fine_quant_nums, tmp_num, fine_quant_value);
+
+        if (dim_prof == -1) {
+            for (int i = 0; i < nums; i++) {
+                for (int j = 0; j < _vecdims; j++) {
+                    int pos = num_divide - 1;
+                    while (pos >= 0){
+                        if (p_data[i * _vecdims + j] >= v_distrib[pos].first){
+                            v_sum[pos]++;
+                            break;
+                        }
+                        pos--;
+                    }
+                    // debug
+                    if (pos < 0){
+                        printf("Error, pos must >= 0 \n"); exit(1);
+                    }
+                }
+            }
+
+            for (int i = 0; i < num_divide; i++)
+                v_distrib[i].second = (float)v_sum[i] / _vecdims;
+
+        } else {
+            if (dim_prof >= _vecdims){
+                printf("Error, dim_prof must < _vecdims \n"); exit(1);
+            }
+            for (int i = 0; i < nums; i++) {
+                int pos = num_divide - 1;
+                while (pos >= 0){
+                    if (p_data[i * _vecdims + dim_prof] >= v_distrib[pos].first){
+                        v_distrib[pos].second++;
+                        break;
+                    }
+                    pos--;
+                }
+                // debug
+                if (pos < 0){
+                    printf("Error, pos must >= 0 \n"); exit(1);
+                }
+            }
+        }
+        // printf distrib
+        // float sum = 0;
+        // for (pair<float, float> vd : v_distrib) {
+        //     sum += vd.second;
+        //     printf("%.3f\t%.6f\n", vd.first, (vd.second / nums));
+        // }
+        // printf("total: %.2f\n", sum);
         // exit(0);
-        return fine_quant_value;
-    }
-private:
-    T round_float(float number){
-        return (number > 0.0) ? floor(number + 0.5) : ceil(number - 0.5);
     }
 
-    void GetFactor(const float *floatp, size_t nums){
+
+    template <typename TQ>
+    void VectorQuant<TQ>::GetScale(const float* p_data, int nums){
         _max_real = std::numeric_limits<float>::min();
         _min_real = std::numeric_limits<float>::max();
 
-        for (size_t i = 0; i < nums; i++){
-            size_t pos_offest = i * _vecdims;
-            _max_real = max(_max_real, *max_element(floatp + pos_offest, floatp + pos_offest + _vecdims));
-            _min_real = min(_min_real, *min_element(floatp + pos_offest, floatp + pos_offest + _vecdims));
+        for (int i = 0; i < nums; i++){
+            int pos_offest = i * _vecdims;
+            _max_real = max(_max_real, *max_element(p_data + pos_offest, p_data + pos_offest + _vecdims));
+            _min_real = min(_min_real, *min_element(p_data + pos_offest, p_data + pos_offest + _vecdims));
         }
+        _max_range = max(_max_real, abs(_min_real));
+        _scale = _max_TQ / _max_range;
+
         printf("max point(real) is %.3f, min point(real) is %.3f\n", _max_real, _min_real);
+    }
 
-        // Simple method
-        _max_fac_coarse = _max_real;
-        _min_fac_coarse = _min_real;
+    template <typename TQ>
+    void VectorQuant<TQ>::GetSF(const float* p_data, int nums, int num_divide, float divide_val) {
+        GetScale(p_data, nums);
 
-        if (_isTwoRangeQuant){
-            // liujun. double factor quantization
-            // todo: set _proportion_single to int, else error is very high
-            _max_fac_fine = DatasetDistrib(floatp, nums, 60, nums, 0.95);
-            if (_min_fac_coarse >= 0)
-                _min_fac_fine = _min_real;
-            else
-                _min_fac_fine = -_max_fac_fine;
-            printf("max point(fine scale) is %.3f, min point(fine scale) is %.3f\n", _max_fac_fine, _min_fac_fine);
-        } 
-        // else {
-        //     // liujun. simple fix quantization
-        //     _max_fac_fine = _max_fac_coarse;
-        //     _min_fac_fine = _min_fac_coarse;
-        // }
+        if (!_uniform) {
+            vector<pair<float, float>> v_distrib;
+            GetDistrib(p_data, nums, num_divide, v_distrib);
 
-        printf("max point(carose scale) is %.3f, min point(carose scale) is %.3f\n", _max_fac_coarse, _min_fac_coarse);
-        
-        if (_isQmethodPad){
-            float max_factor = (float) max_T / _max_fac_coarse;
-            float min_factor = std::numeric_limits<float>::max();
-            if (min_T != 0 && _min_fac_coarse != 0)
-                min_factor = (float) min_T / _min_fac_coarse;
-            _scale_factor_coarse = min(max_factor, min_factor);
+            vector<pair<int, float>> v_factor;
+            GetFactor(v_distrib, v_factor);
 
-            if (_isTwoRangeQuant){
-                max_factor = (float) max_T / _max_fac_fine;
-                min_factor = std::numeric_limits<float>::max();
-                if (min_T != 0 && _min_fac_fine != 0)
-                    min_factor = (float) min_T / _min_fac_fine;
-                _scale_factor_fine = min(max_factor, min_factor);
-                // to limit _scale_factor_fine
-                unsigned pp = round_float(log2((_scale_factor_fine / _scale_factor_coarse)));
-                if (pp < 1)
-                    pp = 1;
-                _proportion_single = (T)exp2(pp);
-                // _scale_factor_fine = (unsigned)(_scale_factor_fine / _scale_factor_coarse) * _scale_factor_coarse;
-                _scale_factor_fine = _proportion_single * _scale_factor_coarse;
+
+            for (pair<int, float> v_f: v_factor){
+                float radio = v_f.second / nums;
+                if (radio >= divide_val){
+                    _factor_bit = v_f.first;
+                    _factor_value = pow(2, v_f.first);
+                    break;
+                }
             }
-        } else{ 
-            // todo
-            printf("Error, unsupport non padding\n");
-            exit(1);
-            int fixpointpos = (int) floor(log2(max_T / _max_fac_coarse));
-            int fixpointneg = std::numeric_limits<int>::min();
-            if (min_T != 0 && _min_fac_coarse != 0)
-                fixpointneg = (int) floor(log2(min_T / _min_fac_coarse));
-            int fixpoint = max(fixpointpos, fixpointneg);
-            _scale_factor_coarse = pow(2, fixpoint);
-
-            fixpointpos = (int) floor(log2(max_T / _max_fac_fine));
-            fixpointneg = std::numeric_limits<int>::min();
-            if (min_T != 0 && _min_fac_fine != 0)
-                fixpointneg = (int) floor(log2(min_T / _min_fac_fine));
-            fixpoint = max(fixpointpos, fixpointneg);
-            _scale_factor_fine = pow(2, fixpoint);
+            _bound = _max_range / _factor_value;
         }
 
-        if (_isTwoRangeQuant){
-            // youwenti 0.185 7
-            // _proportion_single = (T) (_scale_factor_fine / _scale_factor_coarse);
-            
-            printf("max T: %d, min T: %d, carose scale factor: %.3f, fine scale factor: %.3f\n", 
-                    max_T, min_T, _scale_factor_coarse, _scale_factor_fine);
-            printf("_proportion_single: %d\n", _proportion_single);
+        if (_uniform){
+            printf("scale: %.3f, max_range: %.3f\n", _scale, _max_range);
         } else{
-            printf("max T: %d, min T: %d, scale factor: %.3f\n", 
-                    max_T, min_T, _scale_factor_coarse);
+            printf("scale: %.3f, max_range: %.3f, factor: %d, bound: %.3f\n",
+                    _scale, _max_range, _factor_value, _bound);
         }
     }
 
-    void fix2floatCoarse(const T *fixp, float *floatp, size_t nums, float *cfactor){
-        for (size_t i = 0; i < nums; i++){
-            for (size_t j = 0; j < _vecdims; j++){
-                floatp[i * _vecdims + j] = (float) fixp[i * _vecdims + j] / cfactor[i * _vecdims + j];
-            }
-        }
-    }
+    template <typename TQ>
+    void VectorQuant<TQ>::EvalFix(const float *p_data, const TQ *p_data_TQ, int nums, vector<float>& quant_err){
+        // avg, min, max
+        quant_err.resize(3);
+        quant_err[1] = numeric_limits<float>::max();
+        quant_err[2] = numeric_limits<float>::min();
 
-    void fix2float(const T *fixp, float *floatp, size_t nums){
-        for (size_t i = 0; i < nums; i++){
-            for (size_t j = 0; j < _vecdims; j++){
-                floatp[i * _vecdims + j] = (float) fixp[i * _vecdims + j] / _scale_factor_coarse;
-            }
-        }
-    }
-
-    void EvalFixCoarse(const float *floatp, const T *fixp, size_t nums,
-                        uint8_t *CoarseTable){
-        printf("begin eval coarse %d nums float -> fix\n", nums);
-
-        float tmperr1 = 0;
-        float tmperr2 = 0;
-        float *trans_floatp = new float[nums * _vecdims];
-        float *coarse_factor = new float[nums * _vecdims];
-        for (size_t i = 0; i < nums; i++){
-            TableIdToFactorList(i, coarse_factor + i * _vecdims, CoarseTable);
-        }
-        fix2floatCoarse(fixp, trans_floatp, nums, coarse_factor);
-
-        for (size_t i = 0; i < nums; i++){
-            tmperr1 = 0;
-            for(size_t j = 0; j < _vecdims; j++){
-                tmperr1 += pow((floatp[i * _vecdims + j] - trans_floatp[i * _vecdims + j]), 2);
-                // debug
-                // printf("%.5f -> %3d -> %.5f\n", 
-                //         floatp[i * _vecdims + j], fixp[i * _vecdims + j], trans_floatp[i * _vecdims + j]);
-            }
-            tmperr2 += pow(tmperr1, 0.5);
-        }
-        
-        _quant_err = (_quant_err * _quant_nums + tmperr2) / (_quant_nums + nums);
-        _quant_nums += nums;
-
-        printf("end eval coarse %d nums float -> fix\n", nums);
-
-        delete[] trans_floatp;
-        delete[] coarse_factor;
-    }
-
-    void EvalFix(const float *floatp, const T *fixp, size_t nums){
-        float tmperr = 0;
-        float *trans_floatp = new float[nums * _vecdims];
-        fix2float(fixp, trans_floatp, nums);
-
+        float sumerr = 0;
         for (size_t i = 0; i < nums; i++){
             for(size_t j = 0; j < _vecdims; j++){
-                tmperr += pow((floatp[i * _vecdims + j] - trans_floatp[i * _vecdims + j]), 2);
-                // debug
-                // printf("%.3f -> %d -> %.3f\n", 
-                //         floatp[i * _vecdims + j], fixp[i * _vecdims + j], trans_floatp[i * _vecdims + j]);
-            }
-            _quant_err = (_quant_err * _quant_nums + pow(tmperr, 0.5)) / (_quant_nums + 1);
-        }
-        _quant_nums += nums;
-
-        delete[] trans_floatp;
-    }
-
-    inline float fix2floatSingle(const T *fixp){
-        return (float) fixp[0] / _scale_factor_coarse;
-    }
-
-
-    // 初始化粗粒度表格（两个）
-    void CreateCoarseTable(size_t basedata_nums, size_t query_nums){
-        if (!_isTwoRangeQuant){
-            printf("Error, invalid use TwoRange Quantization\n");
-            exit(1);
-        }
-        _vecsize = basedata_nums;
-        _querysize = query_nums;
-        _coarse_table_len = (size_t) ceil(_vecdims / 8);
-
-        CoarseTableBase = new uint8_t[_vecsize * _coarse_table_len]();
-        CoarseTableQuery = new uint8_t[_querysize * _coarse_table_len]();
-
-        printf("Coarse Table Base size is %d, Coarse Table Query size is %d, table len is %d\n", 
-                _vecsize, _querysize, _coarse_table_len);
-    }
-
-    void float2fix_impl(const float *floatp, T *fixp, size_t nums, 
-                        uint8_t *CoarseTable){
-        // if (CoarseTable.size() != nums){
-        //     printf("float2fix_impl error, CoarseTable size: %d, nums: %d\n",
-        //             CoarseTable.size(), nums);
-        //     exit(1);
-        // }
-        printf("Fix %d nums float data to T is doing\n", nums);
-
-        float cur_point, cur_point_T;
-
-        // for CoarseTable
-        uint8_t flag_id, bit_id, flag_add;
-
-        for (size_t i = 0; i < nums; i++){
-            for (size_t j = 0; j < _vecdims; j++){
-                cur_point = floatp[i * _vecdims + j];
-                flag_id = (uint8_t) (j / 8);
-                bit_id = (uint8_t) (j % 8);
-                flag_add = 0;
-                
-                if((cur_point <= _max_fac_fine) && (cur_point >= _min_fac_fine)){
-                    cur_point_T = cur_point * _scale_factor_fine;
-                } else{
-                    cur_point_T = cur_point * _scale_factor_coarse;
-                    // add coarse flag
-                    flag_add = one_bit_to_value[bit_id];
-                    CoarseTable[i * _coarse_table_len + flag_id] |= flag_add;
-                }
-
-                if (cur_point_T > (float) max_T){
-                    fixp[i * _vecdims + j] = max_T;
-                    _overflow_nums++;
-                }
-                else if (cur_point_T < (float) min_T){
-                    fixp[i * _vecdims + j] = min_T;
-                    _overflow_nums++;
-                }
-                else
-                    fixp[i * _vecdims + j] = round_float(cur_point_T);
+                float tmperr = pow((p_data[i*_vecdims+j] - decode_TQ(p_data_TQ[i*_vecdims+j])), 2);
+                sumerr += tmperr;
+                quant_err[1] = min(quant_err[1], tmperr);
+                quant_err[2] = max(quant_err[2], tmperr);
             }
         }
-        printf("Fix %d nums float data to T is done\n", nums);
-
-        if (_isEvalFix){
-            EvalFixCoarse(floatp, fixp, nums, CoarseTable);
-        }
+        quant_err[0] = sqrt(sumerr / nums / _vecdims);
+        quant_err[1] = sqrt(quant_err[1]);
+        quant_err[2] = sqrt(quant_err[2]);
     }
 
-    void float2fix_impl(const float *floatp, T *fixp, size_t nums){
-        printf("Fix %d nums float data to T is doing\n", nums);
+    /*
+        using non-uniform method
+    */
+    // v_factor.first: 移动的位数
+    template <typename TQ>
+    void VectorQuant<TQ>::GetFactor(vector<pair<float, float>>& v_distrib, vector<pair<int, float>>& v_factor) {
+        int n_interval = v_distrib.size() - 1;
+        if (_issigned)
+            n_interval /= 2;
 
-        float cur_point, cur_point_T;
+        int v_order = log2(n_interval);
+        if ((int)pow(2, v_order) != n_interval){
+            printf("v_distrib size must be 2^n.\n"); exit(1);
+        }
 
-        for (size_t i = 0; i < nums; i++){
-            for (size_t j = 0; j < _vecdims; j++){
-                cur_point = floatp[i * _vecdims + j];
-                
-                cur_point_T = cur_point * _scale_factor_coarse;
+        printf("order, nums\n");
+        v_factor.resize(v_order + 1);
+        float tmp_sum = 0;
+        int order_i = 0;
+        for (int i = 0; i < n_interval; i++){
+            if (_issigned)
+                tmp_sum += (v_distrib[n_interval+i].second + v_distrib[n_interval-1-i].second);
+            else
+                tmp_sum += v_distrib[i].second;
 
-                if (cur_point_T > (float) max_T){
-                    fixp[i * _vecdims + j] = max_T;
-                    _overflow_nums++;
-                }
-                else if (cur_point_T < (float) min_T){
-                    fixp[i * _vecdims + j] = min_T;
-                    _overflow_nums++;
-                }
-                else
-                    fixp[i * _vecdims + j] = round_float(cur_point_T);             
+            if ((i + 1) == (int)pow(2, order_i)){
+                v_factor[order_i].first = v_order - order_i;
+                v_factor[order_i].second = tmp_sum;
+                printf("%d, %.3f\n", v_factor[order_i].first, v_factor[order_i].second);
+                order_i++;
             }
         }
-        printf("Fix %d nums float data to T is done\n", nums);
-
-        if (_isEvalFix){
-            EvalFix(floatp, fixp, nums);
-        }
     }
-
-
-};
 
 #endif

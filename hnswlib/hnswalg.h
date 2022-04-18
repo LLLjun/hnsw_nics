@@ -15,6 +15,7 @@
 #include "profile.h"
 #include "mem.h"
 #include "omp.h"
+#include "quantization.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -1401,7 +1402,7 @@ namespace hnswlib {
             delete[] mass_comput;
             std::vector<std::vector<tableint>>().swap(rankId_to_interId);
 
-            stats = new QueryStats;
+            // stats = new QueryStats;
         }
 
         /*
@@ -1577,7 +1578,46 @@ namespace hnswlib {
 
 #endif
 
+        /*
+            replace feature
+        */
+        // template<typename DTfix>
+        void ReplaceFeature(const DTQTZ *fix_feature, size_t &nums){
+            if (nums != max_elements_){
+                printf("Error, replace num not match \n");
+                exit(1);
+            }
 
+            size_t dims = *((size_t *)dist_func_param_);
+
+            size_t data_size_fix_ = dims * sizeof(DTQTZ);
+            size_t size_data_per_element_fix_ = size_links_level0_ + data_size_fix_ + sizeof(labeltype);
+            size_t label_offset_fix_ = size_links_level0_ + data_size_fix_;
+
+            char *data_level0_memory_fix_ = (char *) malloc(max_elements_ * size_data_per_element_fix_);
+            if (data_level0_memory_fix_ == nullptr)
+                throw std::runtime_error("Not enough memory");
+            
+            // structure:
+            // linksize | maxM0_ * tableint | data_size_ | label 
+            for (size_t inter_i = 0; inter_i < max_elements_; inter_i++){
+                memcpy(data_level0_memory_fix_ + inter_i * size_data_per_element_fix_, 
+                        data_level0_memory_ + inter_i * size_data_per_element_, size_links_level0_);
+                memcpy(data_level0_memory_fix_ + inter_i * size_data_per_element_fix_ + size_links_level0_,
+                        fix_feature + dims * getExternalLabel(inter_i), data_size_fix_);
+                memcpy(data_level0_memory_fix_ + inter_i * size_data_per_element_fix_ + label_offset_fix_,
+                        getExternalLabeLp(inter_i), sizeof(labeltype));
+            }
+
+            data_size_ = data_size_fix_;
+            size_data_per_element_ = size_data_per_element_fix_;
+            label_offset_ = label_offset_fix_;
+            
+            free(data_level0_memory_);
+            data_level0_memory_ = data_level0_memory_fix_;
+
+            printf("Replace feature is done \n");
+        }
 
         void checkIntegrity(){
             int connections_checked=0;

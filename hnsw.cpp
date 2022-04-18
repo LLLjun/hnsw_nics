@@ -11,6 +11,12 @@
 using namespace std;
 using namespace hnswlib;
 
+#if QUANT
+extern bool stage_search = false;
+extern int move_bits = 0;
+#endif
+
+
 template<typename DTres>
 static void
 get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim,
@@ -26,8 +32,9 @@ get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim,
 
 template<typename DTval, typename DTres>
 static float
-test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
+test_approx(void *massQ_v, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
             vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
+    DTval* massQ = (DTval*)massQ_v;
     size_t correct = 0;
     size_t total = 0;
     //uncomment to test in parallel mode:
@@ -37,7 +44,7 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 #else
 
 //     omp_set_num_threads(3);
-// #pragma omp parallel for
+#pragma omp parallel for
     for (int i = 0; i < qsize; i++) {
 #endif
 
@@ -54,7 +61,7 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
             gt.pop();
         }
 
-// #pragma omp critical
+#pragma omp critical
         {
             total += g.size();
             while (result.size()) {
@@ -71,7 +78,7 @@ test_approx(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 
 template<typename DTval, typename DTres>
 static void
-test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
+test_vs_recall(void *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
 #if MEMTRACE
@@ -115,7 +122,7 @@ test_vs_recall(DTval *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, siz
 
         Timer stopw = Timer();
 
-        float recall = test_approx(massQ, qsize, appr_alg, vecdim, answers, k);
+        float recall = test_approx<DTval, DTres>(massQ, qsize, appr_alg, vecdim, answers, k);
         float time_us_per_query = (double) stopw.getElapsedTimeus() / qsize;
         float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
         float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
@@ -269,6 +276,45 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         L2Space l2space(vecdim);
         HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, index, false);
 
+#if RANKMAP
+        appr_alg->initRankMap();
+#endif
+
+#if QUANT
+        stage_search = true;
+        move_bits = (int)ceil(log2(vecdim));
+
+        DTset *massB = new DTset[vecsize * vecdim]();
+        DTQTZ* massB_fix = new DTQTZ[vecsize * vecdim]();
+        cout << "Loading base data:\n";
+        if (format == "float"){
+            LoadBinToArray<DTval>(index_string["path_data"], massB, vecsize, vecdim);
+        } else if (format == "uint8"){
+            DTset *massB_int = new DTset[vecsize * vecdim]();
+            LoadBinToArray<DTset>(index_string["path_data"], massB_int, vecsize, vecdim);
+            TransIntToFloat<DTset>(massB, massB_int, vecsize, vecdim);
+            delete[] massB_int;
+        } else {
+            printf("Error, unsupport format \n");
+            exit(1);
+        }
+
+        bool issigned = true;
+        if (dataname == "gist")
+            issigned = false;
+        VectorQuant<DTQTZ> vecquant(vecdim, issigned, true);
+        vecquant.FixInit(massB, vecsize, vecsize);
+        vecquant.FloatToFix(massB, massB_fix, vecsize, true);
+
+        appr_alg->ReplaceFeature(massB_fix, vecsize);
+        delete[] massB;
+        delete[] massB_fix;
+
+        DTQTZ* massQ_fix = new DTQTZ[qsize * vecdim]();
+        vecquant.FloatToFix(massQ, massQ_fix, qsize, true);
+        delete[] massQ;
+#endif
+
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
@@ -277,12 +323,12 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         appr_alg->initMem();
 #endif
 
-#if RANKMAP
-        appr_alg->initRankMap();
-#endif
-
         cout << "Comput recall: \n";
-        test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
+#if QUANT
+        test_vs_recall<DTQTZ, DTres>(massQ_fix, qsize, *appr_alg, vecdim, answers, k);
+#else
+        test_vs_recall<DTval, DTres>(massQ, qsize, *appr_alg, vecdim, answers, k);
+#endif
 
 #if MEMTRACE
         string file_mem_trace = "/home/usr-xkIJigVq/nmp/hnsw_nics/output/mem/trace.txt";
@@ -295,10 +341,10 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 
 void hnsw_impl(bool is_build, const string &using_dataset){
     string path_project = "/home/usr-xkIJigVq/nmp/hnsw_nics";
-#if RANKMAP
-    string label = "rank-map/";
+#if QUANT
+    string label = "quant/";
 #else
-    string label = "plat/";
+    string label = "rank-map/";
 #endif
 
     string path_graphindex = path_project + "/graphindex/" + label;
