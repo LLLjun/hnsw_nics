@@ -72,7 +72,32 @@ void LoadBinToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint3
         }
     }
 
-    file_reader.read((char *) data_m, nums * dims * sizeof(data_T));
+    uint32_t readsize = dims * sizeof(data_T);
+    for (int i = 0; i < nums; i++) {
+        file_reader.read((char *) (data_m + dims * i), readsize);
+        if (file_reader.gcount() != readsize) {
+            printf("Read Error\n"); exit(1);
+        }
+    }
+    file_reader.close();
+    printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
+}
+
+template<typename data_T>
+void LoadBinToArrayIghead(std::string& file_path, data_T *data_m, uint32_t nums, uint32_t dims){
+    std::ifstream file_reader(file_path.c_str(), ios::binary);
+
+    uint32_t nums_r, dims_r;
+    file_reader.read((char *) &nums_r, sizeof(uint32_t));
+    file_reader.read((char *) &dims_r, sizeof(uint32_t));
+
+    uint32_t readsize = dims * sizeof(data_T);
+    for (int i = 0; i < nums; i++) {
+        file_reader.read((char *) (data_m + dims * i), readsize);
+        if (file_reader.gcount() != readsize) {
+            printf("Read Error\n"); exit(1);
+        }
+    }
     file_reader.close();
     printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
 }
@@ -86,7 +111,13 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
         file_writer.write((char *) &dims, sizeof(uint32_t));
     }
 
-    file_writer.write((char *) data_m, nums * dims * sizeof(data_T));
+    uint32_t writesize = dims * sizeof(data_T);
+    for (int i = 0; i < nums; i++) {
+        file_writer.write((char *) (data_m + dims * i), writesize);
+        if (file_writer.fail() || file_writer.bad()) {
+            printf("Write Error\n"); exit(1);
+        }
+    }
     file_writer.close();
     printf("Write %u * %u data to %s done.\n", nums, dims, file_path.c_str());
 }

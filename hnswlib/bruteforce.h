@@ -49,8 +49,6 @@ namespace hnswlib {
             {
                 std::unique_lock<std::mutex> lock(index_lock);
 
-
-
                 auto search=dict_external_to_internal.find(label);
                 if (search != dict_external_to_internal.end()) {
                     idx=search->second;
@@ -66,10 +64,6 @@ namespace hnswlib {
             }
             memcpy(data_ + size_per_element_ * idx + data_size_, &label, sizeof(labeltype));
             memcpy(data_ + size_per_element_ * idx, datapoint, data_size_);
-
-
-
-
         };
 
         void removePoint(labeltype cur_external) {

@@ -12,28 +12,16 @@ inline void assignToThisCore(int core_id)
     sched_setaffinity(0, sizeof(mask), &mask);
 }
 
-void hnsw_impl(bool is_build, const std::string &using_dataset);
+void hnsw_impl(const std::string &using_dataset, size_t sizeVectorM, std::string isTrans);
 
 int main(int argc, char **argv) {
-    
-    bool is_build;
-    if (argc != 3){
-        printf("Usage: ./main [stage: build or search] [dataset]\n");
+
+    if (argc != 4){
+        printf("Usage: ./main [dataset] [size(Million)] [trans?]\n");
         exit(1);
-    } else {
-        if (std::string(argv[1]) == "build")
-            is_build = true;
-        else if (std::string(argv[1]) == "search")
-            is_build = false;
-        else {
-            printf("[stage: build or search]\n");
-            exit(1);
-        }
     }
-    // if (!is_build)
-    //     assignToThisCore(0);
-    
-    hnsw_impl(is_build, std::string(argv[2]));
+
+    hnsw_impl(std::string(argv[1]), std::atoi(argv[2]), std::string(argv[3]));
 
     return 0;
 };

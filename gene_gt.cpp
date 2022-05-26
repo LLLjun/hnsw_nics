@@ -88,7 +88,7 @@ void search_index(const string &dataname, string &index, SpaceInterface<DTres> &
         for (size_t i = 0; i < qsize; i++){
             std::priority_queue<std::pair<DTres, labeltype >> rs = brute_alg->searchKnn(massQ + i * vecdim, k);
             size_t kk = k;
-            while (rs.empty()){
+            while (!rs.empty()){
                 massQA[i * gt_maxnum + kk - 1] = rs.top().second;
                 rs.pop();
                 kk--;
