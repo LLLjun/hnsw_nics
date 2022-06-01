@@ -1,11 +1,11 @@
 import os
 
 def main():
-    dataset = "deep"
+    stage = "both"
+    dataset = "sift"
     datasize = 1
-    stage = "search"
 
-    command = "./main " + stage + " " + dataset
+    command = "./main " + stage + " " + dataset + " " + str(datasize)
     os.system("cd build && make main && " + command)
 
 main()
