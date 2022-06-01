@@ -26,7 +26,7 @@ get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim,
 
 template<typename DTset, typename DTres>
 static float
-test_approx(DTset *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
+test_approx(DTset *massQ, size_t qsize, HierarchicalNSW<DTset, DTres> &appr_alg, size_t vecdim,
             vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     size_t correct = 0;
     size_t total = 0;
@@ -71,7 +71,7 @@ test_approx(DTset *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t
 
 template<typename DTset, typename DTres>
 static void
-test_vs_recall(DTset *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
+test_vs_recall(DTset *massQ, size_t qsize, HierarchicalNSW<DTset, DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
 #if MEMTRACE
@@ -175,7 +175,7 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
 #else
         L2Space l2space(vecdim);
 #endif
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, vecsize, M, efConstruction);
+        HierarchicalNSW<DTset, DTres> *appr_alg = new HierarchicalNSW<DTset, DTres>(&l2space, vecsize, M, efConstruction);
 #if PLATG
         unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
         appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
@@ -250,7 +250,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 #else
         L2Space l2space(vecdim);
 #endif
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, index, false);
+        HierarchicalNSW<DTset, DTres> *appr_alg = new HierarchicalNSW<DTset, DTres>(&l2space, index, false);
 
         vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
         cout << "Parsing gt:\n";

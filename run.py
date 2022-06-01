@@ -1,7 +1,7 @@
 import os
 
 def main():
-    stage = "both"
+    stage = "search"
     dataset = "sift"
     datasize = 1
 

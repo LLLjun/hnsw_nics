@@ -130,12 +130,12 @@ void TransIntToFloat(float *dest, data_T *src, size_t &nums, size_t &dims){
 
 template<typename data_T>
 uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
-    cout << "Comput the center point: \n";
+    cout << "Comput the center point: ";
     float *sum_m = new float[dims]();
     float *avg_m = new float[dims]();
     for (size_t i = 0; i < nums; i++){
         for (size_t j = 0; j < dims; j++){
-            sum_m[j] += data_m[i * dims + j];
+            sum_m[j] += (float) data_m[i * dims + j];
         }
     }
     for (size_t j = 0; j < dims; j++){
@@ -148,7 +148,7 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     for (size_t i = 0; i < nums; i++){
         float tmp_sum = 0;
         for (size_t j = 0; j < dims; j++){
-            tmp_sum += powf((data_m[i * dims + j] - avg_m[j]), 2);
+            tmp_sum += powf(((float) data_m[i*dims+j] - avg_m[j]), 2);
         }
 // #pragma omp cratical
         {
@@ -159,5 +159,7 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
         }
     }
     cout << center_pt_id << "\n";
+    delete[] sum_m;
+    delete[] avg_m;
     return center_pt_id;
 }

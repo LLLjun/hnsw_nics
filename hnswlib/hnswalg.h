@@ -20,7 +20,7 @@ namespace hnswlib {
     typedef unsigned int tableint;
     typedef unsigned int linklistsizeint;
 
-    template<typename dist_t>
+    template<typename set_t,typename dist_t>
     class HierarchicalNSW : public AlgorithmInterface<dist_t> {
     public:
         static const tableint max_update_element_locks = 65536;
@@ -62,7 +62,6 @@ namespace hnswlib {
             cur_element_count = 0;
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);
-
 
 
             //initializations for special treatment of the first node
@@ -1305,7 +1304,7 @@ namespace hnswlib {
             bool flag;
 
             Neighbor() = default;
-            Neighbor(unsigned id, float distance, bool f) : id{id}, distance{distance}, flag(f) {}
+            Neighbor(int id, dist_t distance, bool f) : id{id}, distance{distance}, flag(f) {}
 
             inline bool operator<(const Neighbor &other) const {
                 return distance < other.distance;
@@ -1388,14 +1387,14 @@ namespace hnswlib {
 
             // 每个rank的起始点，暂时采用中心点
             size_t vecdim = *(size_t *)(dist_func_param_);
-            float* mass_comput = new float[num_max_rank * vecdim]();
+            set_t* mass_comput = new set_t[num_max_rank * vecdim]();
             for (int i = 0; i < num_ranks; i++){
-                unsigned rank_size = rankId_to_interId[i].size();
+                int rank_size = rankId_to_interId[i].size();
                 for (int j = 0; j < rank_size; j++){
                     tableint cur_inter = rankId_to_interId[i][j];
-                    memcpy(mass_comput + j * vecdim, getDataByInternalId(cur_inter), vecdim * sizeof(float));
+                    memcpy(mass_comput + j * vecdim, getDataByInternalId(cur_inter), vecdim * sizeof(set_t));
                 }
-                unsigned center = compArrayCenter<float>(mass_comput, rank_size, vecdim);
+                int center = compArrayCenter<set_t>(mass_comput, rank_size, vecdim);
                 ept_rank[i] = rankId_to_interId[i][center];
             }
             delete[] mass_comput;
