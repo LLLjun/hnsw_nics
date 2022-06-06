@@ -10,38 +10,138 @@
 #include <stdint.h>
 #include <algorithm>
 
-#define MEM_ALIGNED 64
+#define MEM_ALIGNED     64
+#define RANK_SIZE_GB    4
+#define RANK_ADDR_LIMIT (1 << 36)
 
-template<typename T>
+typedef uint64_t        DTaddr;
+
+using namespace std;
+
+/*
+    分析 rank_opt 代码中HNSW的访存记录
+    硬件地址(dram access trace)
+        |- feature group: channel0所对应的全部rank，分散分配，最大支持8ranks
+        |- neighbor group: channel0所对应的全部rank，按照顺序填充
+    其他(visited list和queue记录次数)
+*/
+
+
 struct trace {
     char type; // l for load, s for save
-    long long addr;
+    DTaddr addr;
 };
 
-template<class T>
-class mem {
+class MemTrace {
 private:
     bool track_trace_detail = true;
-    std::vector<trace<T>> mem_trace;
-    unsigned long long num_read_trace;
-    unsigned long long num_write_trace;
+    vector<trace> mem_trace;
+    size_t num_read_trace, num_write_trace;
+
+    // 目前邻居的存储方式采用规整存储的方式，最开始的4bytes是有效邻居的大小。
+    size_t v_size, v_size_aligned;
+    size_t v_line, v_maxinum_rank;
+    size_t nl_size, nl_size_aligned;
+    size_t nl_line, nl_maxinum_rank;
+
+    // 每个rank都给query预留一部分空间
+    int channel_feature = 0;
+    int channel_neighbor = 1;
+    size_t s_query_set = 1024;
+    DTaddr f_addr_start = (DTaddr) s_query_set;
+
+
 public:
+    MemTrace(int featureSize, int neighborMaxNum) {
+        v_size = featureSize;
+        v_line = (size_t) ceil(1.0 * v_size / MEM_ALIGNED);
+        v_size_aligned = v_line * MEM_ALIGNED;
+        v_maxinum_rank = ((RANK_SIZE_GB << 9) - s_query_set) / v_size_aligned;
+
+        nl_size = sizeof(int) * (1 + neighborMaxNum);
+        nl_line = (size_t) ceil(1.0 * nl_size / MEM_ALIGNED);
+        nl_size_aligned = nl_line * MEM_ALIGNED;
+        nl_maxinum_rank = (RANK_SIZE_GB << 9) / nl_size_aligned;
+    }
+    ~MemTrace() {
+        vector<trace>().swap(mem_trace);
+    }
+
+    void AddTraceQuery(int rankId);
+    void AddTraceFeature(int rankId, int innerId);
+    void AddTraceNeighbor(int internalId);
+
     std::map<std::string, long long> mem_offest_sw;
     std::map<std::string, long long> mem_offest_hw;
 
     std::vector<unsigned int> offset_addrs;
     void print_offset_info();
-    int add_trace(const T* begin, const T* end, long long offset_software, long long offset_hardware, char type);
-    int add_trace(const T* begin, const T* end, std::string name_region, char type);
-    int add_trace_mid(const T* begin, const T* end, long long offset, char type);
-    int write_file(std::string& file, long unsigned int max_num_trace = (long unsigned int)(-1));
-    unsigned long long count_trace(char mode = 'a'); // a:all, l:load, s:save
+    int add_trace(const char* begin, const char* end, long long offset_software, long long offset_hardware, char type);
+    int add_trace(const char* begin, const char* end, std::string name_region, char type);
+    int add_trace_mid(const char* begin, const char* end, long long offset, char type);
+    int write_file(std::string& file, size_t max_num_trace = (size_t)(-1));
+    size_t count_trace(char mode = 'a'); // a:all, l:load, s:save
     long long int max_phisical_addr = 0;
     bool autoswitch_track_detail(const unsigned long int max_runtime_trace);
 };
 
-template<class T>
-int mem<T>::add_trace(const T* begin, const T* end, long long offset_software, long long offset_hardware, char type) {
+DTaddr TransAddrFormat(int channelId, int rankId, DTaddr addrInput) {
+    DTaddr addrOutput;
+    DTaddr a_byte = addrInput % MEM_ALIGNED;
+    DTaddr a_channel = (DTaddr) channelId;
+    DTaddr a_column = (addrInput / MEM_ALIGNED) % 128;
+    DTaddr a_rank = (DTaddr) rankId;
+    DTaddr a_high = (addrInput / MEM_ALIGNED) >> 7;
+    addrOutput = (a_high << 17) + (a_rank << 14) + (a_column << 7)
+                + (a_channel << 6) + a_byte;
+    if (addrOutput > RANK_ADDR_LIMIT){
+        printf("trans address: out rank range\n"); exit(1);
+    }
+
+    return addrOutput;
+}
+
+void MemTrace::AddTraceQuery(int rankId) {
+    trace this_trace;
+    this_trace.type = 's';
+    for (int i = 0; i < v_line; i++){
+        this_trace.addr = TransAddrFormat(channel_feature, rankId, (DTaddr)(i * MEM_ALIGNED));
+        mem_trace.push_back(this_trace);
+    }
+}
+
+void MemTrace::AddTraceFeature(int rankId, int innerId) {
+    if (innerId >= v_maxinum_rank){
+        printf("feature: out rank range\n"); exit(1);
+    }
+    trace this_trace;
+    this_trace.type = 'l';
+
+    for (int i = 0; i < v_line; i++){
+        this_trace.addr = TransAddrFormat(channel_feature, rankId, (DTaddr)(i * MEM_ALIGNED));
+        mem_trace.push_back(this_trace);
+    }
+    DTaddr start = innerId * v_line * MEM_ALIGNED + f_addr_start;
+    for (int i = 0; i < v_line; i++){
+        this_trace.addr = TransAddrFormat(channel_feature, rankId, (start + i * MEM_ALIGNED));
+        mem_trace.push_back(this_trace);
+    }
+}
+
+void MemTrace::AddTraceNeighbor(int internalId) {
+    trace this_trace;
+    this_trace.type = 'l';
+
+    int rankid = internalId / nl_maxinum_rank;
+    int innerid = internalId % nl_maxinum_rank;
+    DTaddr start = innerid * nl_line * MEM_ALIGNED;
+    for (int i = 0; i < nl_line; i++) {
+        this_trace.addr = TransAddrFormat(channel_neighbor, rankid, (start + i * MEM_ALIGNED));
+        mem_trace.push_back(this_trace);
+    }
+}
+
+int MemTrace::add_trace(const char* begin, const char* end, long long offset_software, long long offset_hardware, char type) {
     assert((long long) begin - offset_software >= 0);
 
     long long begin_hw = (long long) begin - offset_software + offset_hardware;
@@ -51,8 +151,8 @@ int mem<T>::add_trace(const T* begin, const T* end, long long offset_software, l
     size_t round = ceil((1.0f * end_aligned - begin_aligned) / MEM_ALIGNED);
     // bool two_word_track = true;
     if (track_trace_detail) {
-        trace<T> this_trace;
-        // for (const T* i = begin; i != end; i++) {
+        trace this_trace;
+        // for (const char* i = begin; i != end; i++) {
         for (size_t i = 0; i < round; i++){
             long long addr = begin_aligned + i * MEM_ALIGNED;
             this_trace.type = type;
@@ -71,8 +171,8 @@ int mem<T>::add_trace(const T* begin, const T* end, long long offset_software, l
     return 0;
 };
 
-template<class T>
-int mem<T>::add_trace(const T* begin, const T* end, std::string name_region, char type) {
+
+int MemTrace::add_trace(const char* begin, const char* end, std::string name_region, char type) {
     if (mem_offest_sw.find(name_region) == mem_offest_sw.end() ||
         mem_offest_hw.find(name_region) == mem_offest_hw.end()){
         printf("unfind this name: %s\n", name_region.c_str());
@@ -89,8 +189,8 @@ int mem<T>::add_trace(const T* begin, const T* end, std::string name_region, cha
     size_t round = ceil((1.0f * end_aligned - begin_aligned) / MEM_ALIGNED);
     // bool two_word_track = true;
     if (track_trace_detail) {
-        trace<T> this_trace;
-        // for (const T* i = begin; i != end; i++) {
+        trace this_trace;
+        // for (const char* i = begin; i != end; i++) {
         for (size_t i = 0; i < round; i++){
             long long addr = begin_aligned + i * MEM_ALIGNED;
             this_trace.type = type;
@@ -109,12 +209,12 @@ int mem<T>::add_trace(const T* begin, const T* end, std::string name_region, cha
     return 0;
 };
 
-template<class T>
-int mem<T>::add_trace_mid(const T* begin, const T* end, long long offset, char type) {
+
+int MemTrace::add_trace_mid(const char* begin, const char* end, long long offset, char type) {
     bool two_word_track = true;
     if (track_trace_detail) {
-        trace<T> this_trace;
-        for (const T* i = begin; i != end; i++) {
+        trace this_trace;
+        for (const char* i = begin; i != end; i++) {
             if (two_word_track) {
                 this_trace.type = type;
                 assert(i - offset >= 0);
@@ -134,11 +234,11 @@ int mem<T>::add_trace_mid(const T* begin, const T* end, long long offset, char t
     return 0;
 };
 
-template<class T>
-int mem<T>::write_file(std::string& file, long unsigned int max_num_trace) {
+
+int MemTrace::write_file(std::string& file, size_t max_num_trace) {
     std::ofstream file_out(file.c_str());
-    const long unsigned int endpos = mem_trace.size();
-    for (long unsigned int i = 0; i < endpos; ++i) {
+    const size_t endpos = mem_trace.size();
+    for (size_t i = 0; i < endpos; ++i) {
         file_out << mem_trace[i].type << " " << "0x" << std::setfill('0') << std::setw(8) << std::hex << mem_trace[i].addr << '\n';
     }
     file_out.close();
@@ -149,8 +249,8 @@ int mem<T>::write_file(std::string& file, long unsigned int max_num_trace) {
     return 0;
 }
 
-template<class T>
-unsigned long long mem<T>::count_trace(char mode) {
+
+size_t MemTrace::count_trace(char mode) {
     long long count = 0;
     if (track_trace_detail) {
         switch (mode) {
@@ -193,8 +293,8 @@ unsigned long long mem<T>::count_trace(char mode) {
     return count;
 }
 
-template<class T>
-void mem<T>::print_offset_info() {
+
+void MemTrace::print_offset_info() {
     // the smallest element as offset_init
     unsigned int offset_init = offset_addrs[0];
     std::cout << "********** offset_info **********" << std::endl;
@@ -206,8 +306,8 @@ void mem<T>::print_offset_info() {
     std::cout << std::dec;
 }
 
-template<class T>
-bool mem<T>::autoswitch_track_detail(const unsigned long int max_runtime_trace) {
+
+bool MemTrace::autoswitch_track_detail(const unsigned long int max_runtime_trace) {
     if (track_trace_detail) {
         if (mem_trace.size() >= max_runtime_trace) {
             num_read_trace = count_trace('l');
