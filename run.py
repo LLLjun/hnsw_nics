@@ -1,14 +1,11 @@
-from distutils import command
 import os
 
 def main():
-    dataset = "deep"
-
-
     stage = "search"
+    dataset = "deep"
+    datasize = 1
 
-    command = "./main " + stage + " " + dataset
-
+    command = "./main " + stage + " " + dataset + " " + str(datasize)
     os.system("cd build && make main && " + command)
 
 main()

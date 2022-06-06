@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string>
 
+using namespace std;
+
 cpu_set_t  mask;
 inline void assignToThisCore(int core_id)
 {
@@ -12,28 +14,24 @@ inline void assignToThisCore(int core_id)
     sched_setaffinity(0, sizeof(mask), &mask);
 }
 
-void hnsw_impl(bool is_build, const std::string &using_dataset);
+
+void hnsw_impl(string stage, string using_dataset, size_t data_size);
 
 int main(int argc, char **argv) {
-    
-    bool is_build;
-    if (argc != 3){
-        printf("Usage: ./main [stage: build or search] [dataset]\n");
+
+    if (argc != 4){
+        printf("Usage: ./main [stage: build or search or both] [dataset] [datasize]\n");
         exit(1);
     } else {
-        if (std::string(argv[1]) == "build")
-            is_build = true;
-        else if (std::string(argv[1]) == "search")
-            is_build = false;
-        else {
-            printf("[stage: build or search]\n");
+        if (string(argv[1]) != "build" && string(argv[1]) != "search" && string(argv[1]) != "both") {
+            printf("[stage: build or search or both]\n");
             exit(1);
         }
     }
-    // if (!is_build)
+    // if (string(argv[1]) == "search")
     //     assignToThisCore(0);
-    
-    hnsw_impl(is_build, std::string(argv[2]));
+
+    hnsw_impl(string(argv[1]), string(argv[2]), atoi(argv[3]));
 
     return 0;
 };

@@ -123,18 +123,18 @@ void gene_gt_impl(bool is_build, const string &using_dataset){
         }
     }
 
-	size_t subset_size_milllions = 1;
+	size_t data_size_millions = 1;
 	size_t efConstruction = 40;
 	size_t M = 16;
     size_t k = 100;
 	
-    size_t vecsize = subset_size_milllions * 1000000;
+    size_t vecsize = data_size_millions * 1000000;
     size_t qsize, vecdim, gt_maxnum;
     string path_index, path_gt, path_q, path_data;
     
-    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) + 
+    string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) + 
                         "m_brute.bin";
-    CheckDataset(using_dataset, subset_size_milllions, vecsize, qsize, vecdim, gt_maxnum,
+    CheckDataset(using_dataset, data_size_millions, vecsize, qsize, vecdim, gt_maxnum,
                     path_q, path_data, path_gt);
 
     L2Space l2space(vecdim);
