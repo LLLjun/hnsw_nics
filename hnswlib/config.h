@@ -22,3 +22,6 @@ typedef float   DTRES;
 #define RAM_RANK_GB 1
 #define OPT_VISITED true
 #endif
+
+// rank 分配方式
+#define MODMAP      true

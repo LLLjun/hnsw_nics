@@ -1332,6 +1332,7 @@ namespace hnswlib {
 
         void initRankMap(){
             int num_ranks = NUM_RANKS;
+            // 以下的三个信息是必要的
             ept_rank.resize(num_ranks);
             interId_to_rankLabel.resize(cur_element_count);
             rankId_to_interId.resize(num_ranks);
@@ -1339,6 +1340,14 @@ namespace hnswlib {
             // 图上的点到rank，暂时采用简单的mapping方式
             size_t num_max_rank = ceil(1.0 * cur_element_count / num_ranks);
             size_t num_pad_rank = num_max_rank * num_ranks - cur_element_count;
+
+#if MODMAP
+            for (tableint in_i = 0; in_i < cur_element_count; in_i++){
+                int allocRankId = in_i % num_ranks;
+                interId_to_rankLabel[in_i] = allocRankId;
+                rankId_to_interId[allocRankId].push_back(in_i);
+            }
+#else
             std::vector<size_t> offest_rank_start(num_ranks);
             offest_rank_start[0] = 0;
             for (size_t i = 1; i < num_ranks; i++){
@@ -1357,7 +1366,7 @@ namespace hnswlib {
                     }
                 }
             }
-
+#endif
             // 每个rank的起始点，暂时采用中心点
             size_t vecdim = *(size_t *)(dist_func_param_);
             set_t* mass_comput = new set_t[num_max_rank * vecdim]();
