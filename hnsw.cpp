@@ -31,16 +31,11 @@ test_approx(DTset *massQ, size_t qsize, HierarchicalNSW<DTset, DTres> &appr_alg,
     size_t correct = 0;
     size_t total = 0;
     //uncomment to test in parallel mode:
-    //#pragma omp parallel for
-#if MEMTRACE
-    {   int i = 100;
-#else
+
 
 //     omp_set_num_threads(3);
 // #pragma omp parallel for
     for (int i = 0; i < qsize; i++) {
-#endif
-
 #if RANKMAP
         std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchParaRank(massQ + vecdim * i, k);
 #else
@@ -73,12 +68,8 @@ static void
 test_vs_recall(DTset *massQ, size_t qsize, HierarchicalNSW<DTset, DTres> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-#if MEMTRACE
-    efs.push_back(80);
-#else
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
-#endif
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us" << "\t";
 #if RANKMAP
@@ -260,10 +251,6 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
-#if MEMTRACE
-        appr_alg->initMem();
-#endif
-
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
@@ -271,10 +258,6 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         cout << "Comput recall: \n";
         test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
 
-#if MEMTRACE
-        string file_mem_trace = "/home/usr-xkIJigVq/nmp/hnsw_nics/output/mem/trace.txt";
-        appr_alg->main_mem->write_file(file_mem_trace, appr_alg->main_mem->count_trace('a'));
-#endif
 
         printf("Search index %s is succeed \n", index.c_str());
     }
