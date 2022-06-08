@@ -1,6 +1,6 @@
 #define PLATG       true
 #define PROFILE     false
-#define MEMTRACE    false
+#define MEMTRACE    true
 
 
 #define FMTINT  false
@@ -18,9 +18,8 @@ typedef float   DTRES;
 #define RANKMAP     true
 
 #if RANKMAP
-#define NUM_RANKS   1
-#define RAM_RANK_GB 1
-#define OPT_VISITED true
+#define NUM_RANKS   4
+#define OPT_VISITED false
 #endif
 
 // rank 分配方式

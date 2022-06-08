@@ -141,34 +141,6 @@ namespace hnswlib {
         std::default_random_engine level_generator_;
         std::default_random_engine update_probability_generator_;
 
-#if MEMTRACE
-        /*
-            memory_organization:
-                |- query_data
-                |- data_level0
-                |- visited_list
-                |- result_queue
-                |- search_queue
-        */
-        mem<char>* main_mem;
-
-        void initMem(){
-            main_mem = new mem<char>();
-            main_mem->mem_offest_sw["data_level0"] = (long long) data_level0_memory_;
-            std::cout << main_mem->mem_offest_sw["data_level0"] << std::endl;
-
-            main_mem->mem_offest_hw["query_data"] = 0;
-            main_mem->mem_offest_hw["data_level0"] = (long long) ceil((float)data_size_ / MEM_ALIGNED) * MEM_ALIGNED;
-            main_mem->mem_offest_hw["visited_list"] = main_mem->mem_offest_hw["data_level0"] +
-                                            (long long) ceil((float) max_elements_ * size_data_per_element_ / MEM_ALIGNED) * MEM_ALIGNED;
-            main_mem->mem_offest_hw["result_queue"] = main_mem->mem_offest_hw["visited_list"] +
-                                            (long long) ceil((float) max_elements_ * sizeof(vl_type) / MEM_ALIGNED) * MEM_ALIGNED;
-            // main_mem->mem_offest_hw["search_queue"] = main_mem->mem_offest_hw["result_queue"] +
-            //                                 ceil((float) efs * (sizeof(dist_t) + sizeof(tableint)) / MEM_ALIGNED) * MEM_ALIGNED;
-
-            // std::cout << "address query_data : "
-        }
-#endif
 
         inline labeltype getExternalLabel(tableint internal_id) const {
             labeltype return_label;
@@ -298,14 +270,6 @@ namespace hnswlib {
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
 
-#if MEMTRACE
-            main_mem->mem_offest_hw["search_queue"] = main_mem->mem_offest_hw["result_queue"] +
-                                ceil((float) ef * (sizeof(dist_t) + sizeof(tableint)) / MEM_ALIGNED) * MEM_ALIGNED;
-
-            top_candidates.initMem(main_mem, main_mem->mem_offest_hw["result_queue"]);
-            candidate_set.initMem(main_mem, main_mem->mem_offest_hw["search_queue"]);
-#endif
-
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
 
@@ -321,21 +285,6 @@ namespace hnswlib {
             }
 
             visited_array[ep_id] = visited_array_tag;
-
-#if MEMTRACE
-            main_mem->mem_offest_sw["query_data"] = (long long) data_point;
-            main_mem->mem_offest_sw["visited_list"] = (long long) visited_array;
-
-            main_mem->add_trace((char *)data_point, (char *)data_point + data_size_,
-                                "query_data", 'l');
-            main_mem->add_trace(getDataByInternalId(ep_id), getDataByInternalId(ep_id) + data_size_,
-                                "data_level0", 'l');
-            main_mem->add_trace((char *)(visited_array + ep_id), (char *)(visited_array + ep_id + 1),
-                                "visited_list", 'l');
-            main_mem->add_trace((char *)(visited_array + ep_id), (char *)(visited_array + ep_id + 1),
-                                "visited_list", 's');
-#endif
-            // tableint cache_id = std::numeric_limits<tableint>::max();
 
             while (!candidate_set.empty()) {
 
@@ -355,29 +304,21 @@ namespace hnswlib {
                     // metric_distance_computations+=size;
                 }
 
-#if (!MEMTRACE)
 #ifdef USE_SSE
                 // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
                 // _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
                 // _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
                 // _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
-#endif
 
                 for (size_t j = 1; j <= size; j++) {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
-#if (!MEMTRACE)
+
 #ifdef USE_SSE
                     // _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
                     // _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                     //              _MM_HINT_T0);////////////
-#endif
-#endif
-
-#if MEMTRACE
-                    main_mem->add_trace((char *)(visited_array + candidate_id), (char *)(visited_array + candidate_id + 1),
-                                        "visited_list", 'l');
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
@@ -391,15 +332,6 @@ namespace hnswlib {
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
-#if MEMTRACE
-                        main_mem->add_trace((char *)(visited_array + candidate_id), (char *)(visited_array + candidate_id + 1),
-                                            "visited_list", 's');
-                        main_mem->add_trace((char *)data_point, (char *)data_point + data_size_,
-                                            "query_data", 'l');
-                        main_mem->add_trace(currObj1, currObj1 + data_size_,
-                                            "data_level0", 'l');
-#endif
-
 #if PROFILE
                         time_PDC += stop_search.getElapsedTimeus();
 #endif
@@ -410,12 +342,10 @@ namespace hnswlib {
 #endif
                             candidate_set.emplace(-dist, candidate_id);
 
-#if (!MEMTRACE)
 #ifdef USE_SSE
                             // _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
                             //              offsetLevel0_,///////////
                             //              _MM_HINT_T0);////////////////////////
-#endif
 #endif
 
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
@@ -1327,6 +1257,7 @@ namespace hnswlib {
         // 不同rank内的起始搜索点
         std::vector<tableint> ept_rank;
         std::vector<int> interId_to_rankLabel;
+        std::vector<int> interId_to_rankInnerId;
         // 仅仅只是为了转换中心点
         std::vector<std::vector<tableint>> rankId_to_interId;
 
@@ -1335,6 +1266,7 @@ namespace hnswlib {
             // 以下的三个信息是必要的
             ept_rank.resize(num_ranks);
             interId_to_rankLabel.resize(cur_element_count);
+            interId_to_rankInnerId.resize(cur_element_count);
             rankId_to_interId.resize(num_ranks);
 
             // 图上的点到rank，暂时采用简单的mapping方式
@@ -1345,6 +1277,7 @@ namespace hnswlib {
             for (tableint in_i = 0; in_i < cur_element_count; in_i++){
                 int allocRankId = in_i % num_ranks;
                 interId_to_rankLabel[in_i] = allocRankId;
+                interId_to_rankInnerId[in_i] = in_i / num_ranks;
                 rankId_to_interId[allocRankId].push_back(in_i);
             }
 #else
@@ -1385,6 +1318,22 @@ namespace hnswlib {
             mem_rank_alloc = new tableint[num_ranks * maxM0_]();
 
             stats = new QueryStats;
+
+            // 假设考虑了量化和uint8
+            int size_per_value = (int)sizeof(set_t) > 1 ? 2 : 1;
+            Trace = new MemTrace((int)(size_per_value * vecdim), maxM0_);
+        }
+
+        static int GetRankMost(std::vector<std::pair<int, tableint*>>& bufferRankAlloc) {
+            int pos = 0;
+            int size = bufferRankAlloc[0].first;
+            for (int i = 1; i < bufferRankAlloc.size(); i++) {
+                if (bufferRankAlloc[i].first > size) {
+                    size = bufferRankAlloc[i].first;
+                    pos = i;
+                }
+            }
+            return pos;
         }
 
         /*
@@ -1402,7 +1351,7 @@ namespace hnswlib {
 
         QueryStats* stats = nullptr;
         tableint* mem_rank_alloc = nullptr;
-
+        MemTrace* Trace = nullptr;
 
         /*
             input: query, k
@@ -1451,13 +1400,21 @@ namespace hnswlib {
 
             // launch stage
             clk_get clk_query = clk_get();
-
+            // launch阶段实际上是只计算了中心点所在的rank，其余rank空闲。
             for (int i = 0; i < num_ranks; i++){
-                tableint currObj = ept_rank[i];
-                dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
-                buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
-                buffer_rank_min[i] = std::make_pair(curdist, currObj);
+                if (i == 0) {
+                    tableint currObj = ept_rank[i];
+                    dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
+                    buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
+                    buffer_rank_min[i] = std::make_pair(curdist, currObj);
+                } else {
+                    buffer_rank_min[i] = std::make_pair(std::numeric_limits<dist_t>::max(), 0);
+                }
             }
+#if MEMTRACE
+            Trace->AddTraceFeature(0, 0);
+            Trace->AddStatVistedList('w');
+#endif
             if (stats != nullptr){
                 stats->rank_us += clk_query.getElapsedTimeus();
                 stats->n_max_NDC++;
@@ -1509,12 +1466,18 @@ namespace hnswlib {
                         int candidate_id = *(candidate_neighbors.second + j);
                         visited_array[candidate_id] = visited_array_tag;
                     }
+#if MEMTRACE
+                    Trace->AddStatVistedList('w', (int)candidate_neighbors.first);
+#endif
                 } else {
                     for (int i = 0; i < num_ranks; i++)
                         buffer_rank_alloc[i].first = 0;
 
                     candidate_neighbors.second = (int *) get_linklist0(search_node.second);
                     candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+#if MEMTRACE
+                    Trace->AddTraceNeighbor(search_node.second);
+#endif
 
                     for (size_t j = 1; j <= candidate_neighbors.first; j++) {
                         int candidate_id = *(candidate_neighbors.second + j);
@@ -1525,12 +1488,21 @@ namespace hnswlib {
                             int len_buffer = buffer_rank_alloc[rank_label].first;
                             buffer_rank_alloc[rank_label].second[len_buffer] = candidate_id;
                             buffer_rank_alloc[rank_label].first++;
+#if MEMTRACE
+                            Trace->AddStatVistedList('w');
+#endif
                         }
                     }
+#if MEMTRACE
+                    Trace->AddStatVistedList('r', (int)candidate_neighbors.first);
+#endif
                 }
 #else
                 candidate_neighbors.second = (int *) get_linklist0(search_node.second);
                 candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+#if MEMTRACE
+                Trace->AddTraceNeighbor(search_node.second);
+#endif
 
                 for (size_t j = 1; j <= candidate_neighbors.first; j++) {
                     int candidate_id = *(candidate_neighbors.second + j);
@@ -1541,8 +1513,15 @@ namespace hnswlib {
                         int len_buffer = buffer_rank_alloc[rank_label].first;
                         buffer_rank_alloc[rank_label].second[len_buffer] = candidate_id;
                         buffer_rank_alloc[rank_label].first++;
+#if MEMTRACE
+                        Trace->AddStatVistedList('w');
+#endif
                     }
                 }
+#if MEMTRACE
+                Trace->AddStatVistedList('r', (int)candidate_neighbors.first);
+#endif
+
 #endif
 
                 if (stats != nullptr){
@@ -1571,9 +1550,16 @@ namespace hnswlib {
                         dist_t dist = buffer_rank_gather[i].top().first;
                         tableint candidate_id = buffer_rank_gather[i].top().second;
                         buffer_rank_gather[i].pop();
+#if MEMTRACE
+                        if (cur_list_size == l_search)
+                            Trace->AddStatQueue('x');
+#endif
                         if (dist >= retset[cur_list_size - 1].distance && (cur_list_size == l_search))
                             continue;
 
+#if MEMTRACE
+                        Trace->AddStatQueue('i');
+#endif
                         Neighbor nn(candidate_id, dist, true);
                         int r = InsertIntoPool(retset.data(), cur_list_size, nn);
                         if (cur_list_size < l_search)
@@ -1600,6 +1586,9 @@ namespace hnswlib {
                     retset_min.first = retset[cur_list_size-1].distance;
                     retset_min.second = retset[cur_list_size-1].id;
                 }
+#if MEMTRACE
+                Trace->AddStatQueue('n');
+#endif
 
                 if (stats != nullptr) {
                     stats->sort_us += clk_query.getElapsedTimeus();
@@ -1607,6 +1596,9 @@ namespace hnswlib {
                 }
 
                 // rank-level 并行计算距离
+#if MEMTRACE
+                int posRankMost = GetRankMost(buffer_rank_alloc);
+#endif
                 for (int i = 0; i < num_ranks; i++){
                     // 内部选择最小值
                     buffer_rank_min[i] = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
@@ -1619,6 +1611,14 @@ namespace hnswlib {
                         if (curdist < buffer_rank_min[i].first)
                             buffer_rank_min[i] = std::make_pair(curdist, currObj);
                     }
+#if MEMTRACE
+                    if (i == posRankMost) {
+                        for (int j = 0; j < buffer_rank_alloc[i].first; j++) {
+                            tableint currObj = buffer_rank_alloc[i].second[j];
+                            Trace->AddTraceFeature(i, interId_to_rankInnerId[currObj]);
+                        }
+                    }
+#endif
                     buffer_rank_alloc[i].first = 0;
                 }
                 if (stats != nullptr){
@@ -1630,6 +1630,10 @@ namespace hnswlib {
                 // release sort, 预先缓存 retset_min 的邻居列表
                 candidate_neighbors.second = (int *) get_linklist0(retset_min.second);
                 candidate_neighbors.first = getListCount((linklistsizeint*)candidate_neighbors.second);
+#if MEMTRACE
+                Trace->AddTraceNeighbor(retset_min.second);
+#endif
+
                 for (size_t j = 1; j <= candidate_neighbors.first; j++) {
                     int candidate_id = *(candidate_neighbors.second + j);
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
@@ -1640,6 +1644,9 @@ namespace hnswlib {
                         buffer_rank_alloc[rank_label].first++;
                     }
                 }
+#if MEMTRACE
+                Trace->AddStatVistedList('r', (int)candidate_neighbors.first);
+#endif
                 if (stats != nullptr)
                     stats->visited_us += clk_query.getElapsedTimeus();
 #endif

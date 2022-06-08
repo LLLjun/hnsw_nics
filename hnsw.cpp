@@ -33,7 +33,7 @@ test_approx(DTset *massQ, size_t qsize, HierarchicalNSW<DTset, DTres> &appr_alg,
     //uncomment to test in parallel mode:
     //#pragma omp parallel for
 #if MEMTRACE
-    {   int i = 100;
+    {   int i = 101;
 #else
 
 //     omp_set_num_threads(3);
@@ -260,10 +260,6 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         cout << "Parsing gt:\n";
         get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
 
-#if MEMTRACE
-        appr_alg->initMem();
-#endif
-
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
@@ -272,8 +268,8 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         test_vs_recall(massQ, qsize, *appr_alg, vecdim, answers, k);
 
 #if MEMTRACE
-        string file_mem_trace = "/home/usr-xkIJigVq/nmp/hnsw_nics/output/mem/trace.txt";
-        appr_alg->main_mem->write_file(file_mem_trace, appr_alg->main_mem->count_trace('a'));
+        appr_alg->Trace->write_file(MapString["mem_prefix"]);
+        appr_alg->Trace->~MemTrace();
 #endif
 
         printf("Search index %s is succeed \n", index.c_str());
@@ -318,6 +314,11 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
     MapString["index"] = hnsw_index;
     CheckDataset(using_dataset, MapParameter, MapString);
+
+#if MEMTRACE
+    string file_mem_prefix = "../output/mem/" + using_dataset + to_string(data_size_millions) + "m_r" + to_string(NUM_RANKS);
+    MapString["mem_prefix"] = file_mem_prefix;
+#endif
 
     if (stage == "build" || stage == "both")
         build_index<DTSET, DTRES>(MapParameter, MapString);
