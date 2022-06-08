@@ -1392,11 +1392,6 @@ namespace hnswlib {
             std::vector<std::pair<dist_t, tableint>> buffer_rank_min(num_ranks);
             std::pair<dist_t, tableint> retset_min;
 
-            for (int i = 0; i < num_ranks; i++){
-                tableint currObj = ept_rank[i];
-                visited_array[currObj] = visited_array_tag;
-            }
-
 
             // launch stage
             clk_get clk_query = clk_get();
@@ -1407,6 +1402,7 @@ namespace hnswlib {
                     dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
                     buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
                     buffer_rank_min[i] = std::make_pair(curdist, currObj);
+                    visited_array[currObj] = visited_array_tag;
                 } else {
                     buffer_rank_min[i] = std::make_pair(std::numeric_limits<dist_t>::max(), 0);
                 }
@@ -1418,7 +1414,7 @@ namespace hnswlib {
             if (stats != nullptr){
                 stats->rank_us += clk_query.getElapsedTimeus();
                 stats->n_max_NDC++;
-                metric_distance_computations += num_ranks;
+                metric_distance_computations++;
             }
 
             // running stage
