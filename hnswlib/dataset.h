@@ -52,15 +52,19 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
         MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.fbin";
         MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin";
     } else{
-        printf("Error, unknow dataset: %s \n", dataname.c_str());
-        exit(1);
+        printf("Error, unknow dataset: %s \n", dataname.c_str()); exit(1);
+    }
+
+    if (MapParameter["k"] > MapParameter["gt_maxnum"]){
+        printf("Error, unsupport k because of bigger than gt_maxnum\n"); exit(1);
     }
 }
 
 
 // load file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.
 template<typename data_T>
-void LoadBinToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint32_t dims, bool non_header = false){
+void LoadBinToArray(std::string& file_path, data_T *data_m, 
+                    uint32_t nums, uint32_t dims, bool non_header = false){
     std::ifstream file_reader(file_path.c_str(), ios::binary);
     if (!non_header){
         uint32_t nums_r, dims_r;
@@ -83,9 +87,39 @@ void LoadBinToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint3
     printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
 }
 
+template<typename data_T>
+void LoadBinToVector(std::string& file_path, std::vector<std::vector<data_T>>& data_m, 
+                    uint32_t nums, uint32_t dims, bool non_header = false){
+    std::ifstream file_reader(file_path.c_str(), ios::binary);
+    if (!non_header){
+        uint32_t nums_r, dims_r;
+        file_reader.read((char *) &nums_r, sizeof(uint32_t));
+        file_reader.read((char *) &dims_r, sizeof(uint32_t));
+        if ((nums != nums_r) || (dims != dims_r)){
+            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", file_path.c_str(), nums_r, dims_r);
+            exit(1);
+        }
+    }
+
+    data_m.resize(nums);
+    int readsize = sizeof(data_T);
+    for (int i = 0; i < nums; i++) {
+        data_m[i].resize(dims, 0);
+        for (int j = 0; j < dims; j++) {
+            file_reader.read((char *) (&data_m[i][j]), readsize);
+            if (file_reader.gcount() != readsize) {
+                printf("Read Error\n"); exit(1);
+            }
+        }
+    }
+    file_reader.close();
+    printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
+}
+
 // store file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.
 template<typename data_T>
-void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums, uint32_t dims, bool non_header = false){
+void WriteBinToArray(std::string& file_path, const data_T *data_m, 
+                    uint32_t nums, uint32_t dims, bool non_header = false){
     std::ofstream file_writer(file_path.c_str(), ios::binary);
     if (!non_header){
         file_writer.write((char *) &nums, sizeof(uint32_t));
@@ -103,30 +137,6 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
     printf("Write %u * %u data to %s done.\n", nums, dims, file_path.c_str());
 }
 
-template<typename data_T>
-void LoadVecsToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint32_t dims){
-    std::ifstream file_reader(file_path.c_str(), ios::binary);
-    for (size_t i = 0; i < nums; i++){
-        uint32_t dims_r;
-        file_reader.read((char *) &dims_r, sizeof(uint32_t));
-        if (dims != dims_r){
-            printf("Error, file size is error, dims_r: %u\n", dims_r);
-            exit(1);
-        }
-        file_reader.read((char *) (data_m + i * dims), dims * sizeof(data_T));
-    }
-    file_reader.close();
-    printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
-}
-
-template<typename data_T>
-void TransIntToFloat(float *dest, data_T *src, size_t &nums, size_t &dims){
-    for (size_t i = 0; i < nums; i++){
-        for (size_t j = 0; j < dims; j++){
-            dest[i * dims + j] = (float) src[i * dims + j];
-        }
-    }
-}
 
 template<typename data_T>
 uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
