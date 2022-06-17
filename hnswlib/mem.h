@@ -196,6 +196,11 @@ int MemTrace::write_file(std::string& filePrefix, size_t max_num_trace) {
 
     string path_stat = filePrefix + "_stat.txt";
     std::ofstream file_stat(path_stat.c_str());
+    file_stat << "memory trace configuration:\n";
+    file_stat << "n_ranks: " << NUM_RANKS << "\n";
+    file_stat << "opt_visited: " << OPT_VISITED << "\n";
+    file_stat << "\n";
+
     file_stat << "[visited] n_read: " << MemStatVisitedList.n_read << "\n";
     file_stat << "[visited] n_write: " << MemStatVisitedList.n_write << "\n";
     file_stat << "[queue] n_insert: " << MemStatQueue.n_insert << "\n";

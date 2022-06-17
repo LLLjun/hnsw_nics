@@ -252,20 +252,11 @@ namespace hnswlib {
         mutable std::atomic<long> metric_distance_computations;
         mutable std::atomic<long> metric_hops;
         mutable std::atomic<long> metric_hops_L;
-#if PROFILE
-        // mutable std::atomic<float> time_PDC;
-        // mutable std::atomic<float> time_sort;
-        mutable double time_PDC;
-        mutable double time_sort;
-#endif
-        // mutable std::atomic<long> hits_pre_comput;
 
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
-#if PROFILE
-            clk_get stop_search = clk_get();
-#endif
+
             VisitedList *vl = visited_list_pool_->getFreeVisitedList();
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
@@ -301,7 +292,6 @@ namespace hnswlib {
 //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
                 if(collect_metrics){
                     metric_hops++;
-                    // metric_distance_computations+=size;
                 }
 
 #ifdef USE_SSE
@@ -325,21 +315,10 @@ namespace hnswlib {
                         metric_distance_computations++;
 
                         visited_array[candidate_id] = visited_array_tag;
-#if PROFILE
-                        stop_search.reset();
-#endif
-
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
-#if PROFILE
-                        time_PDC += stop_search.getElapsedTimeus();
-#endif
-
                         if (top_candidates.size() < ef || lowerBound > dist) {
-#if PROFILE
-                            stop_search.reset();
-#endif
                             candidate_set.emplace(-dist, candidate_id);
 
 #ifdef USE_SSE
@@ -353,9 +332,7 @@ namespace hnswlib {
 
                             if (top_candidates.size() > ef)
                                 top_candidates.pop();
-#if PROFILE
-                            time_sort += stop_search.getElapsedTimeus();
-#endif
+
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
                         }
@@ -1317,7 +1294,7 @@ namespace hnswlib {
 
             mem_rank_alloc = new tableint[num_ranks * maxM0_]();
 
-            stats = new QueryStats;
+            stats = new QueryStats();
 
             // 假设考虑了量化和uint8
             int size_per_value = (int)sizeof(set_t) > 1 ? 2 : 1;
@@ -1335,19 +1312,6 @@ namespace hnswlib {
             }
             return pos;
         }
-
-        /*
-            detail infomation
-        */
-        struct QueryStats {
-            double hlc_us = 0;
-            double rank_us = 0;
-            double sort_us = 0;
-            double visited_us = 0;
-            double n_max_NDC = 0;
-            double n_hops = 0;
-            double n_use_old = 0;
-        };
 
         QueryStats* stats = nullptr;
         tableint* mem_rank_alloc = nullptr;
@@ -1413,8 +1377,8 @@ namespace hnswlib {
 #endif
             if (stats != nullptr){
                 stats->rank_us += clk_query.getElapsedTimeus();
-                stats->n_max_NDC++;
-                metric_distance_computations++;
+                stats->n_DC_max++;
+                stats->n_DC_total++;
             }
 
             // running stage
@@ -1526,9 +1490,9 @@ namespace hnswlib {
                     int n_max = 0;
                     for (std::pair<int, tableint*>& bra: buffer_rank_alloc){
                         n_max = std::max(n_max, bra.first);
-                        metric_distance_computations += bra.first;
+                        stats->n_DC_total += bra.first;
                     }
-                    stats->n_max_NDC += n_max;
+                    stats->n_DC_max += n_max;
 
                     stats->n_hops++;
                     if (min_flag == -1)
