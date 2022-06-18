@@ -13,11 +13,19 @@ typedef float   DTRES;
 
 
 // rank-level的映射
-#define RANKMAP     true
+#define RANKMAP     false
 
 #if RANKMAP
 #define NUM_RANKS   1
 #define OPT_VISITED true
 // rank 分配方式
 #define MODMAP      true
+#endif
+
+
+// 支持测试模式
+#define TESTMODE    true
+#if TESTMODE
+#define TTIMES      5
+#define DETAIL      true
 #endif

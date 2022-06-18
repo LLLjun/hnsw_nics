@@ -1290,7 +1290,9 @@ namespace hnswlib {
 
             mem_rank_alloc = new tableint[num_ranks * maxM0_]();
 
+#if DETAIL
             stats = new QueryStats();
+#endif
         }
 
         QueryStats* stats = nullptr;

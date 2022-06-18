@@ -63,7 +63,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
 
 // load file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.
 template<typename data_T>
-void LoadBinToArray(std::string& file_path, data_T *data_m, 
+void LoadBinToArray(std::string& file_path, data_T *data_m,
                     uint32_t nums, uint32_t dims, bool non_header = false){
     std::ifstream file_reader(file_path.c_str(), ios::binary);
     if (!non_header){
@@ -88,7 +88,7 @@ void LoadBinToArray(std::string& file_path, data_T *data_m,
 }
 
 template<typename data_T>
-void LoadBinToVector(std::string& file_path, std::vector<std::vector<data_T>>& data_m, 
+void LoadBinToVector(std::string& file_path, std::vector<std::vector<data_T>>& data_m,
                     uint32_t nums, uint32_t dims, bool non_header = false){
     std::ifstream file_reader(file_path.c_str(), ios::binary);
     if (!non_header){
@@ -118,7 +118,7 @@ void LoadBinToVector(std::string& file_path, std::vector<std::vector<data_T>>& d
 
 // store file. store format: (uint32_t)num, (uint32_t)dim, (data_T)num * dim.
 template<typename data_T>
-void WriteBinToArray(std::string& file_path, const data_T *data_m, 
+void WriteBinToArray(std::string& file_path, const data_T *data_m,
                     uint32_t nums, uint32_t dims, bool non_header = false){
     std::ofstream file_writer(file_path.c_str(), ios::binary);
     if (!non_header){
@@ -172,4 +172,40 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     delete[] sum_m;
     delete[] avg_m;
     return center_pt_id;
+}
+
+int selectNearAvgPos(vector<float>& values) {
+    int pos = 0;
+    int nums = values.size();
+    if (nums < 2){
+        printf("Error, vector size can't less than 2\n"); exit(1);
+    }
+    float avg = accumulate(values.begin(), values.end(), 0.0) / nums;
+    float accum = 0;
+    for (float& v : values)
+        accum += (v - avg) * (v - avg);
+    float stdev = sqrt(accum / (nums - 1));
+    float upper = avg + stdev;
+    float lower = avg - stdev;
+
+    float sum = 0;
+    int n_re = 0;
+    for (float& v : values) {
+        if (v > lower && v < upper) {
+            sum += v;
+            n_re++;
+        }
+    }
+    float avg_re = sum / n_re;
+
+    float diff_min = numeric_limits<float>::max();
+    for (int i = 0; i < nums; i++){
+        float diff = abs(values[i] - avg_re);
+        if (diff < diff_min){
+            diff_min = diff;
+            pos = i;
+        }
+    }
+
+    return pos;
 }

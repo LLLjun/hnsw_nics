@@ -1,11 +1,17 @@
 import os
 
-def main():
-    stage = "search"
-    dataset = "deep"
-    datasize = 1
+DataSet = ["deep", "turing", "gist"]
+DataSize = [1, 10]
 
-    command = "./main " + stage + " " + dataset + " " + str(datasize)
-    os.system("cd build && make main && " + command)
+def main():
+    stage = "both"
+
+    for datasize in DataSize:
+        for dataset in DataSet:
+            if (dataset == "gist" and datasize == 10):
+                continue
+
+            command = "./main " + stage + " " + dataset + " " + str(datasize)
+            os.system("cd build && make main && " + command)
 
 main()

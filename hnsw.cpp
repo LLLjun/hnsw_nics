@@ -33,21 +33,27 @@ template<typename DTset, typename DTres>
 static void
 test_vs_recall(HierarchicalNSW<DTset, DTres>& appr_alg, size_t vecdim,
                 DTset *massQ, size_t qsize,
-                vector<vector<unsigned>>& massQA, size_t k) {
+                vector<vector<unsigned>>& massQA, size_t k,
+                map<size_t, vector<float>>& mapResult) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
+
+    int column_map = 2;
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if RANKMAP
     if (appr_alg.stats != nullptr) {
         cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-        cout << "NDC_max\t" << "old_r\t";
+        cout << "NDC_max\t" << "NDC_total\t";
+        column_map = 8;
     }
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
     cout << endl;
+
+    vector<float> result_ef(column_map);
 
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
@@ -89,15 +95,23 @@ test_vs_recall(HierarchicalNSW<DTset, DTres>& appr_alg, size_t vecdim,
         float recall = comput_recall(result, massQA, qsize, k);
 
         cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
+        result_ef[0] = recall;
+        result_ef[1] = time_us_per_query;
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
             cout << appr_alg.stats->rank_us / qsize << "\t";
             cout << appr_alg.stats->sort_us / qsize << "\t";
             cout << appr_alg.stats->hlc_us / qsize << "\t";
             cout << appr_alg.stats->visited_us / qsize << "\t";
+            result_ef[2] = appr_alg.stats->rank_us / qsize;
+            result_ef[3] = appr_alg.stats->sort_us / qsize;
+            result_ef[4] = appr_alg.stats->hlc_us / qsize;
+            result_ef[5] = appr_alg.stats->visited_us / qsize;
 
             cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
+            cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
+            result_ef[6] = 1.0 * appr_alg.stats->n_DC_max / qsize;
+            result_ef[7] = 1.0 * appr_alg.stats->n_DC_total / qsize;
         }
 #else
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
@@ -105,6 +119,8 @@ test_vs_recall(HierarchicalNSW<DTset, DTres>& appr_alg, size_t vecdim,
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
 #endif
         cout << endl;
+
+        mapResult.insert(pair<size_t, vector<float>>(ef, result_ef));
 
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
@@ -225,8 +241,38 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         appr_alg->initRankMap();
 #endif
 
-        cout << "Run and comput recall: \n";
-        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+        int test_times = TTIMES;
+        printf("[Test Mode] Run %d times and comput recall: \n", test_times);
+        vector<map<size_t, vector<float>>> finishedResult(test_times);
+        for (int i = 0; i < test_times; i++) {
+            test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k, finishedResult[i]);
+        }
+
+        ofstream result_writer(MapString["result"].c_str());
+        result_writer << "efs\t" << "R@" << k << "\t" << "time_us\t";
+#if RANKMAP
+        if (appr_alg->stats != nullptr) {
+            result_writer << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
+            result_writer << "NDC_max\t" << "NDC_total\t";
+        }
+#endif
+        result_writer << "\n";
+
+        for (auto iter = finishedResult[0].begin(); iter != finishedResult[0].end(); iter++) {
+            size_t ef = iter->first;
+            vector<float> recall_list(test_times);
+            for (int ri = 0; ri < test_times; ri++){
+                recall_list[ri] = finishedResult[ri][ef][1];
+            }
+            int pos = selectNearAvgPos(recall_list);
+
+            vector<float> res_selected(finishedResult[pos][ef]);
+            result_writer << ef << "\t";
+            for (float& r : res_selected)
+                result_writer << r << "\t";
+            result_writer << "\n";
+        }
+        result_writer.close();
 
         printf("Search index %s is succeed \n", index.c_str());
     }
@@ -270,6 +316,18 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
     MapString["index"] = hnsw_index;
     CheckDataset(using_dataset, MapParameter, MapString);
+
+#if RANKMAP
+    string suffix = "";
+#if TESTMODE
+    suffix = "detail";
+#endif
+    MapString["result"] = path_project + "/output/result/rank/" + using_dataset + to_string(data_size_millions) +
+                        "m_rc" + to_string(k) + "_rank" + to_string(NUM_RANKS) + "_" + suffix + ".log";
+#else
+    MapString["result"] = path_project + "/output/result/hnsw/" + using_dataset + to_string(data_size_millions) +
+                        "m_rc" + to_string(k) + ".log";
+#endif
 
     if (stage == "build" || stage == "both")
         build_index<DTSET, DTRES>(MapParameter, MapString);
