@@ -1,7 +1,7 @@
-#define PLATG       true
+#define PLATG       false
 
 
-#define FMTINT  false
+#define FMTINT  true
 
 #if FMTINT
 typedef uint8_t DTSET;
@@ -16,8 +16,8 @@ typedef float   DTRES;
 #define RANKMAP     false
 
 #if RANKMAP
-#define NUM_RANKS   1
-#define OPT_VISITED true
+#define NUM_RANKS   4
+#define OPT_VISITED false
 // rank 分配方式
 #define MODMAP      true
 #endif
@@ -26,6 +26,6 @@ typedef float   DTRES;
 // 支持测试模式
 #define TESTMODE    true
 #if TESTMODE
-#define TTIMES      5
-#define DETAIL      true
+#define TTIMES      10
+#define DETAIL      false
 #endif

@@ -45,8 +45,8 @@ test_vs_recall(HierarchicalNSW<DTset, DTres>& appr_alg, size_t vecdim,
 #if RANKMAP
     if (appr_alg.stats != nullptr) {
         cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-        cout << "NDC_max\t" << "NDC_total\t";
-        column_map = 8;
+        cout << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
+        column_map = 9;
     }
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
@@ -110,8 +110,10 @@ test_vs_recall(HierarchicalNSW<DTset, DTres>& appr_alg, size_t vecdim,
 
             cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
             cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
             result_ef[6] = 1.0 * appr_alg.stats->n_DC_max / qsize;
             result_ef[7] = 1.0 * appr_alg.stats->n_DC_total / qsize;
+            result_ef[8] = 1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops;
         }
 #else
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
@@ -253,7 +255,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 #if RANKMAP
         if (appr_alg->stats != nullptr) {
             result_writer << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-            result_writer << "NDC_max\t" << "NDC_total\t";
+            result_writer << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
         }
 #endif
         result_writer << "\n";
@@ -273,6 +275,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
             result_writer << "\n";
         }
         result_writer.close();
+        printf("Write final result to %s is successd\n", MapString["result"].c_str());
 
         printf("Search index %s is succeed \n", index.c_str());
     }
@@ -280,10 +283,10 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
 void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
     string path_project = "..";
-#if RANKMAP
-    string label = "rank-map/";
-#else
+#if (PLATG || RANKMAP)
     string label = "plat/";
+#else
+    string label = "hnsw/";
 #endif
 
     string path_graphindex = path_project + "/graphindex/" + label;
@@ -317,13 +320,16 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
     MapString["index"] = hnsw_index;
     CheckDataset(using_dataset, MapParameter, MapString);
 
-#if RANKMAP
+#if (RANKMAP && PLATG)
     string suffix = "";
 #if TESTMODE
     suffix = "detail";
 #endif
     MapString["result"] = path_project + "/output/result/rank/" + using_dataset + to_string(data_size_millions) +
                         "m_rc" + to_string(k) + "_rank" + to_string(NUM_RANKS) + "_" + suffix + ".log";
+#elif PLATG
+    MapString["result"] = path_project + "/output/result/plat/" + using_dataset + to_string(data_size_millions) +
+                        "m_rc" + to_string(k) + ".log";
 #else
     MapString["result"] = path_project + "/output/result/hnsw/" + using_dataset + to_string(data_size_millions) +
                         "m_rc" + to_string(k) + ".log";
