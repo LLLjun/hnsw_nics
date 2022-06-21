@@ -2,7 +2,7 @@ import os
 
 # DataSet = ["deep", "turing", "gist"]
 # DataSize = [1, 10]
-DataSet = ["sift"]
+DataSet = ["spacev"]
 DataSize = [1, 10]
 
 Graph = ["hnsw", "plat"]

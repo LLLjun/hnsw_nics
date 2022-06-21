@@ -1,15 +1,4 @@
-#define PLATG       false
-
-
-#define FMTINT  true
-
-#if FMTINT
-typedef uint8_t DTSET;
-typedef int     DTRES;
-#else
-typedef float   DTSET;
-typedef float   DTRES;
-#endif
+#define PLATG       true
 
 
 // rank-level的映射
