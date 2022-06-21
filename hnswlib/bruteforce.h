@@ -5,17 +5,17 @@
 #include <algorithm>
 
 namespace hnswlib {
-    template<typename dist_t>
+    template<typename dist_t, typename DTset=float>
     class BruteforceSearch : public AlgorithmInterface<dist_t> {
     public:
-        BruteforceSearch(SpaceInterface <dist_t> *s) {
+        BruteforceSearch(SpaceInterface <dist_t, DTset> *s) {
 
         }
-        BruteforceSearch(SpaceInterface<dist_t> *s, const std::string &location) {
+        BruteforceSearch(SpaceInterface<dist_t, DTset> *s, const std::string &location) {
             loadIndex(location, s);
         }
 
-        BruteforceSearch(SpaceInterface <dist_t> *s, size_t maxElements) {
+        BruteforceSearch(SpaceInterface <dist_t, DTset> *s, size_t maxElements) {
             maxelements_ = maxElements;
             data_size_ = s->get_data_size();
             fstdistfunc_ = s->get_dist_func();
@@ -93,7 +93,7 @@ namespace hnswlib {
             dist_t lastdist = topResults.top().first;
             for (int i = k; i < cur_element_count; i++) {
                 dist_t dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, dist_func_param_);
-                if (dist <= lastdist) {
+                if (dist < lastdist) {
                     topResults.push(std::pair<dist_t, labeltype>(dist, *((labeltype *) (data_ + size_per_element_ * i +
                                                                                         data_size_))));
                     if (topResults.size() > k)
@@ -118,7 +118,7 @@ namespace hnswlib {
             output.close();
         }
 
-        void loadIndex(const std::string &location, SpaceInterface<dist_t> *s) {
+        void loadIndex(const std::string &location, SpaceInterface<dist_t, DTset> *s) {
 
 
             std::ifstream input(location, std::ios::binary);

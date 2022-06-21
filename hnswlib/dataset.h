@@ -15,6 +15,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_parameter["qsize"] = 10000;
         index_parameter["vecdim"] = 128;
         index_parameter["gt_maxnum"] = 100;
+        index_string["format"] = "Uint8";
         index_string["path_q"] = path_dataset + "query.public.10K.u8bin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.u8bin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
@@ -26,6 +27,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_parameter["qsize"] = 1000;
         index_parameter["vecdim"] = 960;
         index_parameter["gt_maxnum"] = 100;
+        index_string["format"] = "Float";
         index_string["path_q"] = path_dataset + "gist_query.fvecs";
         index_string["path_data"] = path_dataset + "gist_base.fvecs";
         index_string["path_gt"] = path_dataset + "gist_groundtruth.ivecs";
@@ -37,6 +39,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_parameter["qsize"] = 10000;
         index_parameter["vecdim"] = 96;
         index_parameter["gt_maxnum"] = 100;
+        index_string["format"] = "Float";
         index_string["path_q"] = path_dataset + "query.public.10K.fbin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
@@ -48,8 +51,21 @@ void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, 
         index_parameter["qsize"] = 100000;
         index_parameter["vecdim"] = 100;
         index_parameter["gt_maxnum"] = 100;
+        index_string["format"] = "Float";
         index_string["path_q"] = path_dataset + "query100K.fbin";
         index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
+        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+    } else if (dataname == "spacev"){
+        if (subset_size_milllions > 100){
+            printf("error: spacev size set error.\n");
+            exit(1);
+        }
+        index_parameter["qsize"] = 29316;
+        index_parameter["vecdim"] = 100;
+        index_parameter["gt_maxnum"] = 100;
+        index_string["format"] = "Int8";
+        index_string["path_q"] = path_dataset + "query.i8bin";
+        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.i8bin";
         index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
