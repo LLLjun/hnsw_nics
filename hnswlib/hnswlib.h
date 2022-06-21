@@ -49,17 +49,17 @@ namespace hnswlib {
         in.read((char *) &podRef, sizeof(T));
     }
 
-    template<typename MTYPE>
-    using DISTFUNC = MTYPE(*)(const void *, const void *, const void *);
+    template<typename DTres, typename DTset=float>
+    using DISTFUNC = DTres(*)(const void *, const void *, const void *);
 
 
-    template<typename MTYPE>
+    template<typename DTres, typename DTset=float>
     class SpaceInterface {
     public:
         //virtual void search(void *);
         virtual size_t get_data_size() = 0;
 
-        virtual DISTFUNC<MTYPE> get_dist_func() = 0;
+        virtual DISTFUNC<DTres, DTset> get_dist_func() = 0;
 
         virtual void *get_dist_func_param() = 0;
 
@@ -100,7 +100,7 @@ namespace hnswlib {
         return result;
     }
 
- 
+
     /*
         detail infomation
     */

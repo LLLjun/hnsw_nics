@@ -1,8 +1,8 @@
 import os
 
 def main():
-    stage = "search"
-    dataset = "deep"
+    stage = "both"
+    dataset = "spacev"
     datasize = 1
 
     command = "./main " + stage + " " + dataset + " " + str(datasize)
