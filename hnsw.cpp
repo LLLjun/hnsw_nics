@@ -2,6 +2,7 @@
 #include <fstream>
 #include <queue>
 #include <chrono>
+#include <memory>
 #include "hnswlib/hnswlib.h"
 #include <unordered_set>
 #include <unistd.h>
@@ -137,49 +138,66 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
         return;
     } else {
 
+        printf("Load base vectors: \n");
+        unsigned build_start_id = 0;
+        DTset* build_start_vector = new DTset[vecdim]();
+#if PLATG
         DTset *massB = new DTset[vecsize * vecdim]();
-        cout << "Loading base data:\n";
         LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
+        build_start_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
+        delete[] massB;
+#endif
+
+        ifstream base_reader(path_data.c_str());
+        int head_offest = 2 * sizeof(uint32_t);
+        int vec_offest = vecdim * sizeof(DTset);
+        uint32_t nums_r, dims_r;
+        base_reader.read((char *) &nums_r, sizeof(uint32_t));
+        base_reader.read((char *) &dims_r, sizeof(uint32_t));
+        if ((vecsize != nums_r) || (vecdim != dims_r)){
+            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
+            exit(1);
+        }
+        printf("vecsize: %d, vecdim: %d, path: %s\n", vecsize, vecdim, path_data.c_str());
 
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, vecsize, M, efConstruction);
-#if PLATG
-        unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
-        appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
-#else
-        appr_alg->addPoint((void *) (massB), (size_t) 0);
-#endif
-        cout << "Building index:\n";
-        int j1 = 0;
+
+        printf("Building index:\n");
+        base_reader.seekg(head_offest + vec_offest * build_start_id, ios::beg);
+        base_reader.read((char *) build_start_vector, vec_offest);
+        appr_alg->addPoint((void *) build_start_vector, (size_t) build_start_id);
+
+        int j1 = 1;
         StopW stopw = StopW();
         StopW stopw_full = StopW();
         size_t report_every = vecsize / 10;
 #pragma omp parallel for
-        for (size_t i = 1; i < vecsize; i++) {
+        for (size_t vi = 1; vi < vecsize; vi++) {
+            unique_ptr<DTset> vecb(new DTset[vecdim]());
+            size_t ic = vi;
+#if PLATG
+            if (vi <= build_start_id)
+                ic = vi - 1;
+#endif
 #pragma omp critical
             {
+                base_reader.seekg(head_offest + vec_offest * ic, ios::beg);
+                base_reader.read((char *) vecb.get(), vec_offest);
                 j1++;
                 if (j1 % report_every == 0) {
-                    cout << j1 / (0.01 * vecsize) << " %, "
+                    cout << j1 * 10 / report_every << " %, "
                          << report_every / (1000.0 * stopw.getElapsedTimes()) << " kips " << " Mem: "
                          << getCurrentRSS() / 1000000 << " Mb \n";
                     stopw.reset();
                 }
             }
-#if PLATG
-            size_t ic;
-            if (i <= center_id)
-                ic = i - 1;
-            else
-                ic = i;
-            appr_alg->addPoint((void *) (massB + ic * vecdim), ic);
-#else
-            appr_alg->addPoint((void *) (massB + i * vecdim), i);
-#endif
+            appr_alg->addPoint((void *) vecb.get(), ic);
         }
-        cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
-        delete[] massB;
+        printf("Build time: %.3f seconds\n", stopw_full.getElapsedTimes());
+
         if (isSave)
             appr_alg->saveIndex(index);
+        appr_alg->~HierarchicalNSW();
 
         printf("Build index %s is succeed \n", index.c_str());
     }
@@ -207,19 +225,21 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         vector<vector<unsigned>> massQA;
         DTset *massQ = new DTset[qsize * vecdim];
 
-        cout << "Loading GT:\n";
+        printf("Loading GT:\n");
         LoadBinToVector<unsigned>(path_gt, massQA, qsize, gt_maxnum);
-        cout << "Loading queries:\n";
+        printf("Loading queries:\n");
         LoadBinToArray<DTset>(path_q, massQ, qsize, vecdim);
 
+        printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
 
-        cout << "Run and comput recall: \n";
+        printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+        appr_alg->~HierarchicalNSW();
 
         printf("Search index %s is succeed \n", index.c_str());
     }
