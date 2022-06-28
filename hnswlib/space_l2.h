@@ -259,13 +259,14 @@ namespace hnswlib {
         ~L2Space() {}
     };
 
-    static int
+    template<typename DTres, typename DTset>
+    static DTres
     L2SqrI4x(const void *__restrict pVect1, const void *__restrict pVect2, const void *__restrict qty_ptr) {
 
         size_t qty = *((size_t *) qty_ptr);
-        int res = 0;
-        unsigned char *a = (unsigned char *) pVect1;
-        unsigned char *b = (unsigned char *) pVect2;
+        DTres res = 0;
+        DTset *a = (DTset *) pVect1;
+        DTset *b = (DTset *) pVect2;
 
         qty = qty >> 2;
         for (size_t i = 0; i < qty; i++) {
@@ -286,11 +287,13 @@ namespace hnswlib {
         return (res);
     }
 
-    static int L2SqrI(const void* __restrict pVect1, const void* __restrict pVect2, const void* __restrict qty_ptr) {
+    template<typename DTres, typename DTset>
+    static DTres
+    L2SqrI(const void* __restrict pVect1, const void* __restrict pVect2, const void* __restrict qty_ptr) {
         size_t qty = *((size_t*)qty_ptr);
         int res = 0;
-        unsigned char* a = (unsigned char*)pVect1;
-        unsigned char* b = (unsigned char*)pVect2;
+        DTset* a = (DTset*)pVect1;
+        DTset* b = (DTset*)pVect2;
 
         for(size_t i = 0; i < qty; i++)
         {
@@ -301,28 +304,29 @@ namespace hnswlib {
         return (res);
     }
 
-    class L2SpaceI : public SpaceInterface<int> {
+    template<typename DTres, typename DTset>
+    class L2SpaceI : public SpaceInterface<DTres, DTset> {
 
-        DISTFUNC<int> fstdistfunc_;
+        DISTFUNC<DTres, DTset> fstdistfunc_;
         size_t data_size_;
         size_t dim_;
     public:
         L2SpaceI(size_t dim) {
             if(dim % 4 == 0) {
-                fstdistfunc_ = L2SqrI4x;
+                fstdistfunc_ = L2SqrI4x<DTres, DTset>;
             }
             else {
-                fstdistfunc_ = L2SqrI;
+                fstdistfunc_ = L2SqrI<DTres, DTset>;
             }
             dim_ = dim;
-            data_size_ = dim * sizeof(unsigned char);
+            data_size_ = dim * sizeof(DTset);
         }
 
         size_t get_data_size() {
             return data_size_;
         }
 
-        DISTFUNC<int> get_dist_func() {
+        DISTFUNC<DTres, DTset> get_dist_func() {
             return fstdistfunc_;
         }
 

@@ -17,10 +17,9 @@ public:
         check_point = _clock::now();
     }
 
-    long long getElapsedTimeus() const {
+    double getElapsedTimeus() const {
         return std::chrono::duration_cast<std::chrono::microseconds>(
-                   _clock::now() - check_point)
-            .count();
+                   _clock::now() - check_point).count();
     }
 };
 

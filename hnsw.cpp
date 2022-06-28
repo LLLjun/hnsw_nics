@@ -2,6 +2,7 @@
 #include <fstream>
 #include <queue>
 #include <chrono>
+#include <memory>
 #include "hnswlib/hnswlib.h"
 #include <unordered_set>
 #include <unistd.h>
@@ -17,136 +18,108 @@ extern int move_bits = 0;
 #endif
 
 
-template<typename DTres>
-static void
-get_gt(unsigned *massQA, size_t qsize, size_t &gt_maxnum, size_t vecdim,
-        vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
-    (vector<std::priority_queue<std::pair<DTres, labeltype >>>(qsize)).swap(answers);
-    cout << qsize << "\n";
-    for (int i = 0; i < qsize; i++) {
-        for (int j = 0; j < k; j++) {
-            answers[i].emplace(0.0f, massQA[gt_maxnum * i + j]);
-        }
-    }
-}
-
-template<typename DTval, typename DTres>
-static float
-test_approx(void *massQ_v, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
-            vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
-    DTval* massQ = (DTval*)massQ_v;
+float comput_recall(vector<vector<unsigned>>& result,
+                    vector<vector<unsigned>>& massQA, size_t qsize, size_t k){
     size_t correct = 0;
-    size_t total = 0;
-    //uncomment to test in parallel mode:
-    //#pragma omp parallel for
-#if MEMTRACE
-    {   int i = 100;
-#else
+    size_t total = qsize * k;
 
-//     omp_set_num_threads(3);
-#pragma omp parallel for
-    for (int i = 0; i < qsize; i++) {
-#endif
+    for (int qi = 0; qi < qsize; qi++){
+        unordered_set<unsigned> g;
+        for (int i = 0; i < k; i++)
+            g.insert(result[qi][i]);
 
-#if RANKMAP
-        std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchParaRank(massQ + vecdim * i, k);
-#else
-        std::priority_queue<std::pair<DTres, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-#endif
-        std::priority_queue<std::pair<DTres, labeltype >> gt(answers[i]);
-        unordered_set<labeltype> g;
-
-        while (gt.size()) {
-            g.insert(gt.top().second);
-            gt.pop();
-        }
-
-#pragma omp critical
-        {
-            total += g.size();
-            while (result.size()) {
-                if (g.find(result.top().second) != g.end()) {
-                    correct++;
-                } else {
-                }
-                result.pop();
-            }
+        for (int i = 0; i < k; i++) {
+            if (g.find(massQA[qi][i]) != g.end())
+                correct++;
         }
     }
-    return 1.0f * correct / total;
+    return (1.0 * correct / total);
 }
 
-template<typename DTval, typename DTres>
+template<typename DTres, typename DTset>
 static void
-test_vs_recall(void *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size_t vecdim,
-               vector<std::priority_queue<std::pair<DTres, labeltype >>> &answers, size_t k) {
-    vector<size_t> efs;// = { 10,10,10,10,10 };
-#if MEMTRACE
-    efs.push_back(80);
-#elif AKNNG
-    for (int i = 200; i <= 700; i += 100)
-        efs.push_back(i);
+test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
+                void* massQ_v, size_t qsize,
+                vector<vector<unsigned>>& massQA, size_t k) {
+#if QUANT
+    DTQTZ* massQ = (DTQTZ*) massQ_v;
 #else
+    DTset* massQ = (DTset*) massQ_v;
+#endif
+
+    vector<size_t> efs;// = { 10,10,10,10,10 };
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
-#endif
 
-    cout << "efs\t" << "R@" << k << "\t" << "time_us" << "\t";
+    cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if RANKMAP
     if (appr_alg.stats != nullptr) {
-        cout << "rank_us\t" << "hlc_us\t";
-        cout << "NDC_avg\t" << "NDC_max\t" << "n_hops\t";
+        cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
+        cout << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
     }
+#else
+    cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
     cout << endl;
 
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
+
+#if RANKMAP
+        if (appr_alg.stats != nullptr)
+            appr_alg.stats->Reset();
+#else
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
-        // appr_alg.hits_pre_comput = 0;
-#if PROFILE
-        appr_alg.time_PDC = 0;
-        appr_alg.time_sort = 0;
 #endif
 
-#if RANKMAP
-        if (appr_alg.stats != nullptr) {
-            appr_alg.stats->n_max_NDC = 0;
-            appr_alg.stats->hlc_us = 0;
-            appr_alg.stats->rank_us = 0;
-            appr_alg.stats->n_hops = 0;
-        }
-#endif
+        vector<vector<unsigned>> result(qsize);
+        for (vector<unsigned>& r: result)
+            r.resize(k, 0);
 
         Timer stopw = Timer();
-
-        float recall = test_approx<DTval, DTres>(massQ, qsize, appr_alg, vecdim, answers, k);
-        float time_us_per_query = (double) stopw.getElapsedTimeus() / qsize;
-        float avg_hop_0 = 1.0f * appr_alg.metric_hops / qsize;
-        float avg_hop_L = 1.0f * appr_alg.metric_hops_L / qsize;
-        float NDC_avg = 1.0f * appr_alg.metric_distance_computations / qsize;
-        // float hits = (float) appr_alg.hits_pre_comput / (appr_alg.metric_hops - 1);
-
-#if PROFILE
-        float TDC = appr_alg.time_PDC / qsize;
-        float Tsort = appr_alg.time_sort / qsize;
-        cout << ef << "\t" << recall << "\t" << NDC_avg << "\t" << time_us_per_query << "\t" <<
-                TDC << "\t" << Tsort << "\n";
+//         omp_set_num_threads(3);
+// #pragma omp parallel for
+        for (int qi = 0; qi < qsize; qi++) {
+#if RANKMAP
+            priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
 #else
+            priority_queue<pair<DTres, labeltype>> res = appr_alg.searchKnn(massQ + vecdim * qi, k);
+#endif
+
+// #pragma omp critical
+            {
+                int i = 0;
+                while (!res.empty()){
+                    result[qi][i] = (unsigned) res.top().second;
+                    res.pop();
+                    i++;
+                }
+            }
+        }
+        float time_us_per_query = stopw.getElapsedTimeus() / qsize;
+        float recall = comput_recall(result, massQA, qsize, k);
+
         cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
 #if RANKMAP
         if (appr_alg.stats != nullptr) {
             cout << appr_alg.stats->rank_us / qsize << "\t";
+            cout << appr_alg.stats->sort_us / qsize << "\t";
             cout << appr_alg.stats->hlc_us / qsize << "\t";
-            cout << NDC_avg << "\t";
-            cout << appr_alg.stats->n_max_NDC / qsize << "\t";
-            cout << appr_alg.stats->n_hops / qsize << "\t";
+            cout << appr_alg.stats->visited_us / qsize << "\t";
+
+            cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
         }
+#else
+        cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
+        cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
+        cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
 #endif
         cout << endl;
-#endif
+
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
             break;
@@ -154,127 +127,124 @@ test_vs_recall(void *massQ, size_t qsize, HierarchicalNSW<DTres> &appr_alg, size
     }
 }
 
-inline bool exists_test(const std::string &name) {
+inline bool exists_test(const string &name) {
     ifstream f(name.c_str());
     return f.good();
 }
 
-template<typename DTset, typename DTval, typename DTres>
-void build_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string, bool isSave = true){
+template<typename DTres, typename DTset>
+void build_index(map<string, size_t> &MapParameter, map<string, string> &MapString,
+                SpaceInterface<DTres, DTset> *l2space, bool isSave = true){
     //
-    size_t efConstruction = index_parameter["efConstruction"];
-    size_t M = index_parameter["M"];
-    size_t vecsize = index_parameter["vecsize"];
-    size_t vecdim = index_parameter["vecdim"];
-    size_t qsize = index_parameter["qsize"];
+    size_t efConstruction = MapParameter["efConstruction"];
+    size_t M = MapParameter["M"];
+    size_t vecsize = MapParameter["vecsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t qsize = MapParameter["qsize"];
 
-    string path_data = index_string["path_data"];
-    string format = index_string["format"];
-    string index = index_string["index"];
+    string path_data = MapString["path_data"];
+    string index = MapString["index"];
 
     if (exists_test(index)){
         printf("Index %s is existed \n", index.c_str());
         return;
     } else {
 
+        printf("Load base vectors: \n");
+        unsigned build_start_id = 0;
+        DTset* build_start_vector = new DTset[vecdim]();
+#if PLATG
         DTset *massB = new DTset[vecsize * vecdim]();
-        cout << "Loading base data:\n";
-        if (format == "float"){
-            LoadBinToArray<DTval>(path_data, massB, vecsize, vecdim);
-        } else if (format == "uint8"){
-            DTset *massB_int = new DTset[vecsize * vecdim]();
-            LoadBinToArray<DTset>(path_data, massB_int, vecsize, vecdim);
-            TransIntToFloat<DTset>(massB, massB_int, vecsize, vecdim);
-            delete[] massB_int;
-        } else {
-            printf("Error, unsupport format \n");
+        LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
+        build_start_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
+        delete[] massB;
+#endif
+
+        ifstream base_reader(path_data.c_str());
+        int head_offest = 2 * sizeof(uint32_t);
+        int vec_offest = vecdim * sizeof(DTset);
+        uint32_t nums_r, dims_r;
+        base_reader.read((char *) &nums_r, sizeof(uint32_t));
+        base_reader.read((char *) &dims_r, sizeof(uint32_t));
+        if ((vecsize != nums_r) || (vecdim != dims_r)){
+            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
             exit(1);
         }
+        printf("vecsize: %d, vecdim: %d, path: %s\n", vecsize, vecdim, path_data.c_str());
 
-        L2Space l2space(vecdim);
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, vecsize, M, efConstruction);
-#if PLATG
-        unsigned center_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
-        appr_alg->addPoint((void *) (massB + center_id * vecdim), (size_t) center_id);
-#else
-        appr_alg->addPoint((void *) (massB), (size_t) 0);
-#endif
-        cout << "Building index:\n";
-        int j1 = 0;
+        HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, vecsize, M, efConstruction);
+
+        printf("Building index:\n");
+        base_reader.seekg(head_offest + vec_offest * build_start_id, ios::beg);
+        base_reader.read((char *) build_start_vector, vec_offest);
+        appr_alg->addPoint((void *) build_start_vector, (size_t) build_start_id);
+
+        int j1 = 1;
         StopW stopw = StopW();
         StopW stopw_full = StopW();
         size_t report_every = vecsize / 10;
 #pragma omp parallel for
-        for (size_t i = 1; i < vecsize; i++) {
+        for (size_t vi = 1; vi < vecsize; vi++) {
+            unique_ptr<DTset> vecb(new DTset[vecdim]());
+            size_t ic = vi;
+#if PLATG
+            if (vi <= build_start_id)
+                ic = vi - 1;
+#endif
 #pragma omp critical
             {
+                base_reader.seekg(head_offest + vec_offest * ic, ios::beg);
+                base_reader.read((char *) vecb.get(), vec_offest);
                 j1++;
                 if (j1 % report_every == 0) {
-                    cout << j1 / (0.01 * vecsize) << " %, "
+                    cout << j1 * 10 / report_every << " %, "
                          << report_every / (1000.0 * stopw.getElapsedTimes()) << " kips " << " Mem: "
                          << getCurrentRSS() / 1000000 << " Mb \n";
                     stopw.reset();
                 }
             }
-#if PLATG
-            size_t ic;
-            if (i <= center_id)
-                ic = i - 1;
-            else
-                ic = i;
-            appr_alg->addPoint((void *) (massB + ic * vecdim), ic);
-#else
-            appr_alg->addPoint((void *) (massB + i * vecdim), i);
-#endif
+            appr_alg->addPoint((void *) vecb.get(), ic);
         }
-        cout << "Build time:" << stopw_full.getElapsedTimes() << "  seconds\n";
-        delete[] massB;
+        printf("Build time: %.3f seconds\n", stopw_full.getElapsedTimes());
+
         if (isSave)
             appr_alg->saveIndex(index);
+        appr_alg->~HierarchicalNSW();
 
         printf("Build index %s is succeed \n", index.c_str());
     }
 }
 
-template<typename DTset, typename DTval, typename DTres>
-void search_index(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
+template<typename DTres, typename DTset>
+void search_index(map<string, size_t> &MapParameter, map<string, string> &MapString,
+                SpaceInterface<DTres, DTset> *l2space){
     //
-    size_t k = index_parameter["k"];
-    size_t vecsize = index_parameter["vecsize"];
-    size_t qsize = index_parameter["qsize"];
-    size_t vecdim = index_parameter["vecdim"];
-    size_t gt_maxnum = index_parameter["gt_maxnum"];
+    size_t k = MapParameter["k"];
+    size_t vecsize = MapParameter["vecsize"];
+    size_t qsize = MapParameter["qsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t gt_maxnum = MapParameter["gt_maxnum"];
 
-    string path_q = index_string["path_q"];
-    string format = index_string["format"];
-    string index = index_string["index"];
-    string path_gt = index_string["path_gt"];
+    string path_q = MapString["path_q"];
+    string index = MapString["index"];
+    string path_gt = MapString["path_gt"];
+    string path_data = MapString["path_data"];
 
     if (!exists_test(index)){
         printf("Error, index %s is unexisted \n", index.c_str());
         exit(1);
     } else {
 
-        unsigned *massQA = new unsigned[qsize * gt_maxnum];
+        vector<vector<unsigned>> massQA;
         DTset *massQ = new DTset[qsize * vecdim];
 
-        cout << "Loading GT:\n";
-        LoadBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
-        cout << "Loading queries:\n";
-        if (format == "float"){
-            LoadBinToArray<DTval>(path_q, massQ, qsize, vecdim);
-        } else if (format == "uint8"){
-            DTset *massQ_int = new DTset[qsize * vecdim]();
-            LoadBinToArray<DTset>(path_q, massQ_int, qsize, vecdim);
-            TransIntToFloat<DTset>(massQ, massQ_int, qsize, vecdim);
-            delete[] massQ_int;
-        } else {
-            printf("Error, unsupport format \n");
-            exit(1);
-        }
+        printf("Loading GT:\n");
+        LoadBinToVector<unsigned>(path_gt, massQA, qsize, gt_maxnum);
+        printf("Loading queries:\n");
+        LoadBinToArray<DTset>(path_q, massQ, qsize, vecdim);
 
-        L2Space l2space(vecdim);
-        HierarchicalNSW<DTres> *appr_alg = new HierarchicalNSW<DTres>(&l2space, index, false);
+        printf("Loading index from %s ...\n", index.c_str());
+        HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
 #if RANKMAP
         appr_alg->initRankMap();
@@ -286,21 +256,12 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
 
         DTset *massB = new DTset[vecsize * vecdim]();
         DTQTZ* massB_fix = new DTQTZ[vecsize * vecdim]();
-        cout << "Loading base data:\n";
-        if (format == "float"){
-            LoadBinToArray<DTval>(index_string["path_data"], massB, vecsize, vecdim);
-        } else if (format == "uint8"){
-            DTset *massB_int = new DTset[vecsize * vecdim]();
-            LoadBinToArray<DTset>(index_string["path_data"], massB_int, vecsize, vecdim);
-            TransIntToFloat<DTset>(massB, massB_int, vecsize, vecdim);
-            delete[] massB_int;
-        } else {
-            printf("Error, unsupport format \n");
-            exit(1);
-        }
+
+        printf("Load base vectors: \n");
+        LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
 
         bool issigned = true;
-        if (dataname == "gist")
+        if (vecdim == 960)
             issigned = false;
         VectorQuant<DTQTZ> vecquant(vecdim, issigned, true);
         vecquant.FixInit(massB, vecsize, vecsize);
@@ -315,36 +276,28 @@ void search_index(const string &dataname, map<string, size_t> &index_parameter, 
         delete[] massQ;
 #endif
 
-        vector<std::priority_queue<std::pair<DTres, labeltype >>> answers;
-        cout << "Parsing gt:\n";
-        get_gt(massQA, qsize, gt_maxnum, vecdim, answers, k);
-
-#if MEMTRACE
-        appr_alg->initMem();
-#endif
-
-        cout << "Comput recall: \n";
+        printf("Run and comput recall: \n");
 #if QUANT
-        test_vs_recall<DTQTZ, DTres>(massQ_fix, qsize, *appr_alg, vecdim, answers, k);
+        test_vs_recall<DTres, DTset>(*appr_alg, vecdim, massQ_fix, qsize, massQA, k);
 #else
-        test_vs_recall<DTval, DTres>(massQ, qsize, *appr_alg, vecdim, answers, k);
+        test_vs_recall<DTres, DTset>(*appr_alg, vecdim, massQ, qsize, massQA, k);
 #endif
-
-#if MEMTRACE
-        string file_mem_trace = "/home/usr-xkIJigVq/nmp/hnsw_nics/output/mem/trace.txt";
-        appr_alg->main_mem->write_file(file_mem_trace, appr_alg->main_mem->count_trace('a'));
-#endif
+        appr_alg->~HierarchicalNSW();
 
         printf("Search index %s is succeed \n", index.c_str());
     }
 }
 
-void hnsw_impl(bool is_build, const string &using_dataset){
-    string path_project = "/home/usr-xkIJigVq/nmp/hnsw_nics";
+void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
+    string path_project = "..";
 #if QUANT
     string label = "quant/";
-#else
+#elif RANKMAP
     string label = "rank-map/";
+#elif PLATG
+    string label = "plat/";
+#else
+    string label = "hnsw/";
 #endif
 
     string path_graphindex = path_project + "/graphindex/" + label;
@@ -357,44 +310,50 @@ void hnsw_impl(bool is_build, const string &using_dataset){
         }
     }
 
-	size_t subset_size_milllions = 1;
-	size_t efConstruction = 200;
-	size_t M = 20;
+    // for 1m, 10m, 100m
+    vector<size_t> efcSet = {20, 30, 40};
+    size_t M = (log10(data_size_millions) + 2) * 10;
+	size_t efConstruction = M * 10;
     size_t k = 10;
-#if AKNNG
-    // subset_size_milllions = 10;
-    k = 100;
-    if (subset_size_milllions == 10){
-        efConstruction = 400;
-        M = 30;
-    }
-#endif
+    size_t vecsize = data_size_millions * 1000000;
 
-    size_t vecsize = subset_size_milllions * 1000000;
-    size_t qsize, vecdim, gt_maxnum;
-    string path_index, path_gt, path_q, path_data;
+    map<string, size_t> MapParameter;
+    MapParameter["data_size_millions"] = data_size_millions;
+    MapParameter["efConstruction"] = efConstruction;
+    MapParameter["M"] = M;
+    MapParameter["k"] = k;
+    MapParameter["vecsize"] = vecsize;
 
-    std::map<string, size_t> index_parameter;
-    index_parameter["subset_size_milllions"] = subset_size_milllions;
-    index_parameter["efConstruction"] = efConstruction;
-    index_parameter["M"] = M;
-    index_parameter["k"] = k;
-    index_parameter["vecsize"] = vecsize;
+    map<string, string> MapString;
 
-    std::map<string, string> index_string;
-    index_string["format"] = "float";
-
-    string hnsw_index = pre_index + "/" + using_dataset + to_string(subset_size_milllions) +
+    string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) +
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
-    index_string["index"] = hnsw_index;
-    CheckDataset(using_dataset, index_parameter, index_string);
+    MapString["index"] = hnsw_index;
+    CheckDataset(using_dataset, MapParameter, MapString);
 
-    L2Space l2space(vecdim);
-
-    if (is_build){
-        build_index<DTSET, DTVAL, DTRES>(using_dataset, index_parameter, index_string);
-    } else{
-        search_index<DTSET, DTVAL, DTRES>(using_dataset, index_parameter, index_string);
+    if (stage == "build" || stage == "both") {
+        if (MapString["format"] == "Float") {
+            L2Space l2space(MapParameter["vecdim"]);
+            build_index<float, float>(MapParameter, MapString, &l2space);
+        } else if (MapString["format"] == "Uint8") {
+            L2SpaceI<int, uint8_t> l2space(MapParameter["vecdim"]);
+            build_index<int, uint8_t>(MapParameter, MapString, &l2space);
+        } else if (MapString["format"] == "Int8") {
+            L2SpaceI<int, int8_t> l2space(MapParameter["vecdim"]);
+            build_index<int, int8_t>(MapParameter, MapString, &l2space);
+        } else {
+            printf("Error, unsupport format: %s \n", MapString["format"].c_str()); exit(1);
+        }
     }
+
+    if (stage == "search" || stage == "both") {
+        if (MapString["format"] == "Float") {
+            L2Space l2space(MapParameter["vecdim"]);
+            search_index<float, float>(MapParameter, MapString, &l2space);
+        } else {
+            printf("Error, Quantization unsupport format: %s \n", MapString["format"].c_str()); exit(1);
+        }
+    }
+
     return;
 }

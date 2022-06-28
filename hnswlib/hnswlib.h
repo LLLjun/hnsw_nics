@@ -49,17 +49,17 @@ namespace hnswlib {
         in.read((char *) &podRef, sizeof(T));
     }
 
-    template<typename MTYPE>
-    using DISTFUNC = MTYPE(*)(const void *, const void *, const void *);
+    template<typename DTres, typename DTset=float>
+    using DISTFUNC = DTres(*)(const void *, const void *, const void *);
 
 
-    template<typename MTYPE>
+    template<typename DTres, typename DTset=float>
     class SpaceInterface {
     public:
         //virtual void search(void *);
         virtual size_t get_data_size() = 0;
 
-        virtual DISTFUNC<MTYPE> get_dist_func() = 0;
+        virtual DISTFUNC<DTres, DTset> get_dist_func() = 0;
 
         virtual void *get_dist_func_param() = 0;
 
@@ -100,12 +100,40 @@ namespace hnswlib {
         return result;
     }
 
+
+    /*
+        detail infomation
+    */
+    class QueryStats {
+    public:
+        double hlc_us;
+        double rank_us;
+        double sort_us;
+        double visited_us;
+        size_t n_DC_max;
+        size_t n_DC_total;
+        size_t n_hops;
+        size_t n_use_old;
+
+        QueryStats() {
+            Reset();
+        }
+
+        void Reset() {
+            hlc_us = 0;
+            rank_us = 0;
+            sort_us = 0;
+            visited_us = 0;
+            n_DC_max = 0;
+            n_DC_total = 0;
+            n_hops = 0;
+            n_use_old = 0;
+        }
+    };
+
 }
 
 #include "space_l2.h"
 #include "space_ip.h"
 #include "bruteforce.h"
 #include "hnswalg.h"
-// #include "config.h"
-// #include "dataset.h"
-// #include "profile.h"
