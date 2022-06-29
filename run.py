@@ -1,9 +1,9 @@
 import os
 
 def main():
-    stage = "both"
-    dataset = "spacev"
-    datasize = 1
+    stage = "search"
+    dataset = "deep"
+    datasize = 10
 
     command = "./main " + stage + " " + dataset + " " + str(datasize)
     os.system("cd build && make main && " + command)

@@ -35,31 +35,19 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
                 DTset *massQ, size_t qsize,
                 vector<vector<unsigned>>& massQA, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    for (int i = 10; i <= 150; i += 10)
-        efs.push_back(i);
+    for (int i = 0; i <= 30; i++)
+        efs.push_back(150);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
-#if RANKMAP
-    if (appr_alg.stats != nullptr) {
-        cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-        cout << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
-    }
-#else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
-#endif
     cout << endl;
 
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
 
-#if RANKMAP
-        if (appr_alg.stats != nullptr)
-            appr_alg.stats->Reset();
-#else
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
-#endif
 
         vector<vector<unsigned>> result(qsize);
         for (vector<unsigned>& r: result)
@@ -69,11 +57,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 //         omp_set_num_threads(3);
 // #pragma omp parallel for
         for (int qi = 0; qi < qsize; qi++) {
-#if RANKMAP
-            priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
-#else
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchKnn(massQ + vecdim * qi, k);
-#endif
 
 // #pragma omp critical
             {
@@ -89,22 +73,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         float recall = comput_recall(result, massQA, qsize, k);
 
         cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
-#if RANKMAP
-        if (appr_alg.stats != nullptr) {
-            cout << appr_alg.stats->rank_us / qsize << "\t";
-            cout << appr_alg.stats->sort_us / qsize << "\t";
-            cout << appr_alg.stats->hlc_us / qsize << "\t";
-            cout << appr_alg.stats->visited_us / qsize << "\t";
-
-            cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
-        }
-#else
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
-#endif
         cout << endl;
 
         if (recall > 1.0) {
@@ -214,10 +185,6 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
-#if RANKMAP
-        appr_alg->initRankMap();
-#endif
-
         cout << "Run and comput recall: \n";
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
 
@@ -227,9 +194,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
 void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
     string path_project = "..";
-#if RANKMAP
-    string label = "rank-map/";
-#elif PLATG
+#if PLATG
     string label = "plat/";
 #else
     string label = "hnsw/";

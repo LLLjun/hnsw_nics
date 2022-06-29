@@ -28,8 +28,8 @@ int main(int argc, char **argv) {
             exit(1);
         }
     }
-    // if (string(argv[1]) == "search")
-    //     assignToThisCore(0);
+    if (string(argv[1]) == "search")
+        assignToThisCore(0);
 
     hnsw_impl(string(argv[1]), string(argv[2]), atoi(argv[3]));
 
