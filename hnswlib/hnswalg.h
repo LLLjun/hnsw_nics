@@ -1288,12 +1288,16 @@ namespace hnswlib {
             delete[] mass_comput;
             std::vector<std::vector<tableint>>().swap(rankId_to_interId);
 
-            mem_rank_alloc = new tableint[num_ranks * maxM0_]();
+            // +1 避免prefetch溢出
+            mem_rank_alloc = new tableint[num_ranks * (maxM0_ + 1)]();
 
             stats = new QueryStats();
+            if (stats != nullptr)
+                clk_query = new clk_get();
         }
 
         QueryStats* stats = nullptr;
+        clk_get* clk_query = nullptr;
         tableint* mem_rank_alloc = nullptr;
 
 
@@ -1324,7 +1328,7 @@ namespace hnswlib {
             std::vector<std::pair<int, tableint*>> buffer_rank_alloc(num_ranks);
             for (int i = 0; i < num_ranks; i++){
                 buffer_rank_alloc[i].first = 0;
-                buffer_rank_alloc[i].second = mem_rank_alloc + i * maxM0_;
+                buffer_rank_alloc[i].second = mem_rank_alloc + i * (maxM0_ + 1);
             }
             std::vector<std::stack<std::pair<dist_t, tableint>>> buffer_rank_gather(num_ranks);
 
@@ -1338,7 +1342,9 @@ namespace hnswlib {
 
 
             // launch stage
-            clk_get clk_query = clk_get();
+            if (stats != nullptr){
+                clk_query->reset();
+            }
             // launch阶段实际上是只计算了中心点所在的rank，其余rank空闲。
             for (int i = 0; i < num_ranks; i++){
                 if (i == 0) {
@@ -1352,7 +1358,7 @@ namespace hnswlib {
                 }
             }
             if (stats != nullptr){
-                stats->rank_us += clk_query.getElapsedTimeus();
+                stats->rank_us += clk_query->getElapsedTimeus();
                 stats->n_DC_max++;
                 stats->n_DC_total++;
             }
@@ -1362,7 +1368,11 @@ namespace hnswlib {
             int cur_list_size = 0;
 
             int min_flag = -1;
+#if OPT_SORT
             retset_min = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
+#else
+            retset_min = buffer_rank_gather[0].top();
+#endif
 
             // k 始终指向当前 retset 中最靠前的且 flag == true 的点的位置
             while (true) {
@@ -1370,8 +1380,9 @@ namespace hnswlib {
                 // step0: 选出最近点
                 // 快速获取下一轮的搜索点
                 if (stats != nullptr)
-                    clk_query.reset();
+                    clk_query->reset();
 
+#if OPT_SORT
                 std::pair<dist_t, int> ranks_min(buffer_rank_min[0].first, 0);
                 for (int i = 1; i < num_ranks; i++){
                     dist_t local_min_dist = buffer_rank_min[i].first;
@@ -1395,6 +1406,11 @@ namespace hnswlib {
                         }
                     }
                 }
+#else
+                if (k == l_search)
+                    break;
+                search_node = retset_min;
+#endif
 
 #if OPT_VISITED
                 if (min_flag == -1){
@@ -1427,7 +1443,11 @@ namespace hnswlib {
 
                 for (size_t j = 1; j <= candidate_neighbors.first; j++) {
                     int candidate_id = *(candidate_neighbors.second + j);
-
+// #ifdef USE_SSE
+//                     _mm_prefetch((char *) (visited_array + *(candidate_neighbors.second + j + 1)), _MM_HINT_T0);
+//                     _mm_prefetch(data_level0_memory_ + (*(candidate_neighbors.second + j + 1)) * size_data_per_element_ + offsetData_,
+//                                     _MM_HINT_T0);
+// #endif
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         visited_array[candidate_id] = visited_array_tag;
                         int rank_label = interId_to_rankLabel[candidate_id];
@@ -1439,7 +1459,7 @@ namespace hnswlib {
 #endif
 
                 if (stats != nullptr){
-                    stats->hlc_us += clk_query.getElapsedTimeus();
+                    stats->hlc_us += clk_query->getElapsedTimeus();
 
                     int n_max = 0;
                     for (std::pair<int, tableint*>& bra: buffer_rank_alloc){
@@ -1452,7 +1472,7 @@ namespace hnswlib {
                     if (min_flag == -1)
                         stats->n_use_old++;
 
-                    clk_query.reset();
+                    clk_query->reset();
                 }
 
                 // std::cout << search_node.second << "\t" << search_node.first << std::endl;
@@ -1495,28 +1515,39 @@ namespace hnswlib {
                 }
 
                 if (stats != nullptr) {
-                    stats->sort_us += clk_query.getElapsedTimeus();
-                    clk_query.reset();
+                    stats->sort_us += clk_query->getElapsedTimeus();
+                    clk_query->reset();
                 }
 
                 // rank-level 并行计算距离
                 for (int i = 0; i < num_ranks; i++){
+#if OPT_SORT
                     // 内部选择最小值
                     buffer_rank_min[i] = std::make_pair(std::numeric_limits<dist_t>::max(), -1);
-
+#endif
+                    if (buffer_rank_alloc[i].first == 0)
+                        continue;
+// #ifdef USE_SSE
+//                     _mm_prefetch((char *) (getDataByInternalId(buffer_rank_alloc[i].second[0])), _MM_HINT_T0);
+// #endif
                     for (int j = 0; j < buffer_rank_alloc[i].first; j++) {
+// #ifdef USE_SSE
+//                         _mm_prefetch((char *) (getDataByInternalId(buffer_rank_alloc[i].second[j+1])), _MM_HINT_T0);
+// #endif
                         tableint currObj = buffer_rank_alloc[i].second[j];
                         dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(currObj), dist_func_param_);
                         buffer_rank_gather[i].push(std::make_pair(curdist, currObj));
 
+#if OPT_SORT
                         if (curdist < buffer_rank_min[i].first)
                             buffer_rank_min[i] = std::make_pair(curdist, currObj);
+#endif
                     }
                     buffer_rank_alloc[i].first = 0;
                 }
                 if (stats != nullptr){
-                    stats->rank_us += clk_query.getElapsedTimeus();
-                    clk_query.reset();
+                    stats->rank_us += clk_query->getElapsedTimeus();
+                    clk_query->reset();
                 }
 
 #if OPT_VISITED
@@ -1534,7 +1565,7 @@ namespace hnswlib {
                     }
                 }
                 if (stats != nullptr)
-                    stats->visited_us += clk_query.getElapsedTimeus();
+                    stats->visited_us += clk_query->getElapsedTimeus();
 #endif
 
             }

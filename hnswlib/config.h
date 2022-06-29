@@ -6,6 +6,7 @@
 
 #if RANKMAP
 #define NUM_RANKS   1
+#define OPT_SORT    false
 #define OPT_VISITED false
 // rank 分配方式
 #define MODMAP      true

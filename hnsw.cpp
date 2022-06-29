@@ -36,6 +36,8 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
                 DTset *massQ, size_t qsize,
                 vector<vector<unsigned>>& massQA, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
+    // for (int i = 10; i <= 50; i += 10)
+    //     efs.push_back(150);
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
 
