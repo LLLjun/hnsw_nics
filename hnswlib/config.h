@@ -2,10 +2,10 @@
 
 
 // rank-level的映射
-#define RANKMAP     false
+#define RANKMAP     true
 
 #if RANKMAP
-#define NUM_RANKS   4
+#define NUM_RANKS   1
 #define OPT_VISITED false
 // rank 分配方式
 #define MODMAP      true

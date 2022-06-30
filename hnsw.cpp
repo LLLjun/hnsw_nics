@@ -336,16 +336,16 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
 
 #if (RANKMAP && PLATG)
     string suffix = "";
-#if TESTMODE
-    suffix = "detail";
+#if DETAIL
+    suffix = "_detail";
 #endif
-    MapString["result"] = path_project + "/output/result/rank/" + using_dataset + to_string(data_size_millions) +
-                        "m_rc" + to_string(k) + "_rank" + to_string(NUM_RANKS) + "_" + suffix + ".log";
+    MapString["result"] = path_project + "/output/result_hw/rank/" + using_dataset + to_string(data_size_millions) +
+                        "m_rc" + to_string(k) + "_rank" + to_string(NUM_RANKS) + suffix + ".log";
 #elif PLATG
-    MapString["result"] = path_project + "/output/result/plat/" + using_dataset + to_string(data_size_millions) +
+    MapString["result"] = path_project + "/output/result_hw/plat/" + using_dataset + to_string(data_size_millions) +
                         "m_rc" + to_string(k) + ".log";
 #else
-    MapString["result"] = path_project + "/output/result/hnsw/" + using_dataset + to_string(data_size_millions) +
+    MapString["result"] = path_project + "/output/result_hw/hnsw/" + using_dataset + to_string(data_size_millions) +
                         "m_rc" + to_string(k) + ".log";
 #endif
 

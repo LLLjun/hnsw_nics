@@ -1,18 +1,18 @@
 import os
 
-# DataSet = ["deep", "turing", "gist"]
-# DataSize = [1, 10]
-DataSet = ["spacev"]
+DataSet = ["deep", "sift", "spacev", "turing"]
 DataSize = [1, 10]
+# DataSet = ["spacev"]
+# DataSize = [100]
 
-Graph = ["hnsw", "plat"]
+Graph = ["plat", "rank"]
 
 def main():
-    stage = "both"
+    stage = "search"
 
     for datasize in DataSize:
         for dataset in DataSet:
-            if (dataset == "gist" and datasize == 10):
+            if (dataset == "gist" and datasize != 1):
                 continue
             for graph in Graph:
                 program = "./main_" + graph
