@@ -251,32 +251,37 @@ namespace hnswlib {
         mutable std::atomic<long> metric_distance_computations;
         mutable std::atomic<long> metric_hops;
         mutable std::atomic<long> metric_hops_L;
+        mutable std::atomic<long> cur_query;
+
+        int repeat = 2000;
+        int num_iter = 4326;
+        int num_sort = 701;
+        int interval = (num_iter + 0.5 * num_sort) / num_sort;
 
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
-            
+
             // 测试顺序距离计算 (模式3&4)，efs=150，对于DEEP10M，循环4326次, 排序701次
-            // 对于DEEP1M，循环2737次, 排序558次
             {
-                int num_iter = 2737;
-                int num_sort = 558;
-                int interval = (num_iter + 0.5 * num_sort) / num_sort;
+                size_t start_ = (cur_query % repeat) * num_iter * data_size_;
+                // size_t start_ = 0;
                 metric_distance_computations += num_iter;
-                srand(time(nullptr));
+                srand((unsigned)time(NULL) + cur_query);
                 for (int ni = 0; ni < num_iter; ni++) {
                     int ri = rand() % cur_element_count;
                     // int ri = ni;
                     dist_t dist = fstdistfunc_(data_point,
-                                data_level0_memory_ + data_size_ * ri, dist_func_param_);
+                                data_level0_memory_ + start_ + data_size_ * ni, dist_func_param_);
                     if (ri % interval == 0) {
                         top_candidates.emplace(dist, (tableint)ri);
                         if (top_candidates.size() > ef)
                             top_candidates.pop();
                     }
                 }
+                cur_query++;
                 return top_candidates;
             }
 

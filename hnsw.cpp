@@ -48,6 +48,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
+        appr_alg.cur_query = 0;
 
         vector<vector<unsigned>> result(qsize);
         for (vector<unsigned>& r: result)
