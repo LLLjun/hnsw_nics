@@ -155,7 +155,7 @@ get_gt(unsigned int *massQA, unsigned char *massQ, unsigned char *mass, size_t v
     cout << qsize << "\n";
     for (int i = 0; i < qsize; i++) {
         for (int j = 0; j < k; j++) {
-            answers[i].emplace(0.0f, massQA[1000 * i + j]);
+            answers[i].emplace(0.0f, massQA[100 * i + j]);
         }
     }
 }
@@ -198,9 +198,9 @@ static void
 test_vs_recall(unsigned char *massQ, size_t vecsize, size_t qsize, HierarchicalNSW<int> &appr_alg, size_t vecdim,
                vector<std::priority_queue<std::pair<int, labeltype >>> &answers, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    for (int i = k; i < 30; i++) {
-        efs.push_back(i);
-    }
+    // for (int i = k; i < 30; i++) {
+    //     efs.push_back(i);
+    // }
     for (int i = 30; i < 100; i += 10) {
         efs.push_back(i);
     }
@@ -229,12 +229,11 @@ inline bool exists_test(const std::string &name) {
 
 
 void sift_test1B() {
-	
-	
-	int subset_size_milllions = 200;
-	int efConstruction = 40;
-	int M = 16;
-	
+
+	int subset_size_milllions = 100;
+	int efConstruction = 400;
+	int M = 40;
+
 
     size_t vecsize = subset_size_milllions * 1000000;
 
@@ -242,41 +241,45 @@ void sift_test1B() {
     size_t vecdim = 128;
     char path_index[1024];
     char path_gt[1024];
-    char *path_q = "../bigann/bigann_query.bvecs";
-    char *path_data = "../bigann/bigann_base.bvecs";
-    sprintf(path_index, "sift1b_%dm_ef_%d_M_%d.bin", subset_size_milllions, efConstruction, M);
+    char *path_q = "../dataset/sift/query.public.10K.u8bin";
+    char *path_data = "../dataset/sift/base.1B.u8bin";
+    sprintf(path_index, "../graphindex/sift1b_%dm_ef_%d_M_%d.bin", subset_size_milllions, efConstruction, M);
 
-    sprintf(path_gt, "../bigann/gnd/idx_%dM.ivecs", subset_size_milllions);
+    sprintf(path_gt, "../dataset/sift/sift%dm/groundtruth.%dm.bin", subset_size_milllions, subset_size_milllions);
 
 
     unsigned char *massb = new unsigned char[vecdim];
 
     cout << "Loading GT:\n";
     ifstream inputGT(path_gt, ios::binary);
-    unsigned int *massQA = new unsigned int[qsize * 1000];
+    unsigned int *massQA = new unsigned int[qsize * 100];
+    int tt;
+    inputGT.read((char *) (&tt), 4);
+    inputGT.read((char *) (&tt), 4);
     for (int i = 0; i < qsize; i++) {
-        int t;
-        inputGT.read((char *) &t, 4);
-        inputGT.read((char *) (massQA + 1000 * i), t * 4);
-        if (t != 1000) {
-            cout << "err";
-            return;
-        }
+        // int t;
+        // inputGT.read((char *) &t, 4);
+        inputGT.read((char *) (massQA + 100 * i), 100 * 4);
+        // if (t != 100) {
+        //     cout << "err";
+        //     return;
+        // }
     }
     inputGT.close();
-	
+
     cout << "Loading queries:\n";
     unsigned char *massQ = new unsigned char[qsize * vecdim];
     ifstream inputQ(path_q, ios::binary);
-
+    inputQ.read((char *) (&tt), 4);
+    inputQ.read((char *) (&tt), 4);
     for (int i = 0; i < qsize; i++) {
-        int in = 0;
-        inputQ.read((char *) &in, 4);
-        if (in != 128) {
-            cout << "file error";
-            exit(1);
-        }
-        inputQ.read((char *) massb, in);
+        // int in = 0;
+        // inputQ.read((char *) &in, 4);
+        // if (in != 128) {
+        //     cout << "file error";
+        //     exit(1);
+        // }
+        inputQ.read((char *) massb, vecdim);
         for (int j = 0; j < vecdim; j++) {
             massQ[i * vecdim + j] = massb[j];
         }
@@ -287,6 +290,8 @@ void sift_test1B() {
 
     unsigned char *mass = new unsigned char[vecdim];
     ifstream input(path_data, ios::binary);
+    input.read((char *) (&tt), 4);
+    input.read((char *) (&tt), 4);
     int in = 0;
     L2SpaceI l2space(vecdim);
 
@@ -300,12 +305,12 @@ void sift_test1B() {
         appr_alg = new HierarchicalNSW<int>(&l2space, vecsize, M, efConstruction);
 
 
-        input.read((char *) &in, 4);
-        if (in != 128) {
-            cout << "file error";
-            exit(1);
-        }
-        input.read((char *) massb, in);
+        // input.read((char *) &in, 4);
+        // if (in != 128) {
+        //     cout << "file error";
+        //     exit(1);
+        // }
+        input.read((char *) massb, vecdim);
 
         for (int j = 0; j < vecdim; j++) {
             mass[j] = massb[j] * (1.0f);
@@ -315,7 +320,7 @@ void sift_test1B() {
         int j1 = 0;
         StopW stopw = StopW();
         StopW stopw_full = StopW();
-        size_t report_every = 100000;
+        size_t report_every = (vecsize / 10);
 #pragma omp parallel for
         for (int i = 1; i < vecsize; i++) {
             unsigned char mass[128];
@@ -323,12 +328,12 @@ void sift_test1B() {
 #pragma omp critical
             {
 
-                input.read((char *) &in, 4);
-                if (in != 128) {
-                    cout << "file error";
-                    exit(1);
-                }
-                input.read((char *) massb, in);
+                // input.read((char *) &in, 4);
+                // if (in != 128) {
+                //     cout << "file error";
+                //     exit(1);
+                // }
+                input.read((char *) massb, vecdim);
                 for (int j = 0; j < vecdim; j++) {
                     mass[j] = massb[j];
                 }
@@ -352,7 +357,7 @@ void sift_test1B() {
 
 
     vector<std::priority_queue<std::pair<int, labeltype >>> answers;
-    size_t k = 1;
+    size_t k = 10;
     cout << "Parsing gt:\n";
     get_gt(massQA, massQ, mass, vecsize, qsize, l2space, vecdim, answers, k);
     cout << "Loaded gt\n";

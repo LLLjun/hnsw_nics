@@ -8,3 +8,7 @@ hnswlib.cpython*.so
 var/
 
 experiment/
+dataset
+graphindex/
+output/
+.vscode/
