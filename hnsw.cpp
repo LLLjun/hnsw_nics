@@ -139,26 +139,32 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
     } else {
 
         printf("Load base vectors: \n");
-        unsigned build_start_id = 0;
-        DTset* build_start_vector = new DTset[vecdim]();
-#if PLATG
-        DTset *massB = new DTset[vecsize * vecdim]();
-        LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
-        build_start_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
-        delete[] massB;
-#endif
-
         ifstream base_reader(path_data.c_str());
-        int head_offest = 2 * sizeof(uint32_t);
+        uint64_t head_offest = 2 * sizeof(uint32_t);
         int vec_offest = vecdim * sizeof(DTset);
+
         uint32_t nums_r, dims_r;
         base_reader.read((char *) &nums_r, sizeof(uint32_t));
         base_reader.read((char *) &dims_r, sizeof(uint32_t));
-        if ((vecsize != nums_r) || (vecdim != dims_r)){
+        uint32_t nums_ex = vecsize;
+#if FROMBILLION
+        nums_ex = 1e9;
+#endif
+        if ((nums_ex != nums_r) || (vecdim != dims_r)){
             printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
             exit(1);
         }
         printf("vecsize: %d, vecdim: %d, path: %s\n", vecsize, vecdim, path_data.c_str());
+
+        size_t build_start_id = 0;
+        DTset* build_start_vector = new DTset[vecdim]();
+#if PLATG
+        DTset *massB = new DTset[vecsize * vecdim]();
+        for (int i = 0; i < vecsize; i++)
+            base_reader.read((char *) (massB + vecdim * i), vec_offest);
+        build_start_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
+        delete[] massB;
+#endif
 
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, vecsize, M, efConstruction);
 
@@ -193,6 +199,7 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
             }
             appr_alg->addPoint((void *) vecb.get(), ic);
         }
+        base_reader.close();
         printf("Build time: %.3f seconds\n", stopw_full.getElapsedTimes());
 
         if (isSave)

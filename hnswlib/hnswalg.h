@@ -11,7 +11,6 @@
 #include <map>
 #include <stack>
 #include "dataset.h"
-#include "config.h"
 #include "profile.h"
 #include "omp.h"
 
