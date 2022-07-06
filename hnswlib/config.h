@@ -1,5 +1,5 @@
 #define PLATG       true
-
+#define FROMBILLION true
 
 // rank-level的映射
 #define RANKMAP     true

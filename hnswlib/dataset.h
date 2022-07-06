@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <map>
+#include "config.h"
 
 using namespace std;
 
@@ -70,6 +71,9 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str()); exit(1);
     }
+#if FROMBILLION
+    MapString["path_data"] = path_dataset + "base1b";
+#endif
 
     if (MapParameter["k"] > MapParameter["gt_maxnum"]){
         printf("Error, unsupport k because of bigger than gt_maxnum\n"); exit(1);
