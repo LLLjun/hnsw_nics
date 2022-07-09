@@ -11,3 +11,11 @@
 // rank 分配方式
 #define MODMAP      true
 #endif
+
+
+#define DDEBUG      true
+#define COMPARE     false
+
+#define STAT        true
+
+#define PPROFILE    false

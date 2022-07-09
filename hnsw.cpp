@@ -36,10 +36,20 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
                 DTset *massQ, size_t qsize,
                 vector<vector<unsigned>>& massQA, size_t k) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
-    // for (int i = 10; i <= 50; i += 10)
-    //     efs.push_back(150);
-    for (int i = 10; i <= 150; i += 10)
-        efs.push_back(i);
+    // base deep1m
+    // 150     0.99144 343.031 0       155.846 2734.29
+    // base deep10m
+    // 150     0.98684 631.098 0       156.34  4323.5
+    // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
+    // Ours. rank=490, sort=53.6, lookup=136, hlc=3
+#if COMPARE
+    efs.push_back(30);
+#else
+    for (int i = 0; i < 5; i++)
+        efs.push_back(150);
+#endif
+    // for (int i = 10; i <= 150; i += 10)
+    //     efs.push_back(i);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if RANKMAP
@@ -63,6 +73,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
 #endif
+#if PPROFILE
+        appr_alg.t_queue = 0;
+#endif
 
         vector<vector<unsigned>> result(qsize);
         for (vector<unsigned>& r: result)
@@ -71,7 +84,12 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         Timer stopw = Timer();
 //         omp_set_num_threads(3);
 // #pragma omp parallel for
+#if COMPARE
+        for (int qi = 0; qi < 100; qi++) {
+            printf("\nqid: %d\n", qi);
+#else
         for (int qi = 0; qi < qsize; qi++) {
+#endif
 #if RANKMAP
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
 #else
@@ -101,12 +119,16 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 
             cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
             cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
+            // cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
+            cout << (1.0 * appr_alg.stats->n_hops / qsize) << "\t";
         }
 #else
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
+#if PPROFILE
+        cout << appr_alg.t_queue / qsize << "\t";
+#endif
 #endif
         cout << endl;
 

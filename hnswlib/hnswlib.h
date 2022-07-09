@@ -131,6 +131,36 @@ namespace hnswlib {
         }
     };
 
+    // 硬件搜索中的信息
+    class InfoHardwareSearch {
+    public:
+        void* query_data;
+        // p_queue_min 始终指向当前 retset 中最靠前的且 flag == true 的点的位置
+        int p_queue_min;
+        int cur_queue_size;
+        // is_end 是指queue中的元素已满, 且全部都是false
+        // is_done 是指搜索过程是否终止
+        bool is_end;
+        bool is_done;
+        int l_search;
+
+        InfoHardwareSearch() {
+            Reset(nullptr);
+        }
+
+        void Reset(void* query) {
+            p_queue_min = 0;
+            cur_queue_size = 0;
+            is_end = false;
+            is_done = false;
+            query_data = query;
+        }
+
+        void SetEfs(int efs) {
+            l_search = efs;
+        }
+    };
+
 }
 
 #include "space_l2.h"
