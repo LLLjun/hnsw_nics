@@ -12,3 +12,4 @@ graphindex/
 output/
 dataset
 .vscode/
+.cache/
