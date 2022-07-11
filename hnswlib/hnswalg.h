@@ -252,11 +252,6 @@ namespace hnswlib {
         mutable std::atomic<long> metric_hops;
         mutable std::atomic<long> metric_hops_L;
 
-#if PPROFILE
-        mutable float t_queue;
-        mutable clk_get stop = clk_get();
-#endif
-
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
@@ -298,9 +293,6 @@ namespace hnswlib {
                     metric_hops++;
                 }
 
-#if COMPARE
-                printf("%d\n", current_node_id);
-#endif
 
 #ifdef USE_SSE
                 // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -326,9 +318,6 @@ namespace hnswlib {
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
-#if PPROFILE
-                        stop.reset();
-#endif
                         if (top_candidates.size() < ef || lowerBound > dist) {
                             candidate_set.emplace(-dist, candidate_id);
 
@@ -347,9 +336,6 @@ namespace hnswlib {
                             if (!top_candidates.empty())
                                 lowerBound = top_candidates.top().first;
                         }
-#if PPROFILE
-                        t_queue += stop.getElapsedTimeus();
-#endif
                     }
                 }
             }
@@ -1198,7 +1184,7 @@ namespace hnswlib {
             bool flag;
 
             Neighbor() = default;
-            Neighbor(int id, dist_t distance, bool f) : id{id}, distance{distance}, flag(f) {}
+            Neighbor(tableint id, dist_t distance, bool f) : id{id}, distance{distance}, flag(f) {}
 
             inline bool operator<(const Neighbor &other) const {
                 return distance < other.distance;
@@ -1210,7 +1196,7 @@ namespace hnswlib {
             dist_t distance;
 
             Result() = default;
-            Result(int id, dist_t distance) : id{id}, distance{distance} {}
+            Result(tableint id, dist_t distance) : id{id}, distance{distance} {}
         };
 
         static inline int InsertIntoPool(Neighbor *addr, int L, Neighbor nn) {
@@ -1255,7 +1241,7 @@ namespace hnswlib {
 #if RANKMAP
         // 不同rank内的起始搜索点
         std::vector<tableint> ept_rank;
-        std::vector<int> interId_to_rankLabel;
+        std::vector<vl_type> interId_to_rankLabel;
         // 仅仅只是为了转换中心点
         std::vector<std::vector<tableint>> rankId_to_interId;
 
@@ -1272,7 +1258,7 @@ namespace hnswlib {
 
 #if MODMAP
             for (tableint in_i = 0; in_i < cur_element_count; in_i++){
-                int allocRankId = in_i % num_ranks;
+                vl_type allocRankId = in_i % num_ranks;
                 interId_to_rankLabel[in_i] = allocRankId;
                 rankId_to_interId[allocRankId].push_back(in_i);
             }
@@ -1504,8 +1490,7 @@ namespace hnswlib {
                     // 在硬件上可以把查表和查rankLabel合在一起
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         visited_array[candidate_id] = visited_array_tag;
-                        // int rank_label = interId_to_rankLabel[candidate_id];
-                        int rank_label = candidate_id % num_ranks;
+                        vl_type rank_label = candidate_id % num_ranks;
                         int len = rank_alloc[rank_label].first;
                         rank_alloc[rank_label].second[len] = candidate_id;
                         rank_alloc[rank_label].first++;
@@ -1515,13 +1500,10 @@ namespace hnswlib {
             alloc_fetch_valid = false;
 #endif
 
-#if COMPARE
-            printf("%d\n", search_point);
-#endif
 
 #if STAT
             stats->hlc_us += clk_query->getElapsedTimeus();
-            stats->n_hops++;
+            stats->all_n_hops++;
 #endif
             return search_point;
         }
@@ -1544,9 +1526,7 @@ namespace hnswlib {
 #if (!OPT_VISITED)
                     visited_array[candidate_id] = visited_array_tag;
 #endif
-                    // int rank_label = interId_to_rankLabel[candidate_id];
-                    // int rank_label = candidate_id % num_ranks;
-                    int rank_label = 0;
+                    vl_type rank_label = candidate_id % num_ranks;
                     int len = rank_alloc[rank_label].first;
                     rank_alloc[rank_label].second[len] = candidate_id;
                     rank_alloc[rank_label].first++;
@@ -1779,6 +1759,10 @@ namespace hnswlib {
 
                 SortQueue(buffer_rank_gather, retset);
 
+#endif
+
+#if STAT
+                stats->UpdateHardwareTime();
 #endif
             }
 

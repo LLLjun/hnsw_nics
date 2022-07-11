@@ -10,12 +10,10 @@
 #define OPT_VISITED false
 // rank 分配方式
 #define MODMAP      true
+
+// 需要设计拟合函数！消除计时引入的开销
+#define STAT        false
 #endif
 
 
-#define DDEBUG      true
-#define COMPARE     false
-
-#define STAT        true
-
-#define PPROFILE    false
+#define DDEBUG      false

@@ -42,21 +42,14 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     // 150     0.98684 631.098 0       156.34  4323.5
     // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
     // Ours. rank=490, sort=53.6, lookup=136, hlc=3
-#if COMPARE
-    efs.push_back(30);
-#else
-    for (int i = 0; i < 5; i++)
-        efs.push_back(150);
-#endif
-    // for (int i = 10; i <= 150; i += 10)
-    //     efs.push_back(i);
+
+    for (int i = 10; i <= 150; i += 10)
+        efs.push_back(i);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
-#if RANKMAP
-    if (appr_alg.stats != nullptr) {
+#if (RANKMAP && STAT)
         cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-        cout << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
-    }
+        cout << "NDC_max\t" << "NDC_total\t" << "n_hops\t";
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
@@ -65,16 +58,12 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
 
-#if RANKMAP
-        if (appr_alg.stats != nullptr)
-            appr_alg.stats->Reset();
+#if (RANKMAP && STAT)
+        appr_alg.stats->Reset();
 #else
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
-#endif
-#if PPROFILE
-        appr_alg.t_queue = 0;
 #endif
 
         vector<vector<unsigned>> result(qsize);
@@ -84,12 +73,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         Timer stopw = Timer();
 //         omp_set_num_threads(3);
 // #pragma omp parallel for
-#if COMPARE
-        for (int qi = 0; qi < 100; qi++) {
-            printf("\nqid: %d\n", qi);
-#else
         for (int qi = 0; qi < qsize; qi++) {
-#endif
 #if RANKMAP
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
 #else
@@ -109,26 +93,24 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         float time_us_per_query = stopw.getElapsedTimeus() / qsize;
         float recall = comput_recall(result, massQA, qsize, k);
 
-        cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
-#if RANKMAP
-        if (appr_alg.stats != nullptr) {
-            cout << appr_alg.stats->rank_us / qsize << "\t";
-            cout << appr_alg.stats->sort_us / qsize << "\t";
-            cout << appr_alg.stats->hlc_us / qsize << "\t";
-            cout << appr_alg.stats->visited_us / qsize << "\t";
+#if (RANKMAP && STAT)
+        time_us_per_query = appr_alg.stats->hw_us / qsize;
+#endif
 
-            cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
-            // cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
-            cout << (1.0 * appr_alg.stats->n_hops / qsize) << "\t";
-        }
+        cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
+#if (RANKMAP && STAT)
+            cout << appr_alg.stats->all_rank_us / qsize << "\t";
+            cout << appr_alg.stats->all_sort_us / qsize << "\t";
+            cout << appr_alg.stats->all_hlc_us / qsize << "\t";
+            cout << appr_alg.stats->all_visited_us / qsize << "\t";
+
+            cout << (1.0 * appr_alg.stats->all_n_DC_max / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->all_n_DC_total / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->all_n_hops / qsize) << "\t";
 #else
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
-#if PPROFILE
-        cout << appr_alg.t_queue / qsize << "\t";
-#endif
 #endif
         cout << endl;
 
