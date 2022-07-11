@@ -37,18 +37,23 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
                 vector<vector<unsigned>>& massQA, size_t k,
                 map<size_t, vector<float>>& mapResult) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
+    // base deep1m
+    // 150     0.99144 343.031 0       155.846 2734.29
+    // base deep10m
+    // 150     0.98684 631.098 0       156.34  4323.5
+    // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
+    // Ours. rank=490, sort=53.6, lookup=136, hlc=3
+
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
 
     int column_map = 2;
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
-#if RANKMAP
-    if (appr_alg.stats != nullptr) {
+#if (RANKMAP && STAT)
         cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-        cout << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
+        cout << "NDC_max\t" << "NDC_total\t" << "n_hops\t";
         column_map = 9;
-    }
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
@@ -59,9 +64,8 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     for (size_t ef : efs) {
         appr_alg.setEf(ef);
 
-#if RANKMAP
-        if (appr_alg.stats != nullptr)
-            appr_alg.stats->Reset();
+#if (RANKMAP && STAT)
+        appr_alg.stats->Reset();
 #else
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
@@ -98,27 +102,29 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         float time_us_per_query = stopw.getElapsedTimeus() / qsize;
         float recall = comput_recall(result, massQA, qsize, k);
 
+#if (RANKMAP && STAT)
+        time_us_per_query = appr_alg.stats->hw_us / qsize;
+#endif
+
         cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
         result_ef[0] = recall;
         result_ef[1] = time_us_per_query;
-#if RANKMAP
-        if (appr_alg.stats != nullptr) {
-            cout << appr_alg.stats->rank_us / qsize << "\t";
-            cout << appr_alg.stats->sort_us / qsize << "\t";
-            cout << appr_alg.stats->hlc_us / qsize << "\t";
-            cout << appr_alg.stats->visited_us / qsize << "\t";
-            result_ef[2] = appr_alg.stats->rank_us / qsize;
-            result_ef[3] = appr_alg.stats->sort_us / qsize;
-            result_ef[4] = appr_alg.stats->hlc_us / qsize;
-            result_ef[5] = appr_alg.stats->visited_us / qsize;
+#if (RANKMAP && STAT)
+            cout << appr_alg.stats->all_rank_us / qsize << "\t";
+            cout << appr_alg.stats->all_sort_us / qsize << "\t";
+            cout << appr_alg.stats->all_hlc_us / qsize << "\t";
+            cout << appr_alg.stats->all_visited_us / qsize << "\t";
+            result_ef[2] = appr_alg.stats->all_rank_us / qsize;
+            result_ef[3] = appr_alg.stats->all_sort_us / qsize;
+            result_ef[4] = appr_alg.stats->all_hlc_us / qsize;
+            result_ef[5] = appr_alg.stats->all_visited_us / qsize;
 
-            cout << (1.0 * appr_alg.stats->n_DC_max / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_DC_total / qsize) << "\t";
-            cout << (1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops) << "\t";
-            result_ef[6] = 1.0 * appr_alg.stats->n_DC_max / qsize;
-            result_ef[7] = 1.0 * appr_alg.stats->n_DC_total / qsize;
-            result_ef[8] = 1.0 * appr_alg.stats->n_use_old / appr_alg.stats->n_hops;
-        }
+            cout << (1.0 * appr_alg.stats->all_n_DC_max / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->all_n_DC_total / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->all_n_hops / qsize) << "\t";
+            result_ef[6] = 1.0 * appr_alg.stats->all_n_DC_max / qsize;
+            result_ef[7] = 1.0 * appr_alg.stats->all_n_DC_total / qsize;
+            result_ef[8] = 1.0 * appr_alg.stats->all_n_hops / qsize;
 #else
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
@@ -356,7 +362,9 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
 #if (RANKMAP && PLATG)
     int num_rank = NUM_RANKS;
     save_dir = "rank_" + to_string(num_rank);
-#if (OPT_SORT && OPT_VISITED)
+#if (!STAT)
+    suffix = "_bs";
+#elif (OPT_SORT && OPT_VISITED)
     suffix = "_ob";
 #elif OPT_SORT
     suffix = "_os";
@@ -372,9 +380,9 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     save_dir = "hnsw";
 #endif
     save_dir = path_project + "/output/result/" + save_dir;
-    if (access(pre_index.c_str(), R_OK|W_OK)){
-        if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", pre_index.c_str());
+    if (access(save_dir.c_str(), R_OK|W_OK)){
+        if (mkdir(save_dir.c_str(), S_IRWXU) != 0) {
+            printf("Error, dir %s create failed \n", save_dir.c_str());
             exit(1);
         }
     }

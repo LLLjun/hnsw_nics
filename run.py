@@ -4,9 +4,10 @@ DataSet = ["deep", "sift", "spacev", "turing"]
 DataSize = [1, 10, 100]
 # DataSet = ["deep"]
 # DataSize = [1]
-ThreadSize = range(2, 9, 1)
+# ThreadSize = range(2, 9, 1)
+ThreadSize = [1]
 
-Graph = ["hnsw"]
+Graph = ["rank_bs"]
 
 def main():
     stage = "search"

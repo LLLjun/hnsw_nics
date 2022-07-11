@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 resultDir = 'output/result'
 
-figDir = os.path.join(resultDir, 'figs')
+figDir = os.path.join(resultDir, 'figs_rank')
 if not os.path.exists(figDir):
     os.mkdir(figDir)
 
@@ -26,14 +26,23 @@ def setFig(fplt, savefile):
     fplt.savefig(savefile)
 
 
-def plotFig(dataset, datasize, Rc = 10):
-    Graph = ['hnsw', 'plat', 'hnsw_pf', 'plat_pf']
+def plotFig(dataset, datasize, ranksize, Rc = 10):
+    hwconfig = 'rank_' + str(ranksize)
     unique = dataset + str(datasize) + 'm_rc' + str(Rc)
-    logname = unique + '.log'
+    Suffix = ['bs', 'mp']
 
     # 显示创建figure对象
     fig = plt.figure(figsize=(5,5))
+    for sf in Suffix:
+        logname = unique + '_' + sf + '.log'
+        filepath = os.path.join(resultDir, hwconfig, logname)
+        data = loadData(filepath)
+        plt.plot(data['R@10'], data['time_us'], "-h", label=sf)
+        plt.legend()
+
+    Graph = ['plat', 'plat_pf']
     for g in Graph:
+        logname = unique + '.log'
         filepath = os.path.join(resultDir, g, logname)
         data = loadData(filepath)
         plt.plot(data['R@10'], data['time_us'], "-h", label=g)
@@ -43,11 +52,12 @@ def plotFig(dataset, datasize, Rc = 10):
     setFig(plt, os.path.join(figDir, figname))
 
 def main():
-    Datasize = [1, 10]
-    Dataset = ['deep', 'sift', 'spacev', 'turing']
+    Datasize = [1]
+    Dataset = ['deep', 'sift', 'spacev']
+    Ranksize = 1
 
     for datasize in Datasize:
         for dataset in Dataset:
-            plotFig(dataset, datasize)
+            plotFig(dataset, datasize, Ranksize)
 
 main()
