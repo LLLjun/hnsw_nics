@@ -27,6 +27,7 @@
 #include <vector>
 #include <iostream>
 #include <string.h>
+#include "config.h"
 
 namespace hnswlib {
     typedef size_t labeltype;
@@ -106,28 +107,110 @@ namespace hnswlib {
     */
     class QueryStats {
     public:
+        // 获取硬件模拟的时间,
+        double hw_us;
+        // 这一部分的所有变量都是单个step的结果
         double hlc_us;
         double rank_us;
         double sort_us;
         double visited_us;
         size_t n_DC_max;
         size_t n_DC_total;
-        size_t n_hops;
-        size_t n_use_old;
+
+        // 这一部分的所有变量都是统计结果
+        double all_hlc_us;
+        double all_rank_us;
+        double all_sort_us;
+        double all_visited_us;
+        size_t all_n_DC_max;
+        size_t all_n_DC_total;
+        size_t all_n_hops;
 
         QueryStats() {
             Reset();
         }
 
         void Reset() {
+            all_hlc_us = 0;
+            all_rank_us = 0;
+            all_sort_us = 0;
+            all_visited_us = 0;
+            all_n_DC_max = 0;
+            all_n_DC_total = 0;
+            all_n_hops = 0;
+
+            hw_us = 0;
+            ReflushTime();
+        }
+
+        inline void ReflushTime() {
             hlc_us = 0;
             rank_us = 0;
             sort_us = 0;
             visited_us = 0;
             n_DC_max = 0;
             n_DC_total = 0;
-            n_hops = 0;
-            n_use_old = 0;
+        }
+
+        inline void AccumulateAll() {
+            all_hlc_us += hlc_us;
+            all_rank_us += rank_us;
+            all_sort_us += sort_us;
+            all_visited_us += visited_us;
+            all_n_DC_max += n_DC_max;
+            all_n_DC_total += n_DC_total;
+        }
+
+        inline void UpdateHardwareTime() {
+            double hw_rank_us = 0;
+            if (n_DC_total != 0) {
+                hw_rank_us = rank_us * n_DC_max / n_DC_total;
+            }
+#if (OPT_SORT && OPT_VISITED)
+            double max_para_us = std::max(hw_rank_us, sort_us);
+            max_para_us = std::max(max_para_us, visited_us);
+#elif OPT_SORT
+            double max_para_us = std::max(hw_rank_us, sort_us);
+            max_para_us += visited_us;
+#elif OPT_VISITED
+            double max_para_us = std::max(hw_rank_us, visited_us);
+            max_para_us += sort_us;
+#else
+            double max_para_us = hw_rank_us + sort_us + visited_us;
+#endif
+            hw_us += (hlc_us + max_para_us);
+            AccumulateAll();
+            ReflushTime();
+        }
+    };
+
+    // 硬件搜索中的信息
+    class InfoHardwareSearch {
+    public:
+        void* query_data;
+        // p_queue_min 始终指向当前 retset 中最靠前的且 flag == true 的点的位置
+        int p_queue_min;
+        int cur_queue_size;
+        // is_end 是指queue中的元素已满, 且全部都是false
+        // is_done 是指搜索过程是否终止
+        bool is_end;
+        bool is_done;
+        int l_search;
+
+        InfoHardwareSearch() {
+            Reset(nullptr);
+        }
+
+        void Reset(void* query) {
+            p_queue_min = 0;
+            cur_queue_size = 0;
+            is_end = false;
+            is_done = false;
+            query_data = query;
+        }
+
+        void SetEfs(int efs) {
+            l_search = efs;
         }
     };
 
