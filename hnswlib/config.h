@@ -11,6 +11,10 @@
 #define MODMAP      true
 #endif
 
+#if (!RANKMAP)
+// 测量原始的多线程版本时间
+#define THREAD      false
+#endif
 
 // 支持测试模式
 #define TESTMODE    true

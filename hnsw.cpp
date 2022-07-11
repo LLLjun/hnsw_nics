@@ -73,8 +73,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
             r.resize(k, 0);
 
         Timer stopw = Timer();
-//         omp_set_num_threads(3);
-// #pragma omp parallel for
+#if THREAD
+#pragma omp parallel for
+#endif
         for (int qi = 0; qi < qsize; qi++) {
 #if RANKMAP
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
@@ -82,7 +83,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchKnn(massQ + vecdim * qi, k);
 #endif
 
-// #pragma omp critical
+#if THREAD
+#pragma omp critical
+#endif
             {
                 int i = 0;
                 while (!res.empty()){
@@ -256,6 +259,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
+#if THREAD
+        omp_set_num_threads(MapParameter["threads"]);
+#endif
 
 #if RANKMAP
         appr_alg->initRankMap();
@@ -300,7 +306,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
     }
 }
 
-void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
+void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, size_t n_threads){
     string path_project = "..";
 #if RANKMAP
     string label = "rank-map/";
@@ -340,21 +346,41 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
     MapString["index"] = hnsw_index;
     CheckDataset(using_dataset, MapParameter, MapString);
+#if THREAD
+    MapParameter["threads"] = n_threads;
+#endif
 
-#if (RANKMAP && PLATG)
+    string save_dir;
+    string file_name = using_dataset + to_string(data_size_millions) + "m_rc" + to_string(k);
     string suffix = "";
-#if DETAIL
-    suffix = "_detail";
-#endif
-    MapString["result"] = path_project + "/output/result_hw/rank/" + using_dataset + to_string(data_size_millions) +
-                        "m_rc" + to_string(k) + "_rank" + to_string(NUM_RANKS) + suffix + ".log";
-#elif PLATG
-    MapString["result"] = path_project + "/output/result_hw/plat/" + using_dataset + to_string(data_size_millions) +
-                        "m_rc" + to_string(k) + ".log";
+#if (RANKMAP && PLATG)
+    int num_rank = NUM_RANKS;
+    save_dir = "rank_" + to_string(num_rank);
+#if (OPT_SORT && OPT_VISITED)
+    suffix = "_ob";
+#elif OPT_SORT
+    suffix = "_os";
+#elif OPT_VISITED
+    suffix = "_ov";
 #else
-    MapString["result"] = path_project + "/output/result_hw/hnsw/" + using_dataset + to_string(data_size_millions) +
-                        "m_rc" + to_string(k) + ".log";
+    suffix = "_mp";
 #endif
+
+#elif PLATG
+    save_dir = "plat";
+#else
+    save_dir = "hnsw";
+#endif
+    save_dir = path_project + "/output/result/" + save_dir;
+    if (access(pre_index.c_str(), R_OK|W_OK)){
+        if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
+            printf("Error, dir %s create failed \n", pre_index.c_str());
+            exit(1);
+        }
+    }
+
+    MapString["result"] = save_dir + "/" + file_name + suffix + ".log";
+
 
     if (stage == "build" || stage == "both") {
         if (MapString["format"] == "Float") {
