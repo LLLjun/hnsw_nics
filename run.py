@@ -1,12 +1,13 @@
 import os
 
-DataSet = ["deep", "sift", "spacev", "turing"]
-DataSize = [1, 10, 100]
+DataSet = ["deep", "sift", "spacev"]
+DataSize = [10]
 # DataSet = ["deep"]
 # DataSize = [1]
 # ThreadSize = range(2, 9, 1)
 ThreadSize = [1]
 
+# Graph = ["plat", "rank_mp"]
 Graph = ["rank_bs"]
 
 def main():

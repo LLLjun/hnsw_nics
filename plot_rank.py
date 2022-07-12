@@ -52,7 +52,7 @@ def plotFig(dataset, datasize, ranksize, Rc = 10):
     setFig(plt, os.path.join(figDir, figname))
 
 def main():
-    Datasize = [1]
+    Datasize = [1, 10]
     Dataset = ['deep', 'sift', 'spacev']
     Ranksize = 1
 

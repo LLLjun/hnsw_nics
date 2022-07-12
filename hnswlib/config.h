@@ -24,6 +24,6 @@
 // 支持测试模式
 #define TESTMODE    true
 #if TESTMODE
-#define TTIMES      10
+#define TTIMES      5
 #define DETAIL      false
 #endif
