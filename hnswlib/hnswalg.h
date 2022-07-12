@@ -1354,12 +1354,15 @@ namespace hnswlib {
         bool fetch_allow;
         // 本轮的 buffer_rank_alloc 是否是通过预取得到的？
         bool alloc_fetch_valid;
+        //
+        tableint fetch_point_last;
         tableint fetch_point;
 
         void initOptVisited(){
             fetch_allow = false;
             alloc_fetch_valid = false;
             fetch_point = 0;
+            fetch_point_last = 0;
         }
 #endif
 
@@ -1471,7 +1474,7 @@ namespace hnswlib {
             }
 
 #if OPT_VISITED
-            if (alloc_fetch_valid && search_point == fetch_point) {
+            if (alloc_fetch_valid && (search_point == fetch_point_last)) {
                 for (int ri = 0; ri < num_ranks; ri++){
                     tableint* rank_point = rank_alloc[ri].second;
                     for (int ai = 0; ai < rank_alloc[ri].first; ai++){
@@ -1660,6 +1663,9 @@ namespace hnswlib {
 #endif
 
 #if OPT_VISITED
+            if (fetch_allow)
+                fetch_point_last = fetch_point;
+
             fetch_allow = false;
             if (!info->is_end) {
                 int submin = info->p_queue_min + 1;
