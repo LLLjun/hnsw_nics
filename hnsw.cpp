@@ -114,6 +114,10 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 #endif
         cout << endl;
 
+#if VHIT
+        appr_alg.stats->VhitOutput(qsize);
+#endif
+
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
             break;

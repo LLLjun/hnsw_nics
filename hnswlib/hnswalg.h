@@ -1470,11 +1470,24 @@ namespace hnswlib {
                     }
                 }
 #endif
+#if VHIT
+                stats->VhitQueryEnd();
+#endif
                 return 0;
             }
 
 #if OPT_VISITED
+#if VHIT
+            if (alloc_fetch_valid && (search_point != fetch_point_last))
+                stats->hitmiss_simple.push_back(1);
+            else
+                stats->hitmiss_simple.push_back(0);
+#endif
+
             if (alloc_fetch_valid && (search_point == fetch_point_last)) {
+#if VHIT
+                stats->hit_simple.push_back(1);
+#endif
                 for (int ri = 0; ri < num_ranks; ri++){
                     tableint* rank_point = rank_alloc[ri].second;
                     for (int ai = 0; ai < rank_alloc[ri].first; ai++){
@@ -1482,6 +1495,9 @@ namespace hnswlib {
                     }
                 }
             } else {
+#if VHIT
+                stats->hit_simple.push_back(0);
+#endif
                 for (int ri = 0; ri < num_ranks; ri++)
                     rank_alloc[ri].first = 0;
 

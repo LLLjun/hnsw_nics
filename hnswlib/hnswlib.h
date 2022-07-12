@@ -1,4 +1,7 @@
 #pragma once
+#include <algorithm>
+#include <cstddef>
+#include <cstdio>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -126,6 +129,14 @@ namespace hnswlib {
         size_t all_n_DC_total;
         size_t all_n_hops;
 
+#if VHIT
+        std::vector<double> hit_total;
+        std::vector<int> hit_simple;
+
+        std::vector<double> hitmiss_total;
+        std::vector<int> hitmiss_simple;
+#endif
+
         QueryStats() {
             Reset();
         }
@@ -141,6 +152,20 @@ namespace hnswlib {
 
             hw_us = 0;
             ReflushTime();
+
+#if VHIT
+            hit_total.resize(10, 0);
+            for (double& ht : hit_total)
+                ht = 0;
+            hit_simple.reserve(1000);
+            hit_simple.resize(0, 0);
+
+            hitmiss_total.resize(10, 0);
+            for (double& ht : hitmiss_total)
+                ht = 0;
+            hitmiss_simple.reserve(1000);
+            hitmiss_simple.resize(0, 0);
+#endif
         }
 
         inline void ReflushTime() {
@@ -182,6 +207,45 @@ namespace hnswlib {
             AccumulateAll();
             ReflushTime();
         }
+
+#if VHIT
+        void VhitQueryEnd() {
+            AddSimpleToTotal(hit_simple, hit_total);
+            AddSimpleToTotal(hitmiss_simple, hitmiss_total);
+        }
+
+        void AddSimpleToTotal(std::vector<int>& simple, std::vector<double>& total) {
+            int l_hit = simple.size();
+            int interval = (int) (1.0 * l_hit / 10 + 0.5);
+            for (int i = 0; i < 10; i++) {
+                int n_hit = 0;
+                int begin = i * interval;
+                int end = std::min(l_hit, begin + interval);
+                if (begin == end)
+                    continue;
+
+                for (int j = begin; j < end; j++) {
+                    if (simple[j] == 1) {
+                        n_hit++;
+                    }
+                }
+                total[i] += (double) (1.0 * n_hit / (end - begin));
+            }
+            simple.resize(0, 0);
+        }
+
+        void VhitOutput(size_t query_size) {
+            printf("visited hit rate distribution (related to dataset):\n");
+            for (int i = 0; i < 10; i++)
+                printf("%.2f\t", (hit_total[i] / query_size));
+            printf("\n");
+
+            printf("hitmiss rate distribution (related to opt_visited method):\n");
+            for (int i = 0; i < 10; i++)
+                printf("%.2f\t", (hitmiss_total[i] / query_size));
+            printf("\n\n");
+        }
+#endif
     };
 
     // 硬件搜索中的信息
