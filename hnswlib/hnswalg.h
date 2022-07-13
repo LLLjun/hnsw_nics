@@ -292,6 +292,9 @@ namespace hnswlib {
                     metric_hops++;
                 }
 
+#if SEARCHTRACE
+                printf("%d\n", current_node_id);
+#endif
 
 #ifdef USE_SSE
                 // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -1472,6 +1475,10 @@ namespace hnswlib {
 #endif
                 return 0;
             }
+
+#if SEARCHTRACE
+            printf("%d\n", search_point);
+#endif
 
 #if OPT_VISITED
             if (alloc_fetch_valid && (search_point == fetch_point_last)) {

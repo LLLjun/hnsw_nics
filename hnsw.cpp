@@ -43,8 +43,13 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
     // Ours. rank=490, sort=53.6, lookup=136, hlc=3
 
+#if DDEBUG
+    // for (int i = 1; i <= 5; i++)
+        efs.push_back(10);
+#else
     for (int i = 10; i <= 150; i += 10)
         efs.push_back(i);
+#endif
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -74,6 +79,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 //         omp_set_num_threads(3);
 // #pragma omp parallel for
         for (int qi = 0; qi < qsize; qi++) {
+#if SEARCHTRACE
+            printf("\nqi: %d\n", qi);
+#endif
 #if RANKMAP
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
 #else
