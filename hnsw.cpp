@@ -307,6 +307,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         result_writer.close();
         printf("Write final result to %s is successd\n", MapString["result"].c_str());
 
+#if RANKMAP
+        appr_alg->deleteRankMap();
+#endif
         appr_alg->~HierarchicalNSW();
         printf("Search index %s is succeed \n", index.c_str());
     }
