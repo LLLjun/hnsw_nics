@@ -7,11 +7,6 @@ import matplotlib.pyplot as plt
 
 resultDir = 'output/result'
 
-figDir = os.path.join(resultDir, 'figs_rank')
-if not os.path.exists(figDir):
-    os.mkdir(figDir)
-
-
 
 def loadData(filename):
     # efs Recall time_us
@@ -26,10 +21,10 @@ def setFig(fplt, savefile):
     fplt.savefig(savefile)
 
 
-def plotFig(dataset, datasize, ranksize, Rc = 10):
+def plotFig(figdir, dataset, datasize, ranksize, Rc = 10):
     hwconfig = 'rank_' + str(ranksize)
     unique = dataset + str(datasize) + 'm_rc' + str(Rc)
-    Suffix = ['bs', 'mp']
+    Suffix = ['bs', 'mp', 'os', 'ov', 'ob']
 
     # 显示创建figure对象
     fig = plt.figure(figsize=(5,5))
@@ -49,15 +44,19 @@ def plotFig(dataset, datasize, ranksize, Rc = 10):
         plt.legend()
 
     figname = unique + '.png'
-    setFig(plt, os.path.join(figDir, figname))
+    setFig(plt, os.path.join(figdir, figname))
 
 def main():
     Datasize = [1, 10]
     Dataset = ['deep', 'sift', 'spacev']
-    Ranksize = 1
+    Ranksize = 8
+
+    figDir = os.path.join(resultDir, ('figs_rank_' + str(Ranksize)))
+    if not os.path.exists(figDir):
+        os.mkdir(figDir)
 
     for datasize in Datasize:
         for dataset in Dataset:
-            plotFig(dataset, datasize, Ranksize)
+            plotFig(figDir, dataset, datasize, Ranksize)
 
 main()
