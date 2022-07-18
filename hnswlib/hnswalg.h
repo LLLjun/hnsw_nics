@@ -1311,6 +1311,15 @@ namespace hnswlib {
                 buffer_rank_gather[ri].first = 0;
                 buffer_rank_gather[ri].second = mem_rank_gather + ri * maxM0_;
             }
+#if (OPT_SORT && OPT_VISITED)
+            fetch_mem_rank_alloc = new tableint[num_ranks * maxM0_]();
+            fetch_buffer_rank_alloc.resize(num_ranks);
+            for (int ri = 0; ri < num_ranks; ri++){
+                fetch_buffer_rank_alloc[ri].first = 0;
+                fetch_buffer_rank_alloc[ri].second = fetch_mem_rank_alloc + ri * maxM0_;
+            }
+#endif
+
 #if OPT_SORT
             rank_min.resize(num_ranks, std::make_pair(0, Result()));
 #endif
@@ -1322,8 +1331,16 @@ namespace hnswlib {
         }
 
         void deleteRankMap() {
+            delete info;
             delete[] mem_rank_alloc;
             delete[] mem_rank_gather;
+#if STAT
+            delete stats;
+            delete clk_query;
+#endif
+#if (OPT_SORT && OPT_VISITED)
+            delete[] fetch_mem_rank_alloc;
+#endif
         }
 
         int num_ranks = 1;
@@ -1336,6 +1353,11 @@ namespace hnswlib {
         tableint* mem_rank_alloc = nullptr;
         Result* mem_rank_gather = nullptr;
 
+#if (OPT_SORT && OPT_VISITED)
+        // 由于存在地址上的冲突（在CPU模拟上），因此需要一块额外的 buffer_alloc 用于预取neighbor
+        std::vector<std::pair<int, tableint*>> fetch_buffer_rank_alloc;
+        tableint* fetch_mem_rank_alloc = nullptr;
+#endif
 
 #if OPT_SORT
         // 指示本轮的 search_point 的来源
@@ -1404,7 +1426,11 @@ namespace hnswlib {
         }
 
         inline tableint GetStart(std::vector<Neighbor>& retset, vl_type* visited_array, vl_type& visited_array_tag,
-                            std::vector<std::pair<int, tableint*>>& rank_alloc){
+                            std::vector<std::pair<int, tableint*>>& rank_alloc
+#if (OPT_SORT && OPT_VISITED)
+                            , std::vector<std::pair<int, tableint*>>& fetch_rank_alloc
+#endif
+                                                                                ){
             // 获取 search_point 或者 判断终止
 #if STAT
             clk_query->reset();
@@ -1488,12 +1514,27 @@ namespace hnswlib {
 #if VHIT
                 stats->hit_simple.push_back(1);
 #endif
+#if (OPT_SORT && OPT_VISITED)
+                for (int ri = 0; ri < num_ranks; ri++){
+                    int size = fetch_rank_alloc[ri].first;
+                    rank_alloc[ri].first = size;
+                    if (size == 0)
+                        continue;
+
+                    tableint* rank_point = fetch_rank_alloc[ri].second;
+                    for (int ai = 0; ai < size; ai++){
+                        visited_array[rank_point[ai]] = visited_array_tag;
+                    }
+                }
+                memcpy(mem_rank_alloc, fetch_mem_rank_alloc, num_ranks * maxM0_ * sizeof(tableint));
+#else
                 for (int ri = 0; ri < num_ranks; ri++){
                     tableint* rank_point = rank_alloc[ri].second;
                     for (int ai = 0; ai < rank_alloc[ri].first; ai++){
                         visited_array[rank_point[ai]] = visited_array_tag;
                     }
                 }
+#endif
             } else {
 #if VHIT
                 stats->hit_simple.push_back(0);
@@ -1735,16 +1776,16 @@ namespace hnswlib {
 
             while (true) {
 #if (OPT_SORT && OPT_VISITED)
-                tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc);
+                tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc, fetch_buffer_rank_alloc);
                 if (info->is_done)
                     break;
+
+                if (fetch_allow)
+                    LookupVisited(fetch_point, visited_array, visited_array_tag, fetch_buffer_rank_alloc);
 
                 SortQueue(buffer_rank_gather, retset);
 
                 DistCalculate(buffer_rank_alloc, buffer_rank_gather);
-
-                if (fetch_allow)
-                    LookupVisited(fetch_point, visited_array, visited_array_tag, buffer_rank_alloc);
 
 #elif OPT_SORT
                 tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc);
@@ -1764,10 +1805,10 @@ namespace hnswlib {
 
                 DistCalculate(buffer_rank_alloc, buffer_rank_gather);
 
-                SortQueue(buffer_rank_gather, retset);
-
                 if (fetch_allow)
                     LookupVisited(fetch_point, visited_array, visited_array_tag, buffer_rank_alloc);
+
+                SortQueue(buffer_rank_gather, retset);
 
 #else
                 tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc);

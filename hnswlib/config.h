@@ -5,7 +5,7 @@
 #define RANKMAP     true
 
 #if RANKMAP
-#define NUM_RANKS   1
+#define NUM_RANKS   8
 #define OPT_SORT    false
 #define OPT_VISITED true
 // rank 分配方式

@@ -256,6 +256,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
         printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+#if RANKMAP
+        appr_alg->deleteRankMap();
+#endif
         appr_alg->~HierarchicalNSW();
 
         printf("Search index %s is succeed \n", index.c_str());
