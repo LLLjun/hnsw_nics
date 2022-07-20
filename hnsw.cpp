@@ -338,6 +338,8 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     // for 1m, 10m, 100m
     vector<size_t> efcSet = {20, 30, 40};
     size_t M = (log10(data_size_millions) + 2) * 10;
+    if (using_dataset == "gist")
+        M =30;
 	size_t efConstruction = M * 10;
     size_t k = 10;
     size_t vecsize = data_size_millions * 1000000;

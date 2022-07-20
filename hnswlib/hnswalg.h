@@ -1391,7 +1391,7 @@ namespace hnswlib {
 
         /*
             HNSW-plat 映射到 近存架构，主要由四部分组件。
-            GetStart -> LookupVisited -> DistCalculate -> SortQueue
+            GetStart -> LookupVisited -> DistCalculation -> SortQueue
         */
         void InitSearch(std::vector<Neighbor>& retset, vl_type* visited_array, vl_type& visited_array_tag,
                     std::vector<std::pair<int, tableint*>>& rank_alloc, std::vector<std::pair<int, Result*>>& rank_gather) {
@@ -1425,8 +1425,7 @@ namespace hnswlib {
 #endif
         }
 
-        inline tableint GetStart(std::vector<Neighbor>& retset, vl_type* visited_array, vl_type& visited_array_tag,
-                            std::vector<std::pair<int, tableint*>>& rank_alloc
+        inline tableint GetStart(std::vector<Neighbor>& retset, std::vector<std::pair<int, tableint*>>& rank_alloc
 #if (OPT_SORT && OPT_VISITED)
                             , std::vector<std::pair<int, tableint*>>& fetch_rank_alloc
 #endif
@@ -1502,25 +1501,9 @@ namespace hnswlib {
 #if OPT_VISITED
             if (alloc_fetch_valid && (search_point == fetch_point_last)) {
 #if (OPT_SORT && OPT_VISITED)
-                for (int ri = 0; ri < num_ranks; ri++){
-                    int size = fetch_rank_alloc[ri].first;
-                    rank_alloc[ri].first = size;
-                    if (size == 0)
-                        continue;
-
-                    tableint* rank_point = fetch_rank_alloc[ri].second;
-                    for (int ai = 0; ai < size; ai++){
-                        visited_array[rank_point[ai]] = visited_array_tag;
-                    }
-                }
+                for (int ri = 0; ri < num_ranks; ri++)
+                    rank_alloc[ri].first = fetch_rank_alloc[ri].first;
                 memcpy(mem_rank_alloc, fetch_mem_rank_alloc, num_ranks * maxM0_ * sizeof(tableint));
-#else
-                for (int ri = 0; ri < num_ranks; ri++){
-                    tableint* rank_point = rank_alloc[ri].second;
-                    for (int ai = 0; ai < rank_alloc[ri].first; ai++){
-                        visited_array[rank_point[ai]] = visited_array_tag;
-                    }
-                }
 #endif
             } else {
                 for (int ri = 0; ri < num_ranks; ri++)
@@ -1530,14 +1513,10 @@ namespace hnswlib {
                 size_t size = getListCount((linklistsizeint*) data);
                 for (size_t j = 1; j <= size; j++) {
                     tableint candidate_id = *(data + j);
-                    // 在硬件上可以把查表和查rankLabel合在一起
-                    if (!(visited_array[candidate_id] == visited_array_tag)) {
-                        visited_array[candidate_id] = visited_array_tag;
-                        vl_type rank_label = candidate_id % num_ranks;
-                        int len = rank_alloc[rank_label].first;
-                        rank_alloc[rank_label].second[len] = candidate_id;
-                        rank_alloc[rank_label].first++;
-                    }
+                    vl_type rank_label = candidate_id % num_ranks;
+                    int len = rank_alloc[rank_label].first;
+                    rank_alloc[rank_label].second[len] = candidate_id;
+                    rank_alloc[rank_label].first++;
                 }
             }
             alloc_fetch_valid = false;
@@ -1551,8 +1530,7 @@ namespace hnswlib {
             return search_point;
         }
 
-        inline void LookupVisited(tableint& lookupId, vl_type* visited_array, vl_type& visited_array_tag,
-                            std::vector<std::pair<int, tableint*>>& rank_alloc){
+        inline void LookupVisited(tableint& lookupId, std::vector<std::pair<int, tableint*>>& rank_alloc){
 #if STAT
             clk_query->reset();
 #endif
@@ -1564,16 +1542,10 @@ namespace hnswlib {
             size_t size = getListCount((linklistsizeint*) data);
             for (size_t j = 1; j <= size; j++) {
                 tableint candidate_id = *(data + j);
-                // 在硬件上可以把查表和查rankLabel合在一起
-                if (!(visited_array[candidate_id] == visited_array_tag)) {
-#if (!OPT_VISITED)
-                    visited_array[candidate_id] = visited_array_tag;
-#endif
-                    vl_type rank_label = candidate_id % num_ranks;
-                    int len = rank_alloc[rank_label].first;
-                    rank_alloc[rank_label].second[len] = candidate_id;
-                    rank_alloc[rank_label].first++;
-                }
+                vl_type rank_label = candidate_id % num_ranks;
+                int len = rank_alloc[rank_label].first;
+                rank_alloc[rank_label].second[len] = candidate_id;
+                rank_alloc[rank_label].first++;
             }
 #if OPT_VISITED
             alloc_fetch_valid = true;
@@ -1584,7 +1556,8 @@ namespace hnswlib {
 #endif
         }
 
-        inline void DistCalculate(std::vector<std::pair<int, tableint*>>& rank_alloc, std::vector<std::pair<int, Result*>>& rank_gather) {
+        inline void DistCalculation(std::vector<std::pair<int, tableint*>>& rank_alloc, std::vector<std::pair<int, Result*>>& rank_gather,
+                                    vl_type* visited_array, vl_type& visited_array_tag) {
 #if STAT
             clk_query->reset();
 #endif
@@ -1596,11 +1569,17 @@ namespace hnswlib {
                 // 内部选择最小值
                 rank_min[ri].first = 0;
 #endif
+                int counter = 0;
                 for (int ai = 0; ai < rank_alloc[ri].first; ai++) {
                     tableint curid = rank_alloc[ri].second[ai];
+                    if (visited_array[curid] == visited_array_tag)
+                        continue;
+
+                    visited_array[curid] = visited_array_tag;
                     dist_t curdist = fstdistfunc_(info->query_data, getDataByInternalId(curid), dist_func_param_);
-                    rank_res[ai].id = curid;
-                    rank_res[ai].distance = curdist;
+                    rank_res[counter].id = curid;
+                    rank_res[counter].distance = curdist;
+                    counter++;
 
 #if OPT_SORT
                     if (rank_min[ri].first == 0) {
@@ -1615,7 +1594,7 @@ namespace hnswlib {
                     }
 #endif
                 }
-                rank_gather[ri].first = rank_alloc[ri].first;
+                rank_gather[ri].first = counter;
                 rank_alloc[ri].first = 0;
             }
 
@@ -1760,48 +1739,48 @@ namespace hnswlib {
 
             while (true) {
 #if (OPT_SORT && OPT_VISITED)
-                tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc, fetch_buffer_rank_alloc);
+                tableint search_point = GetStart(retset, buffer_rank_alloc, fetch_buffer_rank_alloc);
                 if (info->is_done)
                     break;
 
                 if (fetch_allow)
-                    LookupVisited(fetch_point, visited_array, visited_array_tag, fetch_buffer_rank_alloc);
+                    LookupVisited(fetch_point, fetch_buffer_rank_alloc);
 
                 SortQueue(buffer_rank_gather, retset);
 
-                DistCalculate(buffer_rank_alloc, buffer_rank_gather);
+                DistCalculation(buffer_rank_alloc, buffer_rank_gather, visited_array, visited_array_tag);
 
 #elif OPT_SORT
-                tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc);
+                tableint search_point = GetStart(retset, buffer_rank_alloc);
                 if (info->is_done)
                     break;
 
                 SortQueue(buffer_rank_gather, retset);
 
-                LookupVisited(search_point, visited_array, visited_array_tag, buffer_rank_alloc);
+                LookupVisited(search_point, buffer_rank_alloc);
 
-                DistCalculate(buffer_rank_alloc, buffer_rank_gather);
+                DistCalculation(buffer_rank_alloc, buffer_rank_gather, visited_array, visited_array_tag);
 
 #elif OPT_VISITED
-                tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc);
+                tableint search_point = GetStart(retset, buffer_rank_alloc);
                 if (info->is_done)
                     break;
 
-                DistCalculate(buffer_rank_alloc, buffer_rank_gather);
+                DistCalculation(buffer_rank_alloc, buffer_rank_gather, visited_array, visited_array_tag);
 
                 if (fetch_allow)
-                    LookupVisited(fetch_point, visited_array, visited_array_tag, buffer_rank_alloc);
+                    LookupVisited(fetch_point, buffer_rank_alloc);
 
                 SortQueue(buffer_rank_gather, retset);
 
 #else
-                tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc);
+                tableint search_point = GetStart(retset, buffer_rank_alloc);
                 if (info->is_done)
                     break;
 
-                LookupVisited(search_point, visited_array, visited_array_tag, buffer_rank_alloc);
+                LookupVisited(search_point, buffer_rank_alloc);
 
-                DistCalculate(buffer_rank_alloc, buffer_rank_gather);
+                DistCalculation(buffer_rank_alloc, buffer_rank_gather, visited_array, visited_array_tag);
 
                 SortQueue(buffer_rank_gather, retset);
 
