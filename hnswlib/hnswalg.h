@@ -275,13 +275,25 @@ namespace hnswlib {
 
             visited_array[ep_id] = visited_array_tag;
 
+#if PROEFS
+            int num_iter = 0;
+            int max_iter = ef_ + 10;
+#endif
+
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
 
+#if PROEFS
+                if (num_iter >= max_iter)
+                    break;
+                num_iter++;
+#else
                 if ((-current_node_pair.first) > lowerBound) {
                     break;
                 }
+#endif
+
                 candidate_set.pop();
 
                 tableint current_node_id = current_node_pair.second;

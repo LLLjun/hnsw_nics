@@ -2,7 +2,7 @@
 #define FROMBILLION true
 
 // rank-level的映射
-#define RANKMAP     true
+#define RANKMAP     false
 
 #if RANKMAP
 #define NUM_RANKS   8
@@ -17,3 +17,5 @@
 
 
 #define DDEBUG      false
+
+#define PROEFS      true
