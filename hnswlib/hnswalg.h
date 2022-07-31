@@ -277,7 +277,7 @@ namespace hnswlib {
 
 #if PROEFS
             int num_iter = 0;
-            int max_iter = ef_ + 10;
+            int max_iter = ef_;
 #endif
 
             while (!candidate_set.empty()) {
@@ -1770,7 +1770,13 @@ namespace hnswlib {
             initOptVisited();
 #endif
 
+#if PROEFS
+            int num_iter = 0;
+            int max_iter = info->l_search;
+            for (; num_iter < max_iter; num_iter++) {
+#else
             while (true) {
+#endif
 #if (OPT_SORT && OPT_VISITED)
                 tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc, fetch_buffer_rank_alloc);
                 if (info->is_done)
