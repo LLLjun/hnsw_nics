@@ -382,6 +382,12 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
 #else
     save_dir = "hnsw";
 #endif
+
+#if THREAD
+    save_dir = "hnsw_pf_multithread";
+    suffix = "_t" + to_string(n_threads);
+#endif
+
     save_dir = path_project + "/output/result/" + save_dir;
     if (access(save_dir.c_str(), R_OK|W_OK)){
         if (mkdir(save_dir.c_str(), S_IRWXU) != 0) {

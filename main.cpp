@@ -28,10 +28,13 @@ int main(int argc, char **argv) {
             exit(1);
         }
     }
-    if (string(argv[1]) == "search")
-        assignToThisCore(0);
 
-    hnsw_impl(string(argv[1]), string(argv[2]), atoi(argv[3]), atoi(argv[4]));
+    string stage = string(argv[1]);
+    size_t n_threads = atoi(argv[4]);
+    // if (stage == "search" && n_threads == 1)
+    //     assignToThisCore(0);
+
+    hnsw_impl(stage, string(argv[2]), atoi(argv[3]), n_threads);
 
     return 0;
 };
