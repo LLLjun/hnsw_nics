@@ -2,7 +2,7 @@
 #define FROMBILLION true
 
 // rank-level的映射
-#define RANKMAP     true
+#define RANKMAP     false
 
 #if RANKMAP
 #define NUM_RANKS   8
@@ -24,6 +24,6 @@
 // 支持测试模式
 #define TESTMODE    true
 #if TESTMODE
-#define TTIMES      5
+#define TTIMES      7
 #define DETAIL      false
 #endif
