@@ -246,6 +246,14 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
+        {
+            string dataset = "deep";
+            int size_million = vecsize / 1000000;
+            string path_txt = "../output/reorder/" + dataset + to_string(size_million) + "m.txt";
+            appr_alg->writeNeighborToEdgelist(path_txt);
+            exit(1);
+        }
+
 #if RANKMAP
         appr_alg->initRankMap();
 #endif

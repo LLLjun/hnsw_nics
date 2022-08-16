@@ -1185,6 +1185,37 @@ namespace hnswlib {
             return result;
         };
 
+        void writeNeighborToEdgelist(string& path_output) {
+            int num_row = cur_element_count;
+            int num_total = 0;
+            vector<pair<int, int>> EdgeList;
+            EdgeList.reserve(num_row * maxM0_);
+
+            for (int i_r = 0; i_r < num_row; i_r++) {
+                vector<int> neighbor;
+                linklistsizeint *ll_cur = get_linklist0(i_r);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+                for (int j = 0; j < size; j++) {
+                    neighbor.push_back(data[j]);
+                    // EdgeList.push_back(make_pair(i_r, data[j]));
+                }
+                sort(neighbor.begin(), neighbor.end());
+                for (int &id: neighbor)
+                    EdgeList.push_back(make_pair(i_r, id));
+            }
+            num_total = EdgeList.size();
+
+            // write
+            ofstream file_output(path_output.c_str());
+            file_output << "#" << num_row << " " << num_total << "\n";
+            for (pair<int, int> &edge: EdgeList) {
+                file_output << edge.first << " " << edge.second << "\n";
+            }
+            file_output.close();
+
+            printf("write to %s done\n", path_output.c_str());
+        }
 
         /*
             using one queue to search
