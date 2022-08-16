@@ -43,8 +43,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
     // Ours. rank=490, sort=53.6, lookup=136, hlc=3
 
-    for (int i = 10; i <= 150; i += 10)
-        efs.push_back(i);
+    // for (int i = 10; i <= 150; i += 10)
+    //     efs.push_back(i);
+    efs.push_back(80);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -246,12 +247,72 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
+#if HOTDATA
+        appr_alg->Hotdata = new HotData(appr_alg->cur_element_count);
+#endif
+
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
 
         printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+
+#if HOTDATA
+        // vector<Idtimes> HdDegree;
+        vector<Idtimes> HdSearch;
+        // appr_alg->hotdataByIndegree(HdDegree);
+        appr_alg->Hotdata->hotdataBySearch(HdSearch);
+
+        // {
+        //     vector<float> top_percent;
+        //     // 10 million
+        //     for (float i = 0.01; i < 0.1; i += 0.01)
+        //         top_percent.push_back(i);
+
+        //     printf("Point percent\t Match percent\n");
+        //     for (float & tp : top_percent) {
+        //         size_t nums = tp * HdDegree.size();
+        //         unordered_set<tableint> compare;
+        //         size_t n_hit = 0;
+
+        //         for (int i = 0; i < nums; i++) {
+        //             compare.insert(HdDegree[i].id);
+        //         }
+        //         for (int i = 0; i < nums; i++) {
+        //             tableint point = HdSearch[i].id;
+        //             if (compare.find(point) != compare.end()) {
+        //                 n_hit++;
+        //             }
+        //         }
+
+        //         printf("%.1f%%\t %.1f%%\n", tp * 100, 100.0 * n_hit / nums);
+        //     }
+        // }
+
+        {
+            printf("Point number, Point percent\t Match percent\n");
+
+            vector<int> hops = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+            for (int & hop: hops) {
+                unordered_set<tableint> HdConnect;
+                appr_alg->hotdataByConnection(hop, HdConnect);
+
+                size_t n_hit = 0;
+                size_t nums = HdConnect.size();
+                // for (int i = 0; i < nums; i++) {
+                //     tableint point = HdSearch[i].id;
+                //     if (HdConnect.find(point) != HdConnect.end()) {
+                //         n_hit++;
+                //     }
+                // }
+                printf("%lu\t %.1f%%\t %.1f%%\n", nums, 100.0 * nums / appr_alg->cur_element_count, 100.0 * n_hit / nums);
+            }
+        }
+
+        exit(1);
+#endif
+
 #if RANKMAP
         appr_alg->deleteRankMap();
 #endif

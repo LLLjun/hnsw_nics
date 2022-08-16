@@ -23,13 +23,17 @@
 #endif
 #endif
 
+#include <cstdio>
 #include <queue>
 #include <vector>
+#include <numeric>
+#include <algorithm>
 #include <iostream>
 #include <string.h>
 #include "config.h"
 
 namespace hnswlib {
+    typedef unsigned int tableint;
     typedef size_t labeltype;
 
     template <typename T>
@@ -213,6 +217,80 @@ namespace hnswlib {
             l_search = efs;
         }
     };
+
+        /*
+            分析 hotdata
+        */
+#if HOTDATA
+    // internalId-times
+    struct Idtimes{
+        tableint id;
+        size_t   times;
+
+        Idtimes() = default;
+        Idtimes(tableint id, size_t times) : id(id), times(times) {}
+
+        inline bool operator<(const Idtimes &other) const {
+            return times < other.times;
+        }
+    };
+
+    class HotData {
+    public:
+        HotData(size_t nums_point) {
+            nums_point_ = nums_point;
+            Times.resize(nums_point, 0);
+        }
+
+        void AddTimes(tableint id) {
+            Times[id]++;
+        }
+
+        void hotdataBySearch(std::vector<Idtimes>& PointTable) {
+            // std::vector<Idtimes> PointTable(nums_point_, Idtimes(0, 0));
+            PointTable.resize(nums_point_, Idtimes(0, 0));
+
+            for (int i = 0; i < nums_point_; i++) {
+                PointTable[i].id = i;
+                PointTable[i].times = Times[i];
+            }
+            size_t total = accumulate(Times.begin(), Times.end(), 0);
+
+#if DDEBUG
+            printf("Id\tTimes\n");
+            for (int i = 0; i < 5; i++)
+                printf("%d\t%lu\n", PointTable[i].id, PointTable[i].times);
+#endif
+            sort(PointTable.rbegin(), PointTable.rend());
+#if DDEBUG
+            printf("Id\tTimes\n");
+            for (int i = 0; i < 5; i++)
+                printf("%d\t%lu\n", PointTable[i].id, PointTable[i].times);
+#endif
+
+            int n_round = 10;
+            size_t sub = 1.0 * total / n_round;
+            int i_round = 1;
+            size_t psum = 0;
+
+            printf("Access times percent\t Point percent\n");
+            for (int i = 0; i < nums_point_; i++) {
+                Idtimes & it = PointTable[i];
+                psum += it.times;
+                if (psum >= (i_round * sub)){
+                    printf("%d%%\t %.1f%%\n", i_round * 100 / n_round, 100.0 * i / nums_point_);
+                    i_round++;
+                }
+            }
+            printf("\n");
+        }
+
+    private:
+        size_t nums_point_;
+        std::vector<size_t> Times;
+
+    };
+#endif
 
 }
 
