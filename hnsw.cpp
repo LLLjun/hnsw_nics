@@ -43,8 +43,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
     // Ours. rank=490, sort=53.6, lookup=136, hlc=3
 
-    for (int i = 10; i <= 150; i += 10)
-        efs.push_back(i);
+    // for (int i = 10; i <= 150; i += 10)
+    //     efs.push_back(i);
+    efs.push_back(EFS);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -246,12 +247,21 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
+#if WALK
+        appr_alg->RW = new RandomWalk(qsize, EFS);
+        appr_alg->topk = k;
+#endif
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
 
         printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+
+#if WALK
+        appr_alg->RW->variationInfoContent();
+#endif
+
 #if RANKMAP
         appr_alg->deleteRankMap();
 #endif

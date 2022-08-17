@@ -15,7 +15,7 @@
 #include "omp.h"
 
 namespace hnswlib {
-    typedef unsigned int tableint;
+    // typedef unsigned int tableint;
     typedef unsigned int linklistsizeint;
 
     template<typename dist_t, typename set_t>
@@ -276,18 +276,21 @@ namespace hnswlib {
             visited_array[ep_id] = visited_array_tag;
 
 #if PROEFS
-            int num_iter = 0;
+            int num_iter = -1;
             int max_iter = ef_;
 #endif
-
+#if WALK
+            unordered_set<tableint> setTopkOld;
+            unordered_set<tableint> setTopkNew;
+#endif
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
 
 #if PROEFS
+                num_iter++;
                 if (num_iter >= max_iter)
                     break;
-                num_iter++;
 #else
                 if ((-current_node_pair.first) > lowerBound) {
                     break;
@@ -306,10 +309,10 @@ namespace hnswlib {
 
 
 #ifdef USE_SSE
-                // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                // _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
-                // _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
-                // _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
+                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+                _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+                _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
 
                 for (size_t j = 1; j <= size; j++) {
@@ -317,9 +320,9 @@ namespace hnswlib {
 //                    if (candidate_id == 0) continue;
 
 #ifdef USE_SSE
-                    // _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
-                    // _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
-                    //              _MM_HINT_T0);////////////
+                    _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+                    _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
+                                 _MM_HINT_T0);////////////
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
@@ -333,9 +336,9 @@ namespace hnswlib {
                             candidate_set.emplace(-dist, candidate_id);
 
 #ifdef USE_SSE
-                            // _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                            //              offsetLevel0_,///////////
-                            //              _MM_HINT_T0);////////////////////////
+                            _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                                         offsetLevel0_,///////////
+                                         _MM_HINT_T0);////////////////////////
 #endif
 
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
@@ -349,7 +352,35 @@ namespace hnswlib {
                         }
                     }
                 }
+                // one step finished
+#if WALK
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> topkCopy {top_candidates};
+                int n_nomatch = 0;
+                while (!topkCopy.empty()) {
+                    if (topkCopy.size() > topk) {
+                        topkCopy.pop();
+                        continue;
+                    }
+                    tableint pc = topkCopy.top().second;
+                    setTopkNew.emplace(pc);
+                    if (setTopkOld.find(pc) == setTopkOld.end())
+                        n_nomatch++;
+                    topkCopy.pop();
+                }
+#if DDEBUG
+                if (setTopkNew.size() != topk || n_nomatch > topk) {
+                    printf("WALK Error, size is not topk\n"); exit(1);
+                }
+#endif
+                unordered_set<tableint>().swap(setTopkOld);
+                setTopkNew.swap(setTopkOld);
+                float ic = 1.0 * n_nomatch / topk;
+                RW->addICInQuery(ic);
+#endif
             }
+#if WALK
+            RW->endICInQuery();
+#endif
 
             visited_list_pool_->releaseVisitedList(vl);
 
@@ -1185,6 +1216,10 @@ namespace hnswlib {
             return result;
         };
 
+#if WALK
+        RandomWalk* RW = nullptr;
+        size_t topk;
+#endif
 
         /*
             using one queue to search

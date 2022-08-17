@@ -1,4 +1,8 @@
 #pragma once
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <numeric>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -30,6 +34,7 @@
 #include "config.h"
 
 namespace hnswlib {
+    typedef unsigned int tableint;
     typedef size_t labeltype;
 
     template <typename T>
@@ -213,6 +218,99 @@ namespace hnswlib {
             l_search = efs;
         }
     };
+
+#if WALK
+    class RandomWalk {
+    public:
+        RandomWalk(int nums, int steps) {
+            qsize_ = nums;
+            steps_ = steps;
+            cur_qid_ = 0;
+
+            initTable();
+            initList();
+            printf("[walk] qsize: %d, steps: %d\n", qsize_, steps_);
+        }
+
+        // 基于定长的步数，显示信息量的变化情况
+        void variationInfoContent() {
+            // int n_item = 10;
+            // int item = steps_ / n_item;
+            std::vector<float> ICMean(steps_, 0);
+            std::vector<float> ICStdev(steps_, 0);
+
+            std::vector<std::vector<float>> ICTablePerStep;
+            transPosition(ICTablePerStep);
+
+            for (int si = 0; si < steps_; si++) {
+                float mean = getMean(ICTablePerStep[si]);
+                if (mean < 0) {
+                    printf("Walk Error, mean: %.3f less than 0\n", mean); exit(1);
+                }
+                ICMean[si] = mean;
+                ICStdev[si] = getStdev(mean, ICTablePerStep[si]);
+            }
+
+            // printf
+            printf("Step\t ICMean\t ICStdev\n");
+            for (int si = 0; si < steps_; si++) {
+                printf("%d\t %.3f\t %.3f\n", si, ICMean[si], ICStdev[si]);
+            }
+            printf("\n");
+        }
+        void addICInQuery(float value) {
+            ICListQuery.push_back(value);
+        }
+        void endICInQuery() {
+            InfoContentTable[cur_qid_].swap(ICListQuery);
+            std::vector<float>().swap(ICListQuery);
+            if (InfoContentTable[cur_qid_].size() != steps_) {
+                printf("RandomWalk Error, out step: %lu\n", InfoContentTable[cur_qid_].size()); exit(1);
+            }
+
+            cur_qid_++;
+        }
+
+    private:
+        int qsize_, steps_;
+        int cur_qid_;
+        std::vector<float> ICListQuery;
+        // std::vector<float> ICListTotal;
+        std::vector<std::vector<float>> InfoContentTable;
+
+        void initTable() {
+            InfoContentTable.resize(qsize_);
+        }
+        void initList() {
+            std::vector<float>().swap(ICListQuery);
+            // ICListTotal.resize(steps_, 0);
+        }
+        void transPosition(std::vector<std::vector<float>>& transedTable) {
+            transedTable.resize(steps_);
+
+            for (int si = 0; si < steps_; si++) {
+                transedTable[si].resize(qsize_);
+                for (int qi = 0; qi < qsize_; qi++) {
+                    transedTable[si][qi] = InfoContentTable[qi][si];
+                }
+            }
+        }
+        // 根据mean和vector计算标准差
+        float getMean(std::vector<float>& List) {
+            float sum = std::accumulate(List.begin(), List.end(), 0.0);
+            float mean = sum / List.size();
+            return mean;
+        }
+        float getStdev(float mean, std::vector<float>& List) {
+            float accum = 0;
+            for (float& v: List)
+                accum += (v - mean) * (v - mean);
+            float stdev = std::sqrt(accum / (List.size() - 1));
+            return stdev;
+        }
+    };
+
+#endif
 
 }
 
