@@ -246,13 +246,22 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
-        {
-            string dataset = "deep";
-            int size_million = vecsize / 1000000;
-            string path_txt = "../output/reorder/" + dataset + to_string(size_million) + "m.txt";
-            appr_alg->writeNeighborToEdgelist(path_txt);
-            exit(1);
-        }
+#if GENEEDGE
+        string dataset = MapString["dataname"];
+        int size_million = vecsize / 1000000;
+        string path_txt = "../output/reorder/" + dataset + to_string(size_million) + "m.txt";
+        appr_alg->writeNeighborToEdgelist(path_txt);
+        exit(1);
+#endif
+#if ROGRAPH
+        string dataset = MapString["dataname"];
+        int size_million = vecsize / 1000000;
+        string path_rofile = "../output/reorder/new/" + dataset + to_string(size_million) + "m.txt";
+        string index_reorder = index + "_reorder";
+
+        appr_alg->geneReorderGraph(path_rofile);
+        appr_alg->saveIndex(index_reorder);
+#endif
 
 #if RANKMAP
         appr_alg->initRankMap();

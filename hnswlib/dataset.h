@@ -11,6 +11,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
 
     size_t data_size_millions = MapParameter["data_size_millions"];
     string path_dataset = "../dataset/" + dataname + "/";
+    MapString["dataname"] = dataname;
 
     if (dataname == "sift"){
         MapParameter["qsize"] = 10000;

@@ -1,5 +1,5 @@
 #define PLATG       true
-#define FROMBILLION true
+#define FROMBILLION false
 
 // rank-level的映射
 #define RANKMAP     false
@@ -19,3 +19,9 @@
 #define DDEBUG      false
 
 #define PROEFS      true
+
+#define REORDER     true
+#if REORDER
+#define GENEEDGE    false
+#define ROGRAPH     false
+#endif

@@ -3,6 +3,10 @@
 #include "visited_list_pool.h"
 #include "hnswlib.h"
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
@@ -10,6 +14,7 @@
 #include <list>
 #include <map>
 #include <stack>
+#include <vector>
 #include "dataset.h"
 #include "profile.h"
 #include "omp.h"
@@ -1185,6 +1190,7 @@ namespace hnswlib {
             return result;
         };
 
+#if GENEEDGE
         void writeNeighborToEdgelist(string& path_output) {
             int num_row = cur_element_count;
             int num_total = 0;
@@ -1216,6 +1222,51 @@ namespace hnswlib {
 
             printf("write to %s done\n", path_output.c_str());
         }
+#endif
+#if ROGRAPH
+        void geneReorderGraph(string& transTxt) {
+            vector<tableint> idOriginToNew(cur_element_count);
+            vector<tableint> idNewToOrigin(cur_element_count);
+
+            ifstream file_transtxt(transTxt.c_str());
+            if (file_transtxt) {
+                tableint id_in; 
+                for (int i = 0; i < cur_element_count; i++) {
+                    file_transtxt >> id_in;
+                    if (id_in >= cur_element_count) {
+                        printf("Error, id_in is invalid\n"); exit(1);
+                    }
+                    idOriginToNew[i] = id_in;
+                    idNewToOrigin[id_in] = i;
+                }
+                file_transtxt.close();
+            } else {
+                printf("Error, %s don't exist\n", transTxt.c_str()); exit(1);
+            }
+
+            char *data_level0_memory_reorder = (char *) malloc(max_elements_ * size_data_per_element_);
+            if (data_level0_memory_reorder == nullptr)
+                throw std::runtime_error("Not enough memory");
+
+            enterpoint_node_ = idOriginToNew[enterpoint_node_];
+            for (int id_new = 0; id_new < max_elements_; id_new++) {
+                tableint id_origin = idNewToOrigin[id_new];
+                char* ptr_cur = data_level0_memory_reorder + size_data_per_element_ * id_new;
+                memcpy(ptr_cur, data_level0_memory_ + size_data_per_element_ * id_origin, size_data_per_element_);
+                
+                linklistsizeint size = *((linklistsizeint *)ptr_cur);
+                tableint* ptr_nglist = (tableint *)(ptr_cur + sizeof(linklistsizeint));
+                for (int i = 0; i < size; i++) {
+                    tableint ng_origin = ptr_nglist[i];
+                    ptr_nglist[i] = idOriginToNew[ng_origin];
+                }
+            }
+
+            free(data_level0_memory_);
+            data_level0_memory_ = data_level0_memory_reorder;
+            printf("Reorder graph done\n");
+        }
+#endif
 
         /*
             using one queue to search
