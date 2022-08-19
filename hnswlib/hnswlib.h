@@ -1,4 +1,5 @@
 #pragma once
+#include <unordered_set>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -243,30 +244,24 @@ namespace hnswlib {
         }
 
         void AddTimes(tableint id) {
-            Times[id]++;
+            // Times[id]++;
+            if (isTrain)
+                AccessTimesTrain[id]++;
+            else
+                AccessTimesTest[id]++;
+        }
+
+        void endQuery() {
+            qi_cur++;
+            if (isTrain && qi_cur >= qi_threshold) {
+                isTrain = false;
+            }
         }
 
         void hotdataBySearch(std::vector<Idtimes>& PointTable) {
             // std::vector<Idtimes> PointTable(nums_point_, Idtimes(0, 0));
-            PointTable.resize(nums_point_, Idtimes(0, 0));
-
-            for (int i = 0; i < nums_point_; i++) {
-                PointTable[i].id = i;
-                PointTable[i].times = Times[i];
-            }
+            transTimesToTdtimes(Times, PointTable);
             size_t total = accumulate(Times.begin(), Times.end(), 0);
-
-#if DDEBUG
-            printf("Id\tTimes\n");
-            for (int i = 0; i < 5; i++)
-                printf("%d\t%lu\n", PointTable[i].id, PointTable[i].times);
-#endif
-            sort(PointTable.rbegin(), PointTable.rend());
-#if DDEBUG
-            printf("Id\tTimes\n");
-            for (int i = 0; i < 5; i++)
-                printf("%d\t%lu\n", PointTable[i].id, PointTable[i].times);
-#endif
 
             int n_round = 10;
             size_t sub = 1.0 * total / n_round;
@@ -285,10 +280,97 @@ namespace hnswlib {
             printf("\n");
         }
 
+        // For Training, 目前的做法是将query set 按照1:1的比例切分
+        void initTrain(int qsize, float train_ratio=0.5) {
+            isTrain = true;
+            qi_cur = 0;
+            qi_threshold = qsize * train_ratio;
+            qi_size = qsize;
+            AccessTimesTrain.resize(nums_point_, 0);
+            AccessTimesTest.resize(nums_point_, 0);
+        }
+
+        void processTrain() {
+            std::vector<Idtimes> AccessTdtimesTrain;
+            std::vector<Idtimes> AccessTdtimesTest;
+            transTimesToTdtimes(AccessTimesTrain, AccessTdtimesTrain);
+            transTimesToTdtimes(AccessTimesTest, AccessTdtimesTest);
+
+            size_t accessTotal = std::accumulate(AccessTimesTrain.begin(), AccessTimesTrain.end(), 0);
+            float ratio_max = 0.5;
+            int n_steps = 10;
+            size_t interval = ratio_max * nums_point_ / n_steps;
+
+            size_t accessCurrent = 0;
+
+            printf("Points(%)\t Access(%)\t Freq.Avg\t Max\t Min\t Match(%)\n");
+            for (int si = 0; si < n_steps; si++) {
+                int begin = si * interval;
+                int end = begin + interval;
+
+                // 分析 Train 数据信息
+                size_t accessTmp = 0;
+                for (int i = begin; i < end; i++) {
+                    accessTmp += AccessTdtimesTrain[i].times;
+                }
+                accessCurrent += accessTmp;
+                // printf
+                printf("%.1f%%\t %.1f%%\t %.5f\t %.5f\t %.5f\t ", 
+                                100.0 * end / nums_point_,
+                                100.0 * accessCurrent / accessTotal, 
+                                1.0 * accessTmp / interval / qi_threshold,
+                                1.0 * AccessTdtimesTrain[begin].times / qi_threshold,
+                                1.0 * AccessTdtimesTrain[end-1].times / qi_threshold);
+
+                // 比较 Test 和 Train 的一致程度
+                int n_hit = 0;
+                std::unordered_set<tableint> pointSet;
+                for (int i = 0; i < end; i++) {
+                    pointSet.emplace(AccessTdtimesTrain[i].id);
+                }
+                for (int i = 0; i < end; i++) {
+                    tableint ptest = AccessTdtimesTest[i].id;
+                    if (pointSet.find(ptest) != pointSet.end())
+                        n_hit++;
+                }
+                printf("%.1f%%\n", 100.0 * n_hit / end);
+
+                if (AccessTdtimesTrain[end-1].times == 0)
+                    break;
+            }
+            printf("\n");
+        }
+
     private:
         size_t nums_point_;
         std::vector<size_t> Times;
 
+        // For Training
+        std::vector<size_t> AccessTimesTrain;
+        std::vector<size_t> AccessTimesTest;
+        bool isTrain;
+        int qi_cur, qi_threshold, qi_size;
+
+        void transTimesToTdtimes(std::vector<size_t>& timesList, std::vector<Idtimes>& timesPair) {
+            timesPair.resize(nums_point_, Idtimes(0, 0));
+
+            for (int i = 0; i < nums_point_; i++) {
+                timesPair[i].id = i;
+                timesPair[i].times = timesList[i];
+            }
+
+#if DDEBUG
+            printf("Id\tTimes\n");
+            for (int i = 0; i < 5; i++)
+                printf("%d\t%lu\n", timesPair[i].id, timesPair[i].times);
+#endif
+            sort(timesPair.rbegin(), timesPair.rend());
+#if DDEBUG
+            printf("Id\tTimes\n");
+            for (int i = 0; i < 5; i++)
+                printf("%d\t%lu\n", timesPair[i].id, timesPair[i].times);
+#endif
+        }
     };
 #endif
 

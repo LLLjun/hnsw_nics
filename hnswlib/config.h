@@ -16,13 +16,14 @@
 #endif
 
 
-#define DDEBUG      false
+#define DDEBUG      true
 
 #define PROEFS      true
 
 #define HOTDATA     true
 
 #if HOTDATA
+#define HD_TRAIN    true
 #define HD_SEARCH   false
 #define HD_DEGREE   false
 #endif

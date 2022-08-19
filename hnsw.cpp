@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <queue>
@@ -249,6 +250,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
 #if HOTDATA
         appr_alg->Hotdata = new HotData(appr_alg->cur_element_count);
+        appr_alg->Hotdata->initTrain(qsize, 0.7);
 #endif
 
 #if RANKMAP
@@ -259,6 +261,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
 
 #if HOTDATA
+        appr_alg->Hotdata->processTrain();
+        exit(1);
+
         // vector<Idtimes> HdDegree;
         vector<Idtimes> HdSearch;
         // appr_alg->hotdataByIndegree(HdDegree);

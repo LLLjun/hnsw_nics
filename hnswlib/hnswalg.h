@@ -279,7 +279,9 @@ namespace hnswlib {
             }
 
             visited_array[ep_id] = visited_array_tag;
-
+// #if HD_TRAIN
+//             Hotdata->AddTimes(ep_id);
+// #endif
 #if PROEFS
             int num_iter = 0;
             int max_iter = ef_;
@@ -308,16 +310,14 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-
-#if HD_SEARCH
+#if HD_TRAIN
                 Hotdata->AddTimes(current_node_id);
 #endif
-
 #ifdef USE_SSE
-                // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                // _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
-                // _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
-                // _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
+                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+                _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+                _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
 
                 for (size_t j = 1; j <= size; j++) {
@@ -325,12 +325,15 @@ namespace hnswlib {
 //                    if (candidate_id == 0) continue;
 
 #ifdef USE_SSE
-                    // _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
-                    // _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
-                    //              _MM_HINT_T0);////////////
+                    _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+                    _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
+                                 _MM_HINT_T0);////////////
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+// #if HD_TRAIN
+//                         Hotdata->AddTimes(candidate_id);
+// #endif
                         metric_distance_computations++;
 
                         visited_array[candidate_id] = visited_array_tag;
@@ -341,9 +344,9 @@ namespace hnswlib {
                             candidate_set.emplace(-dist, candidate_id);
 
 #ifdef USE_SSE
-                            // _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                            //              offsetLevel0_,///////////
-                            //              _MM_HINT_T0);////////////////////////
+                            _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                                         offsetLevel0_,///////////
+                                         _MM_HINT_T0);////////////////////////
 #endif
 
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
@@ -358,6 +361,9 @@ namespace hnswlib {
                     }
                 }
             }
+#if HD_TRAIN
+            Hotdata->endQuery();
+#endif
 
             visited_list_pool_->releaseVisitedList(vl);
 
@@ -1283,7 +1289,7 @@ namespace hnswlib {
             printf("\n");
         }
 
-        
+
 
 #endif
         // end hotdata
