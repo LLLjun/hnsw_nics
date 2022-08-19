@@ -253,9 +253,16 @@ namespace hnswlib {
         mutable std::atomic<long> metric_hops_L;
         mutable std::atomic<long> cur_query;
 
+        // efs=150，对于DEEP10M，循环4326次, 排序701次. 对于DEEP1M，循环2737次, 排序558次
+#if (TEST_SIZE == 1)
+        int repeat = 200;
+        int num_iter = 2737;
+        int num_sort = 558;
+#elif (TEST_SIZE == 10)
         int repeat = 2000;
         int num_iter = 4326;
         int num_sort = 701;
+#endif
         int interval = (num_iter + 0.5 * num_sort) / num_sort;
 
         template <bool has_deletions, bool collect_metrics=false>
