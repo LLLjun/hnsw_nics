@@ -30,6 +30,7 @@
 #include "config.h"
 
 namespace hnswlib {
+    typedef unsigned int tableint;
     typedef size_t labeltype;
 
     template <typename T>
