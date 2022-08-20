@@ -22,6 +22,9 @@
 
 #define REORDER     true
 #if REORDER
-#define GENEEDGE    false
-#define ROGRAPH     false
+#define ROMODE      ROTEST
+
+#define ROEDGE      0
+#define ROGRAPH     1
+#define ROTEST      2
 #endif

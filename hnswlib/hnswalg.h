@@ -2,6 +2,7 @@
 
 #include "visited_list_pool.h"
 #include "hnswlib.h"
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -1190,7 +1191,7 @@ namespace hnswlib {
             return result;
         };
 
-#if GENEEDGE
+#if REORDER
         void writeNeighborToEdgelist(string& path_output) {
             int num_row = cur_element_count;
             int num_total = 0;
@@ -1222,15 +1223,14 @@ namespace hnswlib {
 
             printf("write to %s done\n", path_output.c_str());
         }
-#endif
-#if ROGRAPH
+
         void geneReorderGraph(string& transTxt) {
             vector<tableint> idOriginToNew(cur_element_count);
             vector<tableint> idNewToOrigin(cur_element_count);
 
             ifstream file_transtxt(transTxt.c_str());
             if (file_transtxt) {
-                tableint id_in; 
+                tableint id_in;
                 for (int i = 0; i < cur_element_count; i++) {
                     file_transtxt >> id_in;
                     if (id_in >= cur_element_count) {
@@ -1253,7 +1253,7 @@ namespace hnswlib {
                 tableint id_origin = idNewToOrigin[id_new];
                 char* ptr_cur = data_level0_memory_reorder + size_data_per_element_ * id_new;
                 memcpy(ptr_cur, data_level0_memory_ + size_data_per_element_ * id_origin, size_data_per_element_);
-                
+
                 linklistsizeint size = *((linklistsizeint *)ptr_cur);
                 tableint* ptr_nglist = (tableint *)(ptr_cur + sizeof(linklistsizeint));
                 for (int i = 0; i < size; i++) {
@@ -1261,11 +1261,105 @@ namespace hnswlib {
                     ptr_nglist[i] = idOriginToNew[ng_origin];
                 }
             }
+            // 对邻居进行排序
+            for (tableint id = 0; id < max_elements_; id++) {
+                vector<tableint> neighbor = getNeighborList(id);
+                sort(neighbor.begin(), neighbor.end());
+                writeNeighborList(id, neighbor);
+            }
 
             free(data_level0_memory_);
             data_level0_memory_ = data_level0_memory_reorder;
             printf("Reorder graph done\n");
         }
+
+        vector<tableint> getNeighborList(tableint id) {
+            linklistsizeint *ll_cur = get_linklist0(id);
+            int size = getListCount(ll_cur);
+            vector<tableint> neighbor(size);
+
+            tableint *data = (tableint *) (ll_cur + 1);
+            for (int j = 0; j < size; j++)
+                neighbor[j] = data[j];
+            return neighbor;
+        }
+
+        void writeNeighborList(tableint id, vector<tableint>& neighbor) {
+            linklistsizeint *ll_cur = get_linklist0(id);
+            int size = getListCount(ll_cur);
+            if (size != neighbor.size()) {
+                printf("Error, size don't equal neighbor size\n"); exit(1);
+            }
+
+            tableint *data = (tableint *) (ll_cur + 1);
+            for (int j = 0; j < size; j++)
+                data[j] = neighbor[j];
+        }
+
+        vector<int> getConstNeighbor(tableint id) {
+            vector<tableint> neighbor = getNeighborList(id);
+            vector<int> distribution(maxM0_+1, 0);
+            int size = neighbor.size();
+
+            if (neighbor.empty()) {
+                printf("Error, neighbor is empty\n"); exit(1);
+            } else if (size == 1) {
+                distribution[1] = 1;
+                return distribution;
+            } else {
+                sort(neighbor.begin(), neighbor.end());
+                tableint id_last = neighbor[0];
+                vector<tableint> tmp_const(1, id_last);
+
+                for (int i = 0; i < size; i++) {
+                    tableint id = neighbor[i];
+                    if (i + 1 == size)
+                        id = -1;
+
+                    if ((i + 1 == size) || (id != id_last + 1)) {
+                        int n_const = tmp_const.size();
+                        distribution[n_const]++;
+                        vector<tableint>().swap(tmp_const);
+                        tmp_const.push_back(id);
+                    } else
+                        tmp_const.push_back(id);
+                    id_last = id;
+                }
+            }
+
+            // check
+            int sum = 0;
+            for (int i = 1; i < distribution.size(); i++)
+                sum += i * distribution[i];
+            if (sum != size) {
+                printf("Error, sum must equal to size\n"); exit(1);
+            }
+
+            return distribution;
+        }
+
+        void neighborConstDistribution() {
+            vector<size_t> distribution(maxM0_+1, 0);
+            int range = maxM0_;
+            for (tableint id; id < max_elements_; id++) {
+                vector<int> part = getConstNeighbor(id);
+                for (int i = 1; i <= range; i++)
+                    distribution[i] += part[i];
+            }
+            size_t n_neighbor_total = 0;
+            for (int i = 1; i <= range; i++)
+                n_neighbor_total += i * distribution[i];
+
+            // printf
+            printf("length\t nums\t percent\n");
+            for (int ir = 1; ir <= range; ir++) {
+                if (distribution[ir] == 0)
+                    continue;
+                printf("%d\t %lu\t %.1f%%\n", ir, distribution[ir], 100.0 * ir * distribution[ir] / n_neighbor_total);
+            }
+            printf("\n");
+        }
+
 #endif
 
         /*

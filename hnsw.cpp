@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <queue>
@@ -246,21 +247,35 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
-#if GENEEDGE
+#if ROMODE == ROEDGE
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
         string path_txt = "../output/reorder/" + dataset + to_string(size_million) + "m.txt";
         appr_alg->writeNeighborToEdgelist(path_txt);
         exit(1);
 #endif
-#if ROGRAPH
+#if ROMODE == ROGRAPH
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
         string path_rofile = "../output/reorder/new/" + dataset + to_string(size_million) + "m.txt";
-        string index_reorder = index + "_reorder";
 
         appr_alg->geneReorderGraph(path_rofile);
-        appr_alg->saveIndex(index_reorder);
+        appr_alg->saveIndex(MapString["index_ro"]);
+#endif
+#if ROMODE == ROTEST
+        printf("Before reorder:\n");
+        appr_alg->neighborConstDistribution();
+        appr_alg->~HierarchicalNSW();
+
+        if (!exists_test(MapString["index_ro"])){
+            printf("Error, index %s is unexisted \n", index.c_str());
+            exit(1);
+        }
+        printf("After reorder:\n");
+        appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, MapString["index_ro"], false);
+        appr_alg->neighborConstDistribution();
+        appr_alg->~HierarchicalNSW();
+        exit(1);
 #endif
 
 #if RANKMAP
