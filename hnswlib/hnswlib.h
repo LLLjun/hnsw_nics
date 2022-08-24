@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdio>
+#include <cstdlib>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -28,6 +30,8 @@
 #include <iostream>
 #include <string.h>
 #include "config.h"
+#include "dataset.h"
+#include "tool.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -212,6 +216,98 @@ namespace hnswlib {
 
         void SetEfs(int efs) {
             l_search = efs;
+        }
+    };
+
+    struct SubPoint{
+        int graph;
+        int ingraph_id;
+
+        SubPoint() = default;
+        SubPoint(int graph, int ingraph_id) : graph{graph}, ingraph_id{ingraph_id} {}
+    };
+
+    // 分配整张图的点策略
+    class AllocSubGraph {
+    public:
+        AllocSubGraph(int nums_point, int nums_graph) {
+            n_point_total = nums_point;
+            n_subgraph = nums_graph;
+            if (n_point_total % n_subgraph != 0) {
+                printf("Error, unsupport the n_subgraph\n"); exit(1);
+            }
+            n_point_subg = n_point_total / n_subgraph;
+            OriginToSubPoint.resize(n_point_total);
+            SubPointToOrigin.resize(n_subgraph);
+            for (std::vector<int>& subgraph: SubPointToOrigin)
+                subgraph.resize(n_point_subg, 0);
+            SubCenter.resize(n_subgraph, 0);
+
+            printf("[SubGraph] num_graph: %d, n_point_subg: %d\n", n_subgraph, n_point_subg);
+
+            RandomAlloc();
+        }
+
+        // 根据分配后的mapping关系，得到对应subgraph的中心点
+        template<typename data_T>
+        void computSubgCenter(const data_T *data_m, uint32_t dims) {
+            data_T* data_s = new data_T[n_point_subg * dims]();
+            for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
+                for (int i_ig = 0; i_ig < n_point_subg; i_ig++) {
+                    int origin_id = SubPointToOrigin[i_sg][i_ig];
+                    memcpy(data_s + dims * i_ig, data_m + dims * origin_id, dims * sizeof(data_T));
+                }
+                int ingraph_id = compArrayCenter<data_T>(data_s, n_point_subg, dims);
+                SubCenter[i_sg] = SubPointToOrigin[i_sg][ingraph_id];
+                // 放在0号位置
+                swapMapByIngraphId(i_sg, 0, ingraph_id);
+            }
+            delete[] data_s;
+            printf("ComputSubgCenter successed\n");
+        }
+
+        int getSubgCenter(int subg) {
+            return SubCenter[subg];
+        }
+
+        int getOriginId(int subg_i, int ingraph_i) {
+            return SubPointToOrigin[subg_i][ingraph_i];
+        }
+
+    private:
+        int n_point_total, n_point_subg;
+        int n_subgraph;
+        std::vector<SubPoint> OriginToSubPoint;
+        std::vector<std::vector<int>> SubPointToOrigin;
+        std::vector<int> SubCenter;
+
+        // 随机分配
+        void RandomAlloc() {
+            srand((unsigned)time(NULL));
+            std::vector<int> random_list(n_point_total);
+            for (int i = 0; i < n_point_total; i++)
+                random_list[i] = i;
+            shuffle_vector<int>(random_list);
+
+            for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
+                for (int i_ig = 0; i_ig < n_point_subg; i_ig++) {
+                    int origin_id = random_list[i_sg * n_point_subg + i_ig];
+                    SubPointToOrigin[i_sg][i_ig] = origin_id;
+                    OriginToSubPoint[origin_id].graph = i_sg;
+                    OriginToSubPoint[origin_id].ingraph_id = i_ig;
+                }
+            }
+            printf("RandomAlloc successed\n");
+        }
+
+        void swapMapByIngraphId(int subg, int ingraph_id_x, int ingraph_id_y) {
+            int origin_x = SubPointToOrigin[subg][ingraph_id_x];
+            int origin_y = SubPointToOrigin[subg][ingraph_id_y];
+
+            OriginToSubPoint[origin_x].ingraph_id = ingraph_id_y;
+            OriginToSubPoint[origin_y].ingraph_id = ingraph_id_x;
+            SubPointToOrigin[subg][ingraph_id_x] = origin_y;
+            SubPointToOrigin[subg][ingraph_id_y] = origin_x;
         }
     };
 

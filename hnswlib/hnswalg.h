@@ -10,7 +10,6 @@
 #include <list>
 #include <map>
 #include <stack>
-#include "dataset.h"
 #include "profile.h"
 #include "omp.h"
 

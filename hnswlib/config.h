@@ -1,8 +1,8 @@
 #define PLATG       true
-#define FROMBILLION true
+#define FROMBILLION false
 
 // rank-level的映射
-#define RANKMAP     true
+#define RANKMAP     false
 
 #if RANKMAP
 #define NUM_RANKS   1
@@ -19,3 +19,7 @@
 #define DDEBUG      false
 
 #define PROEFS      true
+
+#if PLATG
+#define SUBG        true
+#endif
