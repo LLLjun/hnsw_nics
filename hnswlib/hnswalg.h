@@ -279,9 +279,9 @@ namespace hnswlib {
             }
 
             visited_array[ep_id] = visited_array_tag;
-// #if HD_TRAIN
-//             Hotdata->AddTimes(ep_id);
-// #endif
+#if HD_TRAIN
+            Hotdata->AddTimes(ep_id);
+#endif
 #if PROEFS
             int num_iter = 0;
             int max_iter = ef_;
@@ -310,9 +310,9 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-#if HD_TRAIN
-                Hotdata->AddTimes(current_node_id);
-#endif
+// #if HD_TRAIN
+//                 Hotdata->AddTimes(current_node_id);
+// #endif
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
                 _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
@@ -331,9 +331,9 @@ namespace hnswlib {
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
-// #if HD_TRAIN
-//                         Hotdata->AddTimes(candidate_id);
-// #endif
+#if HD_TRAIN
+                        Hotdata->AddTimes(candidate_id);
+#endif
                         metric_distance_computations++;
 
                         visited_array[candidate_id] = visited_array_tag;
@@ -362,7 +362,8 @@ namespace hnswlib {
                 }
             }
 #if HD_TRAIN
-            Hotdata->endQuery();
+            if (Hotdata->isSplitQuery())
+                Hotdata->endQuery();
 #endif
 
             visited_list_pool_->releaseVisitedList(vl);

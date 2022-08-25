@@ -35,7 +35,8 @@ template<typename DTres, typename DTset>
 static void
 test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
                 DTset *massQ, size_t qsize,
-                vector<vector<unsigned>>& massQA, size_t k) {
+                vector<vector<unsigned>>& massQA, size_t k,
+                DTset *massSample=nullptr, size_t sample_size=0) {
     vector<size_t> efs;// = { 10,10,10,10,10 };
     // base deep1m
     // 150     0.99144 343.031 0       155.846 2734.29
@@ -71,6 +72,13 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         vector<vector<unsigned>> result(qsize);
         for (vector<unsigned>& r: result)
             r.resize(k, 0);
+
+        appr_alg.Hotdata->initTrainSample(sample_size, qsize);
+        for (int sqi = 0; sqi < sample_size; sqi++) {
+            priority_queue<pair<DTres, labeltype>> res = appr_alg.searchKnn(massSample + vecdim * sqi, k);
+        }
+        printf("Search sample data done \n");
+        appr_alg.Hotdata->setTrainStats(false);
 
         Timer stopw = Timer();
 //         omp_set_num_threads(3);
@@ -250,7 +258,29 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
 #if HOTDATA
         appr_alg->Hotdata = new HotData(appr_alg->cur_element_count);
-        appr_alg->Hotdata->initTrain(qsize, 0.7);
+
+        size_t sample_size = 50 * qsize;
+        DTset *mass_sample = new DTset[sample_size * vecdim];
+        string path_sample = MapString["path_sample"];
+        std::ifstream file_reader(path_sample.c_str(), ios::binary);
+
+        uint32_t nums_r, dims_r;
+        file_reader.read((char *) &nums_r, sizeof(uint32_t));
+        file_reader.read((char *) &dims_r, sizeof(uint32_t));
+        if ((sample_size > nums_r) || (vecdim != dims_r)){
+            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_sample.c_str(), nums_r, dims_r);
+            exit(1);
+        }
+
+        uint32_t readsize = vecdim * sizeof(DTset);
+        for (int i = 0; i < sample_size; i++) {
+            file_reader.read((char *) (mass_sample + vecdim * i), readsize);
+            if (file_reader.gcount() != readsize) {
+                printf("Read Error\n"); exit(1);
+            }
+        }
+        file_reader.close();
+        printf("Load %lu * %lu Data from %s done.\n", sample_size, vecdim, path_sample.c_str());
 #endif
 
 #if RANKMAP
@@ -258,63 +288,10 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 #endif
 
         printf("Run and comput recall: \n");
-        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k, mass_sample, sample_size);
 
 #if HOTDATA
         appr_alg->Hotdata->processTrain();
-        exit(1);
-
-        // vector<Idtimes> HdDegree;
-        vector<Idtimes> HdSearch;
-        // appr_alg->hotdataByIndegree(HdDegree);
-        appr_alg->Hotdata->hotdataBySearch(HdSearch);
-
-        // {
-        //     vector<float> top_percent;
-        //     // 10 million
-        //     for (float i = 0.01; i < 0.1; i += 0.01)
-        //         top_percent.push_back(i);
-
-        //     printf("Point percent\t Match percent\n");
-        //     for (float & tp : top_percent) {
-        //         size_t nums = tp * HdDegree.size();
-        //         unordered_set<tableint> compare;
-        //         size_t n_hit = 0;
-
-        //         for (int i = 0; i < nums; i++) {
-        //             compare.insert(HdDegree[i].id);
-        //         }
-        //         for (int i = 0; i < nums; i++) {
-        //             tableint point = HdSearch[i].id;
-        //             if (compare.find(point) != compare.end()) {
-        //                 n_hit++;
-        //             }
-        //         }
-
-        //         printf("%.1f%%\t %.1f%%\n", tp * 100, 100.0 * n_hit / nums);
-        //     }
-        // }
-
-        {
-            printf("Point number, Point percent\t Match percent\n");
-
-            vector<int> hops = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-            for (int & hop: hops) {
-                unordered_set<tableint> HdConnect;
-                appr_alg->hotdataByConnection(hop, HdConnect);
-
-                size_t n_hit = 0;
-                size_t nums = HdConnect.size();
-                // for (int i = 0; i < nums; i++) {
-                //     tableint point = HdSearch[i].id;
-                //     if (HdConnect.find(point) != HdConnect.end()) {
-                //         n_hit++;
-                //     }
-                // }
-                printf("%lu\t %.1f%%\t %.1f%%\n", nums, 100.0 * nums / appr_alg->cur_element_count, 100.0 * n_hit / nums);
-            }
-        }
-
         exit(1);
 #endif
 

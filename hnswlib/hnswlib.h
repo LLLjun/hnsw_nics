@@ -240,11 +240,9 @@ namespace hnswlib {
     public:
         HotData(size_t nums_point) {
             nums_point_ = nums_point;
-            Times.resize(nums_point, 0);
         }
 
         void AddTimes(tableint id) {
-            // Times[id]++;
             if (isTrain)
                 AccessTimesTrain[id]++;
             else
@@ -253,41 +251,40 @@ namespace hnswlib {
 
         void endQuery() {
             qi_cur++;
-            if (isTrain && qi_cur >= qi_threshold) {
+            if (isTrain && qi_cur >= train_size) {
                 isTrain = false;
             }
         }
 
-        void hotdataBySearch(std::vector<Idtimes>& PointTable) {
-            // std::vector<Idtimes> PointTable(nums_point_, Idtimes(0, 0));
-            transTimesToTdtimes(Times, PointTable);
-            size_t total = accumulate(Times.begin(), Times.end(), 0);
-
-            int n_round = 10;
-            size_t sub = 1.0 * total / n_round;
-            int i_round = 1;
-            size_t psum = 0;
-
-            printf("Access times percent\t Point percent\n");
-            for (int i = 0; i < nums_point_; i++) {
-                Idtimes & it = PointTable[i];
-                psum += it.times;
-                if (psum >= (i_round * sub)){
-                    printf("%d%%\t %.1f%%\n", i_round * 100 / n_round, 100.0 * i / nums_point_);
-                    i_round++;
-                }
-            }
-            printf("\n");
+        // For Training, 目前的做法是将query set 按照1:1的比例切分
+        void initTrainSplit(int qsize, float train_ratio=0.5) {
+            usingSample = false;
+            setTrainStats(true);
+            qi_cur = 0;
+            train_size = qsize * train_ratio;
+            test_size = qsize - train_size;
         }
 
-        // For Training, 目前的做法是将query set 按照1:1的比例切分
-        void initTrain(int qsize, float train_ratio=0.5) {
-            isTrain = true;
-            qi_cur = 0;
-            qi_threshold = qsize * train_ratio;
-            qi_size = qsize;
-            AccessTimesTrain.resize(nums_point_, 0);
-            AccessTimesTest.resize(nums_point_, 0);
+        void initTrainSample(int sample_size, int qsize) {
+            usingSample = true;
+            setTrainStats(true);
+            train_size = sample_size;
+            test_size = qsize;
+        }
+
+        bool isSplitQuery() {
+            return (!usingSample);
+        }
+
+        void setTrainStats(bool is_train) {
+            isTrain = is_train;
+            if (isTrain) {
+                std::vector<size_t>().swap(AccessTimesTrain);
+                AccessTimesTrain.resize(nums_point_, 0);
+            } else {
+                std::vector<size_t>().swap(AccessTimesTest);
+                AccessTimesTest.resize(nums_point_, 0);
+            }
         }
 
         void processTrain() {
@@ -296,44 +293,50 @@ namespace hnswlib {
             transTimesToTdtimes(AccessTimesTrain, AccessTdtimesTrain);
             transTimesToTdtimes(AccessTimesTest, AccessTdtimesTest);
 
-            size_t accessTotal = std::accumulate(AccessTimesTrain.begin(), AccessTimesTrain.end(), 0);
+            size_t accessTotalTrain = std::accumulate(AccessTimesTrain.begin(), AccessTimesTrain.end(), 0);
+            size_t accessTotalTest = std::accumulate(AccessTimesTest.begin(), AccessTimesTest.end(), 0);
             float ratio_max = 0.5;
             int n_steps = 10;
             size_t interval = ratio_max * nums_point_ / n_steps;
 
             size_t accessCurrent = 0;
 
-            printf("Points(%)\t Access(%)\t Freq.Avg\t Max\t Min\t Match(%)\n");
+            printf("Points(%%)\t Access(%%)\t Freq.Avg\t Max\t Min\t Match(%%)\t M.Access(%%)\n");
             for (int si = 0; si < n_steps; si++) {
                 int begin = si * interval;
                 int end = begin + interval;
 
                 // 分析 Train 数据信息
-                size_t accessTmp = 0;
+                size_t accessTmpTrain = 0;
                 for (int i = begin; i < end; i++) {
-                    accessTmp += AccessTdtimesTrain[i].times;
+                    accessTmpTrain += AccessTdtimesTrain[i].times;
                 }
-                accessCurrent += accessTmp;
+                accessCurrent += accessTmpTrain;
                 // printf
-                printf("%.1f%%\t %.1f%%\t %.5f\t %.5f\t %.5f\t ", 
+                printf("%.1f%%\t %.1f%%\t %.5f\t %.5f\t %.5f\t ",
                                 100.0 * end / nums_point_,
-                                100.0 * accessCurrent / accessTotal, 
-                                1.0 * accessTmp / interval / qi_threshold,
-                                1.0 * AccessTdtimesTrain[begin].times / qi_threshold,
-                                1.0 * AccessTdtimesTrain[end-1].times / qi_threshold);
+                                100.0 * accessCurrent / accessTotalTrain,
+                                1.0 * accessTmpTrain / interval / train_size,
+                                1.0 * AccessTdtimesTrain[begin].times / train_size,
+                                1.0 * AccessTdtimesTrain[end-1].times / train_size);
 
                 // 比较 Test 和 Train 的一致程度
                 int n_hit = 0;
+                size_t accessTmpTest = 0;
                 std::unordered_set<tableint> pointSet;
                 for (int i = 0; i < end; i++) {
                     pointSet.emplace(AccessTdtimesTrain[i].id);
                 }
                 for (int i = 0; i < end; i++) {
                     tableint ptest = AccessTdtimesTest[i].id;
-                    if (pointSet.find(ptest) != pointSet.end())
+                    if (pointSet.find(ptest) != pointSet.end()) {
                         n_hit++;
+                        accessTmpTest += AccessTdtimesTest[i].times;
+                    }
                 }
-                printf("%.1f%%\n", 100.0 * n_hit / end);
+                printf("%.1f%%\t %.1f%%\n",
+                                100.0 * n_hit / end,
+                                100.0 * accessTmpTest / accessTotalTest);
 
                 if (AccessTdtimesTrain[end-1].times == 0)
                     break;
@@ -343,13 +346,13 @@ namespace hnswlib {
 
     private:
         size_t nums_point_;
-        std::vector<size_t> Times;
 
         // For Training
         std::vector<size_t> AccessTimesTrain;
         std::vector<size_t> AccessTimesTest;
-        bool isTrain;
-        int qi_cur, qi_threshold, qi_size;
+        bool usingSample, isTrain;
+        int qi_cur;
+        int train_size, test_size;
 
         void transTimesToTdtimes(std::vector<size_t>& timesList, std::vector<Idtimes>& timesPair) {
             timesPair.resize(nums_point_, Idtimes(0, 0));
