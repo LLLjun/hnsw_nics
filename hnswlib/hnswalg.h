@@ -283,7 +283,7 @@ namespace hnswlib {
             Hotdata->AddTimes(ep_id);
 #endif
 #if PROEFS
-            int num_iter = 0;
+            int num_iter = -1;
             int max_iter = ef_;
 #endif
 
@@ -292,9 +292,9 @@ namespace hnswlib {
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
 
 #if PROEFS
+                num_iter++;
                 if (num_iter >= max_iter)
                     break;
-                num_iter++;
 #else
                 if ((-current_node_pair.first) > lowerBound) {
                     break;
