@@ -15,12 +15,12 @@ inline void assignToThisCore(int core_id)
 }
 
 
-void hnsw_impl(string stage, string using_dataset, size_t data_size);
+void hnsw_impl(string stage, string using_dataset, size_t data_size, size_t num_pg);
 
 int main(int argc, char **argv) {
 
-    if (argc != 4){
-        printf("Usage: ./main [stage: build or search or both] [dataset] [datasize]\n");
+    if (argc != 5){
+        printf("Usage: ./main [stage: build or search or both] [dataset] [datasize] [num_pg]\n");
         exit(1);
     } else {
         if (string(argv[1]) != "build" && string(argv[1]) != "search" && string(argv[1]) != "both") {
@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     if (string(argv[1]) == "search")
         assignToThisCore(0);
 
-    hnsw_impl(string(argv[1]), string(argv[2]), atoi(argv[3]));
+    hnsw_impl(string(argv[1]), string(argv[2]), atoi(argv[3]), atoi(argv[4]));
 
     return 0;
 };

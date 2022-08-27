@@ -5,6 +5,7 @@
 #include <chrono>
 #include <memory>
 #include "hnswlib/hnswlib.h"
+#include <string>
 #include <unordered_set>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -44,8 +45,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
     // Ours. rank=490, sort=53.6, lookup=136, hlc=3
 
-    for (int i = 10; i <= 150; i += 10)
-        efs.push_back(i);
+    // for (int i = 10; i <= 150; i += 10)
+    //     efs.push_back(i);
+    efs.push_back(EFS_PG);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -247,35 +249,24 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
-#if ROMODE == ROEDGE
+#if PGMODE == PGTEST
+        // 生成EdgeList
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
-        string path_txt = "../output/reorder/" + dataset + to_string(size_million) + "m.txt";
-        appr_alg->writeNeighborToEdgelist(path_txt);
-        exit(1);
-#endif
-#if ROMODE == ROGRAPH
-        string dataset = MapString["dataname"];
-        int size_million = vecsize / 1000000;
-        string path_rofile = "../output/reorder/new/" + dataset + to_string(size_million) + "m.txt";
+        string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m.txt";
+        if (!exists_test(path_txt)) {
+            appr_alg->writeNeighborToEdgelist(path_txt);
 
-        appr_alg->geneReorderGraph(path_rofile);
-        appr_alg->saveIndex(MapString["index_ro"]);
-#endif
-#if ROMODE == ROTEST
-        printf("Before reorder:\n");
-        appr_alg->neighborConstDistribution();
-        appr_alg->~HierarchicalNSW();
-
-        if (!exists_test(MapString["index_ro"])){
-            printf("Error, index %s is unexisted \n", index.c_str());
-            exit(1);
+            // MENIS clustering
+            string metis_program = "~/self_data/METIS/build/programs/gpmetis";
+            string command_metis = metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
+            system(command_metis.c_str());
         }
-        printf("After reorder:\n");
-        appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, MapString["index_ro"], false);
-        appr_alg->neighborConstDistribution();
-        appr_alg->~HierarchicalNSW();
-        exit(1);
+
+        appr_alg->part_graph = new PartGraph(MapString["dataname"], vecsize, qsize, EFS_PG);
+
+        // evaluate MENIS
+        appr_alg->evalMETIS(MapParameter["num_pg"]);
 #endif
 
 #if RANKMAP
@@ -284,6 +275,11 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
         printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+#if PGMODE == PGTEST
+        appr_alg->part_graph->testPartGraph(MapParameter["num_pg"]);
+        exit(1);
+#endif
+
 #if RANKMAP
         appr_alg->deleteRankMap();
 #endif
@@ -293,7 +289,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
     }
 }
 
-void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
+void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, size_t num_pg){
     string path_project = "..";
 #if RANKMAP
     string label = "rank-map/";
@@ -326,6 +322,7 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions){
     MapParameter["M"] = M;
     MapParameter["k"] = k;
     MapParameter["vecsize"] = vecsize;
+    MapParameter["num_pg"] = num_pg;
 
     map<string, string> MapString;
 

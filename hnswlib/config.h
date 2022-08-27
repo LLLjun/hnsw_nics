@@ -20,11 +20,13 @@
 
 #define PROEFS      true
 
-#define REORDER     true
-#if REORDER
-#define ROMODE      ROTEST
+#define PARTGRAPH     true
+#if PARTGRAPH
+#define PGMODE      PGTEST
 
-#define ROEDGE      0
-#define ROGRAPH     1
-#define ROTEST      2
+#define PGEDGE      0
+#define PGGRAPH     1
+#define PGTEST      2
+
+#define EFS_PG      80
 #endif

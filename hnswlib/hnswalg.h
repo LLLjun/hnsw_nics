@@ -308,7 +308,9 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-
+#if PARTGRAPH
+                part_graph->addSearchPoint(current_node_id);
+#endif
 
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -329,7 +331,9 @@ namespace hnswlib {
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         metric_distance_computations++;
-
+#if PARTGRAPH
+                        part_graph->addCalcuNeighbor(candidate_id);
+#endif
                         visited_array[candidate_id] = visited_array_tag;
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
@@ -354,7 +358,13 @@ namespace hnswlib {
                         }
                     }
                 }
+#if PARTGRAPH
+                part_graph->endStep();
+#endif
             }
+#if PARTGRAPH
+            part_graph->endQuery();
+#endif
 
             visited_list_pool_->releaseVisitedList(vl);
 
@@ -1190,37 +1200,161 @@ namespace hnswlib {
             return result;
         };
 
-#if REORDER
-        void writeNeighborToEdgelist(string& path_output) {
-            int num_row = cur_element_count;
-            int num_total = 0;
-            vector<pair<int, int>> EdgeList;
-            EdgeList.reserve(num_row * maxM0_);
+#if PARTGRAPH
+        PartGraph* part_graph = nullptr;
 
-            for (int i_r = 0; i_r < num_row; i_r++) {
-                vector<int> neighbor;
-                linklistsizeint *ll_cur = get_linklist0(i_r);
-                int size = getListCount(ll_cur);
-                tableint *data = (tableint *) (ll_cur + 1);
-                for (int j = 0; j < size; j++) {
-                    neighbor.push_back(data[j]);
-                    // EdgeList.push_back(make_pair(i_r, data[j]));
-                }
-                sort(neighbor.begin(), neighbor.end());
-                for (int &id: neighbor)
-                    EdgeList.push_back(make_pair(i_r, id));
+        struct EdgeWeight {
+            int id;
+            int weight;
+
+            EdgeWeight() = default;
+            EdgeWeight(int id, int weight) : id{id}, weight{weight} {}
+            inline bool operator<(const EdgeWeight &other) const {
+                return id < other.id;
             }
-            num_total = EdgeList.size();
+        };
+
+        bool isNeighbor(tableint id, tableint neighbor) {
+            bool isneighbor = false;
+            linklistsizeint *ll_cur = get_linklist0(id);
+            int size = getListCount(ll_cur);
+            tableint *data = (tableint *) (ll_cur + 1);
+            for (int j = 0; j < size; j++) {
+                if (neighbor == data[j]) {
+                    isneighbor = true;
+                    break;
+                }
+            }
+            return isneighbor;
+        }
+
+
+        void writeNeighborToEdgelist(string& path_output) {
+            vector<vector<EdgeWeight>> EdgeTable;
+            size_t num_edge_undirect, num_edge_direct;
+            size_t num_total = generateEdgelist(EdgeTable, num_edge_undirect, num_edge_direct);
+            int num_row = cur_element_count;
 
             // write
             ofstream file_output(path_output.c_str());
-            file_output << "#" << num_row << " " << num_total << "\n";
-            for (pair<int, int> &edge: EdgeList) {
-                file_output << edge.first << " " << edge.second << "\n";
+            file_output << num_row << " " << num_total << " 001\n";
+            for (vector<EdgeWeight>& EdgeList: EdgeTable) {
+                for (EdgeWeight& ew: EdgeList)
+                    file_output << (ew.id + 1) << " " << ew.weight << " ";
+                file_output << "\n";
             }
             file_output.close();
 
             printf("write to %s done\n", path_output.c_str());
+        }
+
+        void evalMETIS(int part_size) {
+            printf("Evaluate Remote Edge (total = 2 * undirect + direct):\n");
+
+            if (part_graph == nullptr) {
+                printf("Error, initial part_graph\n"); exit(1);
+            }
+            std::string partitionMapFile = part_graph->getFileName(part_size);
+            std::vector<int> IdToPartition(cur_element_count, part_size);
+            std::ifstream reader(partitionMapFile.c_str());
+            if (reader) {
+                for (int i = 0; i < cur_element_count; i++) {
+                    std::string line;
+                    std::getline(reader, line);
+                    IdToPartition[i] = std::stoi(line);
+                }
+                reader.close();
+            } else {
+                printf("Error, file unexist: %s\n", partitionMapFile.c_str());
+                exit(1);
+            }
+
+            vector<vector<EdgeWeight>> EdgeTable;
+            size_t num_edge_undirect, num_edge_direct;
+            size_t _ = generateEdgelist(EdgeTable, num_edge_undirect, num_edge_direct);
+            int num_row = cur_element_count;
+
+            // random
+            printf("Edge Test [random]:\n");
+            vector<int> IdToPartitionRandom(cur_element_count);
+            srand(time(0));
+            for (int i = 0; i < cur_element_count; i++)
+                IdToPartitionRandom[i] = rand() % part_size;
+            size_t total_remote_random = getRemoteEdge(EdgeTable, IdToPartitionRandom);
+            // printf
+            printf("Total Edge\t External Edge\n");
+            printf("%lu\t %.1f%%\n",
+                            (num_edge_undirect + num_edge_direct),
+                            100.0 * total_remote_random / (num_edge_undirect + num_edge_direct));
+
+            // MENIS
+            size_t total_remote_menis = getRemoteEdge(EdgeTable, IdToPartition);
+            // printf
+            printf("Edge Test [MENIS]:\n");
+            printf("Total Edge\t External Edge\n");
+            printf("%lu\t %.1f%%\n",
+                            (num_edge_undirect + num_edge_direct),
+                            100.0 * total_remote_menis / (num_edge_undirect + num_edge_direct));
+            printf("\n");
+        }
+
+        // 考虑双向边的权值为2
+        size_t generateEdgelist(vector<vector<EdgeWeight>>& EdgeTable,
+                                size_t& num_edge_undirect, size_t& num_edge_direct) {
+            int num_row = cur_element_count;
+            size_t num_total = 0;
+            // vector<vector<EdgeWeight>> EdgeTable;
+            EdgeTable.resize(num_row);
+            for (vector<EdgeWeight>& EdgeList: EdgeTable)
+                EdgeList.reserve(2 * maxM0_);
+            num_edge_undirect = 0;
+            num_edge_direct = 0;
+
+            for (tableint id_r = 0; id_r < num_row; id_r++) {
+                vector<tableint> neighbor = getNeighborList(id_r);
+                for (tableint nb: neighbor) {
+                    if (isNeighbor(nb, id_r)) {
+                        EdgeTable[id_r].push_back(EdgeWeight(nb, 2));
+                        num_edge_undirect++;
+                    } else {
+                        EdgeTable[id_r].push_back(EdgeWeight(nb, 1));
+                        EdgeTable[nb].push_back(EdgeWeight(id_r, 1));
+                        num_edge_direct++;
+                    }
+                }
+            }
+            if (num_edge_undirect % 2 != 0) {
+                printf("Error, num_edge_undirect is %lu\n", num_edge_undirect); exit(1);
+            }
+            num_total = num_edge_undirect / 2 + num_edge_direct;
+            printf("Edge, total (undirect/2+direct): %lu, undirect: %lu, direct: %lu \n", num_total, num_edge_undirect, num_edge_direct);
+            printf("\n");
+
+            return num_total;
+        }
+
+        size_t getRemoteEdge(vector<vector<EdgeWeight>>& EdgeTable, vector<int>& IdToPartition) {
+            int num_row = cur_element_count;
+            size_t remote_edge_undirect = 0;
+            size_t remote_edge_direct = 0;
+
+            for (tableint id_r = 0; id_r < num_row; id_r++) {
+                int local_r = IdToPartition[id_r];
+                for (EdgeWeight& ew: EdgeTable[id_r]) {
+                    if (local_r != IdToPartition[ew.id]) {
+                        if (ew.weight == 2)
+                            remote_edge_undirect++;
+                        else
+                            remote_edge_direct++;
+                    }
+                }
+            }
+            if (remote_edge_direct % 2 != 0) {
+                printf("Error, remote_edge_direct is %lu\n", remote_edge_direct); exit(1);
+            }
+            remote_edge_direct /= 2;
+
+            return (remote_edge_undirect + remote_edge_direct);
         }
 
         void geneReorderGraph(string& transTxt) {

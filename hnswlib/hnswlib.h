@@ -1,4 +1,8 @@
 #pragma once
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <string>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -214,6 +218,137 @@ namespace hnswlib {
             l_search = efs;
         }
     };
+
+#if PARTGRAPH
+    class PartGraph {
+    public:
+        PartGraph(std::string dataname, int vecsize, int qsize, int efs) {
+            data_name = dataname;
+            base_size = vecsize;
+            query_size = qsize;
+            num_step = efs;
+            query_cur = 0;
+            step_cur = 0;
+            reserve_size = 100;
+
+            SearchPointTable.resize(query_size);
+            for (std::vector<tableint>& SearchPointList: SearchPointTable)
+                SearchPointList.resize(num_step);
+            CalcuNeighTable.resize(query_size);
+            for (std::vector<std::vector<tableint>>& CalcuNeighList: CalcuNeighTable) {
+                CalcuNeighList.resize(num_step);
+                for (std::vector<tableint>& CalcuNeighPoint: CalcuNeighList)
+                    CalcuNeighPoint.reserve(reserve_size);
+            }
+        }
+
+        void addSearchPoint(tableint id) {
+            SearchPointTable[query_cur][step_cur] = id;
+        }
+
+        void addCalcuNeighbor(tableint id) {
+            CalcuNeighTable[query_cur][step_cur].push_back(id);
+        }
+
+        void endStep() {
+            step_cur++;
+        }
+
+        void endQuery() {
+            query_cur++;
+            step_cur = 0;
+        }
+
+        void testPartGraph(int part_size) {
+            std::string partitionMapFile = getFileName(part_size);
+            std::vector<int> IdToPartition(base_size, part_size);
+
+            std::ifstream reader(partitionMapFile.c_str());
+            if (reader) {
+                for (int i = 0; i < base_size; i++) {
+                    std::string line;
+                    std::getline(reader, line);
+                    IdToPartition[i] = std::stoi(line);
+                }
+                reader.close();
+            } else {
+                printf("Error, file unexist: %s\n", partitionMapFile.c_str());
+                exit(1);
+            }
+            for (int i = 0; i < 10; i++)
+                printf("%d\t", IdToPartition[i]);
+            printf("\n");
+            for (int pt: IdToPartition) {
+                if (pt >= part_size) {
+                    printf("Error, read partition error \n"); exit(1);
+                }
+            }
+
+            // test random
+            printf("Part-graph Test [random]:\n");
+            std::vector<int> IdToPartitionRandom(base_size);
+            srand(time(0));
+            for (int i = 0; i < base_size; i++)
+                IdToPartitionRandom[i] = rand() % part_size;
+            evalCommucation(IdToPartitionRandom);
+
+            // test METIS
+            printf("Part-graph Test [METIS]:\n");
+            evalCommucation(IdToPartition);
+        }
+
+        std::string getFileName(int num_part_graph) {
+            int size_million = base_size / 1e6;
+            std::string file_partition = "../output/part-graph/" + data_name + std::to_string(size_million) +
+                                         "m.txt.part." + std::to_string(num_part_graph);
+            printf("Partition file: %s\n", file_partition.c_str());
+            return file_partition;
+        }
+
+    private:
+        int base_size, query_size, num_step;
+        std::vector<std::vector<tableint>> SearchPointTable;
+        std::vector<std::vector<std::vector<tableint>>> CalcuNeighTable;
+
+        int query_cur, step_cur;
+        int reserve_size;
+
+        std::string data_name;
+
+        void evalCommucation(std::vector<int>& IdToPartition) {
+            size_t num_search_point = query_size * num_step;
+            size_t num_calcu_neighbor = 0;
+            for (std::vector<std::vector<tableint>>& CalcuNeighList: CalcuNeighTable) {
+                for (std::vector<tableint>& CalcuNeighPoint: CalcuNeighList)
+                    num_calcu_neighbor += CalcuNeighPoint.size();
+            }
+
+            // 只考虑单个query，定义local graph
+            int graph_local = IdToPartition[0];
+            size_t commu_search_point = 0;
+            size_t commu_calcu_neighbor = 0;
+
+            for (int qi = 0; qi < query_size; qi++) {
+                for (int sti = 0; sti < num_step; sti++) {
+                    tableint sp_cur = SearchPointTable[qi][sti];
+                    if (IdToPartition[sp_cur] != graph_local)
+                        commu_search_point++;
+                    for (tableint neigh: CalcuNeighTable[qi][sti]) {
+                        if (IdToPartition[neigh] != graph_local)
+                            commu_calcu_neighbor++;
+                    }
+                }
+            }
+
+            // printf
+            printf("Search point\t Calcu neighbor\t Commu.Point\t Commu.Neighbor\n");
+            printf("%lu\t %lu\t %.1f%%\t %.1f%%\n",
+                            num_search_point, num_calcu_neighbor,
+                            100.0 * commu_search_point / num_search_point,
+                            100.0 * commu_calcu_neighbor / num_calcu_neighbor);
+        }
+    };
+#endif
 
 }
 
