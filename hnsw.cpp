@@ -56,6 +56,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
+    cout << "Trans.Num\t" << "MaxComput.PG\t";
     cout << endl;
 
     for (size_t ef : efs) {
@@ -115,6 +116,8 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
 #endif
+        cout << (1.0 * appr_alg.part_graph->transfer_size / qsize) << "\t";
+        cout << (1.0 * appr_alg.part_graph->getMaxComputation() / qsize) << "\t";
         cout << endl;
 
         if (recall > 1.0) {
@@ -163,7 +166,7 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
             printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
             exit(1);
         }
-        printf("vecsize: %d, vecdim: %d, path: %s\n", vecsize, vecdim, path_data.c_str());
+        printf("vecsize: %lu, vecdim: %lu, path: %s\n", vecsize, vecdim, path_data.c_str());
 
         size_t build_start_id = 0;
         DTset* build_start_vector = new DTset[vecdim]();
@@ -254,19 +257,24 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
         string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m.txt";
-        if (!exists_test(path_txt)) {
+        if (!exists_test(path_txt)) 
             appr_alg->writeNeighborToEdgelist(path_txt);
 
+        string metis_file = path_txt + ".part." + to_string(MapParameter["num_pg"]);
+        if (!exists_test(metis_file)) {
             // MENIS clustering
             string metis_program = "~/self_data/METIS/build/programs/gpmetis";
             string command_metis = metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
             system(command_metis.c_str());
         }
 
-        appr_alg->part_graph = new PartGraph(MapString["dataname"], vecsize, qsize, EFS_PG);
+        appr_alg->part_graph = new PartGraph(MapString["dataname"], vecsize, qsize, MapParameter["num_pg"], EFS_PG);
 
         // evaluate MENIS
         appr_alg->evalMETIS(MapParameter["num_pg"]);
+
+        // transfer search
+        appr_alg->part_graph->initTransferSearch();
 #endif
 
 #if RANKMAP
@@ -276,8 +284,11 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
 #if PGMODE == PGTEST
-        appr_alg->part_graph->testPartGraph(MapParameter["num_pg"]);
-        exit(1);
+        // appr_alg->part_graph->testPartGraph(MapParameter["num_pg"]);
+        // exit(1);
+
+        // // transfer search
+        // appr_alg->part_graph->printfTransferStat();
 #endif
 
 #if RANKMAP

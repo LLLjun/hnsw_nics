@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -222,10 +223,11 @@ namespace hnswlib {
 #if PARTGRAPH
     class PartGraph {
     public:
-        PartGraph(std::string dataname, int vecsize, int qsize, int efs) {
+        PartGraph(std::string dataname, int vecsize, int qsize, int n_pg, int efs) {
             data_name = dataname;
             base_size = vecsize;
             query_size = qsize;
+            num_partgraph = n_pg;
             num_step = efs;
             query_cur = 0;
             step_cur = 0;
@@ -260,6 +262,112 @@ namespace hnswlib {
         }
 
         void testPartGraph(int part_size) {
+            // test random
+            printf("Part-graph Test [random]:\n");
+            std::vector<int> IdToPartitionRandom(base_size);
+            srand(time(0));
+            for (int i = 0; i < base_size; i++)
+                IdToPartitionRandom[i] = rand() % part_size;
+            evalCommucation(IdToPartitionRandom);
+
+            // test METIS
+            printf("Part-graph Test [METIS]:\n");
+            std::vector<int> IdToPartition = getIdToPartMap(part_size);
+            evalCommucation(IdToPartition);
+        }
+
+        std::string getFileName(int num_part_graph) {
+            int size_million = base_size / 1e6;
+            std::string file_partition = "../output/part-graph/" + data_name + std::to_string(size_million) +
+                                         "m.txt.part." + std::to_string(num_part_graph);
+            printf("Partition file: %s\n", file_partition.c_str());
+            return file_partition;
+        }
+
+        // Transfer search
+        void initTransferSearch() {
+            request_threshold = 40;
+            IdToPartitionMap = getIdToPartMap(num_partgraph);
+
+            qc_transfer_request.resize(num_partgraph);
+            initTransInfo();
+
+            transfer_size = 0;
+            partgraph_computation.resize(num_partgraph, 0);
+        }
+
+        bool keepIdInGraph(tableint id) {
+            bool keep = true;
+            int pg_id = IdToPartitionMap[id];
+            if (pg_id != qc_local_graph) {
+                qc_transfer_request[pg_id].push_back(id);
+                keep = false;
+            }
+            return keep;
+        }
+
+        int statTransfer() {
+            int stat = -1;
+            int max_size = 0;
+            for (int i = 0; i < num_partgraph; i++) {
+                int rq_size = qc_transfer_request[i].size();
+                if (rq_size >= request_threshold && rq_size > max_size) {
+                    stat = i;
+                    max_size = rq_size;
+                }
+            }
+            if (stat != -1)
+                qc_local_graph = stat;
+
+            return stat;
+        }
+
+        std::vector<tableint> popRequest(int pg) {
+            std::vector<tableint> popRq;
+            popRq.swap(qc_transfer_request[pg]);
+
+            transfer_size++;
+            return popRq;
+        }
+
+        void initTransInfo() {
+            qc_local_graph = IdToPartitionMap[0];
+            for (std::vector<tableint>& rq: qc_transfer_request)
+                std::vector<tableint>().swap(rq);
+        }
+
+        void collectComputation(tableint id) {
+            int pg = IdToPartitionMap[id];
+            partgraph_computation[pg]++;
+        }
+
+        // 统计transfer次数
+        size_t transfer_size;
+        std::vector<size_t> partgraph_computation;
+
+        void printfTransferStat() {
+            printf("Transfer.Num\n");
+            printf("%.1f\n", 1.0 * transfer_size / query_size);
+            printf("\n");
+        }
+
+        size_t getMaxComputation() {
+            size_t max_size = *(std::max_element(partgraph_computation.begin(), partgraph_computation.end()));
+            return max_size;
+        }
+
+
+    private:
+        int base_size, query_size, num_partgraph, num_step;
+        std::vector<std::vector<tableint>> SearchPointTable;
+        std::vector<std::vector<std::vector<tableint>>> CalcuNeighTable;
+
+        int query_cur, step_cur;
+        int reserve_size;
+
+        std::string data_name;
+
+        std::vector<int> getIdToPartMap(int part_size) {
             std::string partitionMapFile = getFileName(part_size);
             std::vector<int> IdToPartition(base_size, part_size);
 
@@ -283,37 +391,8 @@ namespace hnswlib {
                     printf("Error, read partition error \n"); exit(1);
                 }
             }
-
-            // test random
-            printf("Part-graph Test [random]:\n");
-            std::vector<int> IdToPartitionRandom(base_size);
-            srand(time(0));
-            for (int i = 0; i < base_size; i++)
-                IdToPartitionRandom[i] = rand() % part_size;
-            evalCommucation(IdToPartitionRandom);
-
-            // test METIS
-            printf("Part-graph Test [METIS]:\n");
-            evalCommucation(IdToPartition);
+            return IdToPartition;
         }
-
-        std::string getFileName(int num_part_graph) {
-            int size_million = base_size / 1e6;
-            std::string file_partition = "../output/part-graph/" + data_name + std::to_string(size_million) +
-                                         "m.txt.part." + std::to_string(num_part_graph);
-            printf("Partition file: %s\n", file_partition.c_str());
-            return file_partition;
-        }
-
-    private:
-        int base_size, query_size, num_step;
-        std::vector<std::vector<tableint>> SearchPointTable;
-        std::vector<std::vector<std::vector<tableint>>> CalcuNeighTable;
-
-        int query_cur, step_cur;
-        int reserve_size;
-
-        std::string data_name;
 
         void evalCommucation(std::vector<int>& IdToPartition) {
             size_t num_search_point = query_size * num_step;
@@ -347,6 +426,19 @@ namespace hnswlib {
                             100.0 * commu_search_point / num_search_point,
                             100.0 * commu_calcu_neighbor / num_calcu_neighbor);
         }
+
+        // to support transfer search
+        // 超参数
+        int request_threshold;
+
+        std::vector<int> IdToPartitionMap;
+        // 存储单个query的transfer 请求
+        int qc_local_graph;
+        // 可能有重复
+        std::vector<std::vector<tableint>> qc_transfer_request;
+
+
+
     };
 #endif
 

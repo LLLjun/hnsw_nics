@@ -27,6 +27,7 @@
 #define PGEDGE      0
 #define PGGRAPH     1
 #define PGTEST      2
+#define PGTRANSFER  3
 
 #define EFS_PG      80
 #endif

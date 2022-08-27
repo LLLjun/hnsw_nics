@@ -309,7 +309,7 @@ namespace hnswlib {
                     metric_hops++;
                 }
 #if PARTGRAPH
-                part_graph->addSearchPoint(current_node_id);
+                // part_graph->addSearchPoint(current_node_id);
 #endif
 
 #ifdef USE_SSE
@@ -330,40 +330,80 @@ namespace hnswlib {
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
-                        metric_distance_computations++;
+                        // metric_distance_computations++;
 #if PARTGRAPH
-                        part_graph->addCalcuNeighbor(candidate_id);
-#endif
-                        visited_array[candidate_id] = visited_array_tag;
-                        char *currObj1 = (getDataByInternalId(candidate_id));
-                        dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+                        // part_graph->addCalcuNeighbor(candidate_id);
+                        if (part_graph->keepIdInGraph(candidate_id)) {
+                            metric_distance_computations++;
+                            part_graph->collectComputation(candidate_id);
 
-                        if (top_candidates.size() < ef || lowerBound > dist) {
-                            candidate_set.emplace(-dist, candidate_id);
+                            visited_array[candidate_id] = visited_array_tag;
+                            char *currObj1 = (getDataByInternalId(candidate_id));
+                            dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+
+                            if (top_candidates.size() < ef || lowerBound > dist) {
+                                candidate_set.emplace(-dist, candidate_id);
 
 #ifdef USE_SSE
-                            _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                                         offsetLevel0_,///////////
-                                         _MM_HINT_T0);////////////////////////
+                                _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                                            offsetLevel0_,///////////
+                                            _MM_HINT_T0);////////////////////////
 #endif
 
-                            if (!has_deletions || !isMarkedDeleted(candidate_id))
-                                top_candidates.emplace(dist, candidate_id);
+                                if (!has_deletions || !isMarkedDeleted(candidate_id))
+                                    top_candidates.emplace(dist, candidate_id);
 
-                            if (top_candidates.size() > ef)
-                                top_candidates.pop();
+                                if (top_candidates.size() > ef)
+                                    top_candidates.pop();
 
-                            if (!top_candidates.empty())
-                                lowerBound = top_candidates.top().first;
+                                if (!top_candidates.empty())
+                                    lowerBound = top_candidates.top().first;
+                            }
                         }
+#endif
                     }
                 }
 #if PARTGRAPH
-                part_graph->endStep();
+                // part_graph->endStep();
+                int stat = part_graph->statTransfer();
+                if (stat != -1) {
+                    // 处理transfer
+                    for (tableint candidate_id: part_graph->popRequest(stat)) {
+
+                        if (!(visited_array[candidate_id] == visited_array_tag)) {
+                            metric_distance_computations++;
+                            part_graph->collectComputation(candidate_id);
+
+                            visited_array[candidate_id] = visited_array_tag;
+                            char *currObj1 = (getDataByInternalId(candidate_id));
+                            dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+
+                            if (top_candidates.size() < ef || lowerBound > dist) {
+                                candidate_set.emplace(-dist, candidate_id);
+
+#ifdef USE_SSE
+                                _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                                            offsetLevel0_,///////////
+                                            _MM_HINT_T0);////////////////////////
+#endif
+
+                                if (!has_deletions || !isMarkedDeleted(candidate_id))
+                                    top_candidates.emplace(dist, candidate_id);
+
+                                if (top_candidates.size() > ef)
+                                    top_candidates.pop();
+
+                                if (!top_candidates.empty())
+                                    lowerBound = top_candidates.top().first;
+                            }
+                        }
+                    }
+                }
 #endif
             }
 #if PARTGRAPH
-            part_graph->endQuery();
+            // part_graph->endQuery();
+            part_graph->initTransInfo();
 #endif
 
             visited_list_pool_->releaseVisitedList(vl);
