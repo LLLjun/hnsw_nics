@@ -365,9 +365,12 @@ namespace hnswlib {
                 }
 #if PARTGRAPH
                 // part_graph->endStep();
-                int stat = part_graph->statTransfer();
+                int stat = part_graph->statTransferBySize();
+                // int stat = part_graph->statTransferByStep(num_iter);
                 if (stat != -1) {
                     // 处理transfer
+                    part_graph->setLocalGraph(stat);
+
                     for (tableint candidate_id: part_graph->popRequest(stat)) {
 
                         if (!(visited_array[candidate_id] == visited_array_tag)) {
@@ -1329,12 +1332,14 @@ namespace hnswlib {
 
             // MENIS
             size_t total_remote_menis = getRemoteEdge(EdgeTable, IdToPartition);
+            size_t total_expand_point = getExpandPoint(IdToPartition);
             // printf
             printf("Edge Test [MENIS]:\n");
-            printf("Total Edge\t External Edge\n");
-            printf("%lu\t %.1f%%\n",
+            printf("Total Edge\t External Edge\t Expand Point\n");
+            printf("%lu\t %.1f%%\t %.2f\n",
                             (num_edge_undirect + num_edge_direct),
-                            100.0 * total_remote_menis / (num_edge_undirect + num_edge_direct));
+                            100.0 * total_remote_menis / (num_edge_undirect + num_edge_direct),
+                            1.0 * total_expand_point / max_elements_);
             printf("\n");
         }
 
@@ -1395,6 +1400,21 @@ namespace hnswlib {
             remote_edge_direct /= 2;
 
             return (remote_edge_undirect + remote_edge_direct);
+        }
+
+        size_t getExpandPoint(vector<int>& IdToPartition) {
+            size_t total_expand_point = 0;
+            for (tableint id = 0; id < max_elements_; id++) {
+                unordered_set<int> exist_pg;
+                int pg_id = IdToPartition[id];
+                exist_pg.emplace(pg_id);
+                for (tableint nbor: getNeighborList(id)) {
+                    int pg_nbor = IdToPartition[nbor];
+                    exist_pg.emplace(pg_nbor);
+                }
+                total_expand_point += exist_pg.size();
+            }
+            return total_expand_point;
         }
 
         void geneReorderGraph(string& transTxt) {

@@ -306,7 +306,7 @@ namespace hnswlib {
             return keep;
         }
 
-        int statTransfer() {
+        int statTransferBySize() {
             int stat = -1;
             int max_size = 0;
             for (int i = 0; i < num_partgraph; i++) {
@@ -316,10 +316,30 @@ namespace hnswlib {
                     max_size = rq_size;
                 }
             }
-            if (stat != -1)
-                qc_local_graph = stat;
-
             return stat;
+        }
+
+        int statTransferByStep(int step_cur) {
+            int stat = -1;
+            if ((step_cur + 1) % 8 == 0) {
+                int max_size = 0;
+                for (int i = 0; i < num_partgraph; i++) {
+                    int rq_size = qc_transfer_request[i].size();
+                    if (rq_size > max_size) {
+                        stat = i;
+                        max_size = rq_size;
+                    }
+                }
+            }
+            return stat;
+        }
+
+        void setLocalGraph(int pg_id) {
+            qc_local_graph = pg_id;
+        }
+
+        int getLocalGraph() {
+            return qc_local_graph;
         }
 
         std::vector<tableint> popRequest(int pg) {
@@ -354,6 +374,10 @@ namespace hnswlib {
         size_t getMaxComputation() {
             size_t max_size = *(std::max_element(partgraph_computation.begin(), partgraph_computation.end()));
             return max_size;
+        }
+
+        int getNumPartGraph() {
+            return num_partgraph;
         }
 
 
