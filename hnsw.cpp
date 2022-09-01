@@ -163,7 +163,7 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
             printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
             exit(1);
         }
-        printf("vecsize: %d, vecdim: %d, path: %s\n", vecsize, vecdim, path_data.c_str());
+        printf("vecsize: %lu, vecdim: %lu, path: %s\n", vecsize, vecdim, path_data.c_str());
 
         size_t build_start_id = 0;
         DTset* build_start_vector = new DTset[vecdim]();
@@ -268,7 +268,13 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         appr_alg->part_graph = new PartGraph(MapString["dataname"], vecsize, qsize, EFS_PG);
 
         // evaluate MENIS
-        appr_alg->evalMETIS(MapParameter["num_pg"]);
+        // appr_alg->evalMETIS(MapParameter["num_pg"]);
+
+        // getCenter
+        DTset *massB = new DTset[vecsize * vecdim]();
+        LoadBinToArray<DTset>(MapString["path_data"], massB, vecsize, vecdim);
+        appr_alg->part_graph->computSubgCenter(massB, vecdim, MapParameter["num_pg"]);
+        delete[] massB;
 #endif
 
 #if RANKMAP

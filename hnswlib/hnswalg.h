@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
@@ -16,7 +17,7 @@
 #include <map>
 #include <stack>
 #include <vector>
-#include "dataset.h"
+// #include "dataset.h"
 #include "profile.h"
 #include "omp.h"
 
@@ -1145,7 +1146,20 @@ namespace hnswlib {
             std::priority_queue<std::pair<dist_t, labeltype >> result;
             if (cur_element_count == 0) return result;
 
+#if PARTGRAPH
             tableint currObj = enterpoint_node_;
+            dist_t ep_dist = std::numeric_limits<dist_t>::max();
+            vector<int> PG_center = part_graph->getPGCenterList();
+            for (int center: PG_center) {
+                dist_t dd = fstdistfunc_(query_data, getDataByInternalId(center), dist_func_param_);
+                if (dd < ep_dist) {
+                    currObj = center;
+                    ep_dist = dd;
+                }
+            }
+#else
+            tableint currObj = enterpoint_node_;
+#endif
             dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
 
             for (int level = maxlevel_; level > 0; level--) {

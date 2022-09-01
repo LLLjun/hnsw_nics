@@ -32,6 +32,7 @@
 #include <iostream>
 #include <string.h>
 #include "config.h"
+#include "dataset.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -259,30 +260,37 @@ namespace hnswlib {
             step_cur = 0;
         }
 
-        void testPartGraph(int part_size) {
-            std::string partitionMapFile = getFileName(part_size);
-            std::vector<int> IdToPartition(base_size, part_size);
+        vector<int> getPGCenterList() {
+            return SubCenter;
+        }
 
-            std::ifstream reader(partitionMapFile.c_str());
-            if (reader) {
-                for (int i = 0; i < base_size; i++) {
-                    std::string line;
-                    std::getline(reader, line);
-                    IdToPartition[i] = std::stoi(line);
-                }
-                reader.close();
-            } else {
-                printf("Error, file unexist: %s\n", partitionMapFile.c_str());
-                exit(1);
+        template<typename data_T>
+        void computSubgCenter(const data_T *data_m, uint32_t dims, int part_size) {
+            SubCenter.resize(part_size, 0);
+            std::vector<int> IdToPartition = getIdToPartation(part_size);
+            std::vector<std::vector<tableint>> PartationToId(part_size);
+            for (int id = 0; id < base_size; id++) {
+                int part = IdToPartition[id];
+                PartationToId[part].push_back(id);
             }
-            for (int i = 0; i < 10; i++)
-                printf("%d\t", IdToPartition[i]);
-            printf("\n");
-            for (int pt: IdToPartition) {
-                if (pt >= part_size) {
-                    printf("Error, read partition error \n"); exit(1);
+
+            for (int pti = 0; pti < part_size; pti++) {
+                int size = PartationToId[pti].size();
+                data_T* data_s = new data_T[size * dims]();
+                for (int i_ig = 0; i_ig < size; i_ig++) {
+                    int origin_id = PartationToId[pti][i_ig];
+                    memcpy(data_s + dims * i_ig, data_m + dims * origin_id, dims * sizeof(data_T));
                 }
+                int ingraph_id = compArrayCenter<data_T>(data_s, size, dims);
+                SubCenter[pti] = PartationToId[pti][ingraph_id];
+                delete[] data_s;
             }
+            printf("ComputSubgCenter successed\n");
+        }
+
+
+        void testPartGraph(int part_size) {
+            std::vector<int> IdToPartition = getIdToPartation(part_size);
 
             // test random
             printf("Part-graph Test [random]:\n");
@@ -309,11 +317,36 @@ namespace hnswlib {
         int base_size, query_size, num_step;
         std::vector<std::vector<tableint>> SearchPointTable;
         std::vector<std::vector<std::vector<tableint>>> CalcuNeighTable;
+        std::vector<int> SubCenter;
 
         int query_cur, step_cur;
         int reserve_size;
 
         std::string data_name;
+
+        std::vector<int> getIdToPartation(int part_size) {
+            std::string partitionMapFile = getFileName(part_size);
+            std::vector<int> IdToPartition(base_size, part_size);
+
+            std::ifstream reader(partitionMapFile.c_str());
+            if (reader) {
+                for (int i = 0; i < base_size; i++) {
+                    std::string line;
+                    std::getline(reader, line);
+                    IdToPartition[i] = std::stoi(line);
+                }
+                reader.close();
+            } else {
+                printf("Error, file unexist: %s\n", partitionMapFile.c_str());
+                exit(1);
+            }
+            for (int pt: IdToPartition) {
+                if (pt >= part_size) {
+                    printf("Error, read partition error \n"); exit(1);
+                }
+            }
+            return IdToPartition;
+        }
 
         void evalCommucation(std::vector<int>& IdToPartition) {
             size_t num_search_point = query_size * num_step;
