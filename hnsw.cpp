@@ -254,9 +254,11 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
         string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m.txt";
-        if (!exists_test(path_txt)) {
+        if (!exists_test(path_txt)) 
             appr_alg->writeNeighborToEdgelist(path_txt);
 
+        string metis_file = path_txt + ".part." + to_string(MapParameter["num_pg"]);
+        if (!exists_test(metis_file)) {
             // MENIS clustering
             string metis_program = "~/self_data/METIS/build/programs/gpmetis";
             string command_metis = metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
