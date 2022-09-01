@@ -22,4 +22,5 @@
 
 #if PLATG
 #define SUBG        true
+#define SG_METIS    true
 #endif

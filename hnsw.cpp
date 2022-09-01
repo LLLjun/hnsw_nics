@@ -129,7 +129,7 @@ test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
     vector<size_t> efs;
 
     // for (int i = 10; i <= 150; i += 10)
-    for (int i = 30; i <= 40; i += 1)
+    for (int i = 20; i <= 40; i += 2)
         efs.push_back(i);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
@@ -137,7 +137,7 @@ test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
         cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
         cout << "NDC_max\t" << "NDC_total\t" << "n_hops\t";
 #else
-    cout << "n_hop_0\t" << "NDC\t";
+    cout << "n_hop_0\t" << "NDC\t" << "NDC_max\t";
 #endif
     cout << endl;
 
@@ -209,10 +209,12 @@ test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
 
         cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
         size_t metric_hops = 0;
-        size_t metric_distance_computations = 0;
+        size_t metric_distance_computations_total = 0;
+        size_t metric_distance_computations_max = 0;
         for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set) {
             metric_hops += appr_alg->metric_hops;
-            metric_distance_computations += appr_alg->metric_distance_computations;
+            metric_distance_computations_total += appr_alg->metric_distance_computations;
+            metric_distance_computations_max = max<size_t>(metric_distance_computations_max, appr_alg->metric_distance_computations);
         }
 #if (RANKMAP && STAT)
             cout << appr_alg.stats->all_rank_us / qsize << "\t";
@@ -225,7 +227,8 @@ test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
             cout << (1.0 * appr_alg.stats->all_n_hops / qsize) << "\t";
 #else
         cout << (1.0 * metric_hops / qsize) << "\t";
-        cout << (1.0 * metric_distance_computations / qsize) << "\t";
+        cout << (1.0 * metric_distance_computations_total / qsize) << "\t";
+        cout << (1.0 * metric_distance_computations_max / qsize) << "\t";
 #endif
         cout << endl;
 
@@ -372,12 +375,13 @@ void build_multi_index(map<string, size_t> &MapParameter, map<string, string> &M
             base_reader.read((char *) (massB + vecdim * i), vec_offest);
 
         int num_subgraph = MapParameter["num_subg"];
-        int vecsize_subg = vecsize / num_subgraph;
-        AllocSubGraph allocSubGraph((int)vecsize, num_subgraph);
+
+        AllocSubGraph allocSubGraph(MapString["dataname"], (int)vecsize, num_subgraph);
         allocSubGraph.computSubgCenter<DTset>(massB, vecdim);
         delete[] massB;
 
         for (int subg_i = 0; subg_i < num_subgraph; subg_i++) {
+            size_t vecsize_subg = allocSubGraph.getSubgSize(subg_i);
             string sub_index = MapString["index_dir"] + "/" + to_string(subg_i) + ".bin";
             printf("Building sub-index %d:\n", subg_i);
 
@@ -495,7 +499,11 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     string label = "hnsw/";
 #endif
 #if SUBG
-    label = "sub-graph/";
+#if SG_METIS
+    label = "sub-graph-metis/";
+#else
+    label = "sub-grap/";
+#endif
 #endif
 
     string path_graphindex = path_project + "/graphindex/" + label;
