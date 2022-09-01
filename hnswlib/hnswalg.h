@@ -313,6 +313,9 @@ namespace hnswlib {
 // #if HD_TRAIN
 //                 Hotdata->AddTimes(current_node_id);
 // #endif
+#if QTRACE
+                Querytrace->addSearchPoint(current_node_id);
+#endif
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
                 _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
@@ -323,7 +326,9 @@ namespace hnswlib {
                 for (size_t j = 1; j <= size; j++) {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
-
+#if QTRACE
+                    Querytrace->addNeighborBeHash(candidate_id);
+#endif
 #ifdef USE_SSE
                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
@@ -333,6 +338,9 @@ namespace hnswlib {
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
 #if HD_TRAIN
                         Hotdata->AddTimes(candidate_id);
+#endif
+#if QTRACE
+                        Querytrace->addNeighborAfHash(candidate_id);
 #endif
                         metric_distance_computations++;
 
@@ -360,10 +368,16 @@ namespace hnswlib {
                         }
                     }
                 }
+#if QTRACE
+                Querytrace->endStep();
+#endif
             }
 #if HD_TRAIN
             if (Hotdata->isSplitQuery())
                 Hotdata->endQuery();
+#endif
+#if QTRACE
+            Querytrace->endQuery();
 #endif
 
             visited_list_pool_->releaseVisitedList(vl);
@@ -1289,11 +1303,11 @@ namespace hnswlib {
             }
             printf("\n");
         }
-
-
-
 #endif
-        // end hotdata
+
+#if QTRACE
+        QueryTrace* Querytrace = nullptr;
+#endif
 
 
         /*

@@ -1,4 +1,7 @@
 #pragma once
+#include <cstdlib>
+#include <fstream>
+#include <string>
 #include <unordered_set>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
@@ -232,14 +235,17 @@ namespace hnswlib {
         Idtimes(tableint id, size_t times) : id(id), times(times) {}
 
         inline bool operator<(const Idtimes &other) const {
-            return times < other.times;
+            if (times == other.times)
+                return id > other.id;
+            else
+                return times < other.times;
         }
     };
 
     class HotData {
     public:
         HotData(size_t nums_point) {
-            nums_point_ = nums_point;
+            base_size = nums_point;
         }
 
         void AddTimes(tableint id) {
@@ -280,10 +286,10 @@ namespace hnswlib {
             isTrain = is_train;
             if (isTrain) {
                 std::vector<size_t>().swap(AccessTimesTrain);
-                AccessTimesTrain.resize(nums_point_, 0);
+                AccessTimesTrain.resize(base_size, 0);
             } else {
                 std::vector<size_t>().swap(AccessTimesTest);
-                AccessTimesTest.resize(nums_point_, 0);
+                AccessTimesTest.resize(base_size, 0);
             }
         }
 
@@ -297,7 +303,7 @@ namespace hnswlib {
             size_t accessTotalTest = std::accumulate(AccessTimesTest.begin(), AccessTimesTest.end(), 0);
             float ratio_max = 0.5;
             int n_steps = 10;
-            size_t interval = ratio_max * nums_point_ / n_steps;
+            size_t interval = ratio_max * base_size / n_steps;
 
             size_t accessCurrent = 0;
 
@@ -314,7 +320,7 @@ namespace hnswlib {
                 accessCurrent += accessTmpTrain;
                 // printf
                 printf("%.1f%%\t %.1f%%\t %.5f\t %.5f\t %.5f\t ",
-                                100.0 * end / nums_point_,
+                                100.0 * end / base_size,
                                 100.0 * accessCurrent / accessTotalTrain,
                                 1.0 * accessTmpTrain / interval / train_size,
                                 1.0 * AccessTdtimesTrain[begin].times / train_size,
@@ -344,8 +350,32 @@ namespace hnswlib {
             printf("\n");
         }
 
+        // 根据AccessTimesTrain 输出 hot/cold data
+        void writeHotColdId(std::string path_hc, float hot_r=0.3) {
+            std::vector<Idtimes> AccessTdtimesTrain;
+            transTimesToTdtimes(AccessTimesTrain, AccessTdtimesTrain);
+
+            size_t total_size = base_size;
+            size_t hot_size = total_size * hot_r;
+            size_t cold_size = total_size - hot_size;
+
+            // output
+            std::ofstream writer(path_hc.c_str());
+            writer << "# " << total_size << " " << hot_size << " " << cold_size << "\n";
+            writer << "# hotdata\n";
+            for (int i = 0; i < hot_size; i++)
+                writer << AccessTdtimesTrain[i].id << "\n";
+            writer << "# colddata\n";
+            for (int i = hot_size; i < total_size; i++)
+                writer << AccessTdtimesTrain[i].id << "\n";
+            writer.close();
+
+            printf("write hot/cold data to %s done\n", path_hc.c_str());
+        }
+
+
     private:
-        size_t nums_point_;
+        size_t base_size;
 
         // For Training
         std::vector<size_t> AccessTimesTrain;
@@ -355,9 +385,9 @@ namespace hnswlib {
         int train_size, test_size;
 
         void transTimesToTdtimes(std::vector<size_t>& timesList, std::vector<Idtimes>& timesPair) {
-            timesPair.resize(nums_point_, Idtimes(0, 0));
+            timesPair.resize(base_size, Idtimes(0, 0));
 
-            for (int i = 0; i < nums_point_; i++) {
+            for (int i = 0; i < base_size; i++) {
                 timesPair[i].id = i;
                 timesPair[i].times = timesList[i];
             }
@@ -373,6 +403,93 @@ namespace hnswlib {
             for (int i = 0; i < 5; i++)
                 printf("%d\t%lu\n", timesPair[i].id, timesPair[i].times);
 #endif
+        }
+    };
+#endif
+
+#if QTRACE
+    class QueryTrace {
+    public:
+        QueryTrace(int qsize, int efs) {
+#if HOTDATA
+            printf("Error, During analysis hot data, can't generate query trace\n"); exit(1);
+#endif
+            query_size = qsize;
+            num_step = efs;
+            initQueryTrace();
+        }
+
+        void addSearchPoint(tableint id) {
+            QueryPointSet[qi_cur][sti_cur] = id;
+        }
+        void addNeighborBeHash(tableint id) {
+            QueryTraceBeHashSet[qi_cur][sti_cur].push_back(id);
+        }
+        void addNeighborAfHash(tableint id) {
+            QueryTraceAfHashSet[qi_cur][sti_cur].push_back(id);
+        }
+        void endStep() {
+            sti_cur++;
+        }
+        void endQuery() {
+            qi_cur++;
+            sti_cur = 0;
+        }
+
+        // 根据Query的Trace 输出 相关信息
+        /*
+            search_point num_visited
+            list of neighbor before hash
+            list of neighbor after hash
+        */
+        void writeQueryTrace(std::string path_qt) {
+            std::ofstream writer(path_qt.c_str());
+            writer << "# " << query_size << " " << num_step << "\n";
+            for (int qi = 0; qi < query_size; qi++) {
+                writer << "# qid=" << qi << "\n";
+                if (QueryPointSet[qi].size() != num_step) {
+                    printf("Error, search point size is: %lu\n", QueryPointSet[qi].size()); exit(1);
+                }
+
+                for (int sti = 0; sti < num_step; sti++) {
+                    int num_visited = QueryTraceBeHashSet[qi][sti].size() - QueryTraceAfHashSet[qi][sti].size();
+                    if (num_visited < 0) {
+                        printf("Error, num_visited is: %d\n", num_visited); exit(1);
+                    }
+
+                    writer << QueryPointSet[qi][sti] << " " << num_visited << "\n";
+                    for (tableint id: QueryTraceBeHashSet[qi][sti])
+                        writer << id << "\t";
+                    writer << "\n";
+                    for (tableint id: QueryTraceAfHashSet[qi][sti])
+                        writer << id << "\t";
+                    writer << "\n";
+                }
+            }
+            writer.close();
+
+            printf("write query trace to %s done\n", path_qt.c_str());
+        }
+    private:
+        int query_size, num_step;
+        int qi_cur, sti_cur;
+
+        // Query trace
+        std::vector<std::vector<std::vector<tableint>>> QueryTraceBeHashSet;
+        std::vector<std::vector<std::vector<tableint>>> QueryTraceAfHashSet;
+        std::vector<std::vector<tableint>> QueryPointSet;
+
+        void initQueryTrace() {
+            qi_cur = 0;
+            sti_cur = 0;
+            QueryTraceBeHashSet.resize(query_size);
+            QueryTraceAfHashSet.resize(query_size);
+            QueryPointSet.resize(query_size);
+            for (int i = 0; i < query_size; i++) {
+                QueryTraceBeHashSet[i].resize(num_step);
+                QueryTraceAfHashSet[i].resize(num_step);
+                QueryPointSet[i].resize(num_step);
+            }
         }
     };
 #endif

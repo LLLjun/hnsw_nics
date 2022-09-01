@@ -12,6 +12,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
     size_t data_size_millions = MapParameter["data_size_millions"];
     string path_dataset = "../dataset/" + dataname + "/";
     MapString["dataname"] = dataname;
+    MapString["uniquename"] = dataname + to_string(data_size_millions) + "m";
 #if HOTDATA
     MapParameter["sample_size_max"] = 1e8;
     MapString["path_sample"] = "../dataset/sample/" + dataname + "/learn.bin";

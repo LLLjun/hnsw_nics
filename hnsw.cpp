@@ -47,7 +47,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 
     // for (int i = 10; i <= 150; i += 10)
     //     efs.push_back(i);
-    efs.push_back(80);
+    efs.push_back(EFS);
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -73,12 +73,14 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         for (vector<unsigned>& r: result)
             r.resize(k, 0);
 
+#if HOTDATA
         appr_alg.Hotdata->initTrainSample(sample_size, qsize);
         for (int sqi = 0; sqi < sample_size; sqi++) {
             priority_queue<pair<DTres, labeltype>> res = appr_alg.searchKnn(massSample + vecdim * sqi, k);
         }
         printf("Search sample data done \n");
         appr_alg.Hotdata->setTrainStats(false);
+#endif
 
         Timer stopw = Timer();
 //         omp_set_num_threads(3);
@@ -282,17 +284,28 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         file_reader.close();
         printf("Load %lu * %lu Data from %s done.\n", sample_size, vecdim, path_sample.c_str());
 #endif
+#if QTRACE
+        appr_alg->Querytrace = new QueryTrace(qsize, EFS);
+#endif
 
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
 
         printf("Run and comput recall: \n");
-        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k, mass_sample, sample_size);
-
 #if HOTDATA
+        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k, mass_sample, sample_size);
         appr_alg->Hotdata->processTrain();
-        exit(1);
+
+        // Hot/Cold data 输出到文件
+        string file_hc_data = "../output/simulator/hc_data/" + MapString["uniquename"] + ".txt";
+        appr_alg->Hotdata->writeHotColdId(file_hc_data);
+#else
+        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+#endif
+#if QTRACE
+        string file_query_trace = "../output/simulator/trace/" + MapString["uniquename"] + ".txt";
+        appr_alg->Querytrace->writeQueryTrace(file_query_trace);
 #endif
 
 #if RANKMAP
