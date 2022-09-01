@@ -4,11 +4,7 @@
 #include "hnswlib.h"
 #include <algorithm>
 #include <atomic>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <fstream>
-#include <limits>
+#include <queue>
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
@@ -17,7 +13,6 @@
 #include <map>
 #include <stack>
 #include <vector>
-// #include "dataset.h"
 #include "profile.h"
 #include "omp.h"
 
@@ -1147,16 +1142,18 @@ namespace hnswlib {
             if (cur_element_count == 0) return result;
 
 #if PARTGRAPH
-            tableint currObj = enterpoint_node_;
-            dist_t ep_dist = std::numeric_limits<dist_t>::max();
             vector<int> PG_center = part_graph->getPGCenterList();
-            for (int center: PG_center) {
+            int pg_size = PG_center.size();
+            priority_queue<pair<dist_t, int>> center_cand;
+            for (int i = 0; i < PG_center.size(); i++) {
+                int center = PG_center[i];
                 dist_t dd = fstdistfunc_(query_data, getDataByInternalId(center), dist_func_param_);
-                if (dd < ep_dist) {
-                    currObj = center;
-                    ep_dist = dd;
-                }
+                center_cand.emplace(make_pair(-dd, i));
             }
+
+            int using_pg = center_cand.top().second;
+            tableint currObj = PG_center[using_pg];
+            part_graph->addUsingCenter(using_pg);
 #else
             tableint currObj = enterpoint_node_;
 #endif

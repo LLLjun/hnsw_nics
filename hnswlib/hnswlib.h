@@ -1,8 +1,7 @@
 #pragma once
+#include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <sstream>
-#include <string>
+#include <numeric>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -33,6 +32,7 @@
 #include <string.h>
 #include "config.h"
 #include "dataset.h"
+#include "tool.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -264,9 +264,14 @@ namespace hnswlib {
             return SubCenter;
         }
 
+        void addUsingCenter(int pg) {
+            FreqCenter[pg]++;
+        }
+
         template<typename data_T>
         void computSubgCenter(const data_T *data_m, uint32_t dims, int part_size) {
             SubCenter.resize(part_size, 0);
+            FreqCenter.resize(part_size, 0);
             std::vector<int> IdToPartition = getIdToPartation(part_size);
             std::vector<std::vector<tableint>> PartationToId(part_size);
             for (int id = 0; id < base_size; id++) {
@@ -288,7 +293,6 @@ namespace hnswlib {
             printf("ComputSubgCenter successed\n");
         }
 
-
         void testPartGraph(int part_size) {
             std::vector<int> IdToPartition = getIdToPartation(part_size);
 
@@ -303,6 +307,9 @@ namespace hnswlib {
             // test METIS
             printf("Part-graph Test [METIS]:\n");
             evalCommucation(IdToPartition);
+
+            // using center
+            evalCenter();
         }
 
         std::string getFileName(int num_part_graph) {
@@ -318,6 +325,7 @@ namespace hnswlib {
         std::vector<std::vector<tableint>> SearchPointTable;
         std::vector<std::vector<std::vector<tableint>>> CalcuNeighTable;
         std::vector<int> SubCenter;
+        std::vector<int> FreqCenter;
 
         int query_cur, step_cur;
         int reserve_size;
@@ -356,12 +364,11 @@ namespace hnswlib {
                     num_calcu_neighbor += CalcuNeighPoint.size();
             }
 
-            // 只考虑单个query，定义local graph
-            int graph_local = IdToPartition[0];
             size_t commu_search_point = 0;
             size_t commu_calcu_neighbor = 0;
 
             for (int qi = 0; qi < query_size; qi++) {
+                int graph_local = IdToPartition[SearchPointTable[qi][0]];
                 for (int sti = 0; sti < num_step; sti++) {
                     tableint sp_cur = SearchPointTable[qi][sti];
                     if (IdToPartition[sp_cur] != graph_local)
@@ -379,6 +386,14 @@ namespace hnswlib {
                             num_search_point, num_calcu_neighbor,
                             100.0 * commu_search_point / num_search_point,
                             100.0 * commu_calcu_neighbor / num_calcu_neighbor);
+        }
+
+        void evalCenter() {
+            size_t total = accumulate(FreqCenter.begin(), FreqCenter.end(), 0);
+            printf("Using center:\n");
+            for (int uc: FreqCenter)
+                printf("%.2f\t", 1.0 * uc / total);
+            printf("\n");
         }
     };
 #endif

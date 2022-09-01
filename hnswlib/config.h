@@ -20,13 +20,12 @@
 
 #define PROEFS      true
 
-#define PARTGRAPH     true
+#define PARTGRAPH   true
+#define EFS_PG      80
 #if PARTGRAPH
 #define PGMODE      PGTEST
 
 #define PGEDGE      0
 #define PGGRAPH     1
 #define PGTEST      2
-
-#define EFS_PG      80
 #endif
