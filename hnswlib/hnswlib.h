@@ -1,8 +1,6 @@
 #pragma once
+#include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <string>
-#include <unordered_set>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -27,14 +25,14 @@
 #endif
 #endif
 
-#include <cstdio>
 #include <queue>
 #include <vector>
-#include <numeric>
-#include <algorithm>
 #include <iostream>
 #include <string.h>
+#include <unordered_set>
 #include "config.h"
+#include "dataset.h"
+#include "tool.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -222,6 +220,153 @@ namespace hnswlib {
         }
     };
 
+    struct SubPoint{
+        int graph;
+        int ingraph_id;
+
+        SubPoint() = default;
+        SubPoint(int graph, int ingraph_id) : graph{graph}, ingraph_id{ingraph_id} {}
+    };
+
+    // 分配整张图的点策略
+    class AllocSubGraph {
+    public:
+        AllocSubGraph(string name, int nums_point, int nums_graph) {
+            dataname = name;
+            n_point_total = nums_point;
+            n_subgraph = nums_graph;
+
+            OriginToSubPoint.resize(n_point_total);
+            SubPointToOrigin.resize(n_subgraph);
+            SubCenter.resize(n_subgraph, 0);
+            printf("[SubGraph] num_graph: %d, n_point_total: %d\n", n_subgraph, n_point_total);
+
+#if SG_METIS
+            MetisAlloc();
+#else
+            RandomAlloc();
+#endif
+        }
+
+        // 根据分配后的mapping关系，得到对应subgraph的中心点
+        // 支持no-balance 分配
+        template<typename data_T>
+        void computSubgCenter(const data_T *data_m, uint32_t dims) {
+            for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
+                int size = SubPointToOrigin[i_sg].size();
+                data_T* data_s = new data_T[size * dims]();
+                for (int i_ig = 0; i_ig < size; i_ig++) {
+                    int origin_id = SubPointToOrigin[i_sg][i_ig];
+                    memcpy(data_s + dims * i_ig, data_m + dims * origin_id, dims * sizeof(data_T));
+                }
+                int ingraph_id = compArrayCenter<data_T>(data_s, size, dims);
+                SubCenter[i_sg] = SubPointToOrigin[i_sg][ingraph_id];
+                // 放在0号位置
+                swapMapByIngraphId(i_sg, 0, ingraph_id);
+                delete[] data_s;
+            }
+            printf("ComputSubgCenter successed\n");
+        }
+
+        int getSubgCenter(int subg) {
+            return SubCenter[subg];
+        }
+
+        int getOriginId(int subg_i, int ingraph_i) {
+            return SubPointToOrigin[subg_i][ingraph_i];
+        }
+
+        size_t getSubgSize(int subg) {
+            return SubPointToOrigin[subg].size();
+        }
+
+    private:
+        string dataname;
+        int n_point_total, n_point_subg;
+        int n_subgraph;
+        std::vector<SubPoint> OriginToSubPoint;
+        std::vector<std::vector<int>> SubPointToOrigin;
+        std::vector<int> SubCenter;
+
+        // 随机分配
+        void RandomAlloc() {
+            if (n_point_total % n_subgraph != 0) {
+                printf("Error, unsupport the n_subgraph\n"); exit(1);
+            }
+            n_point_subg = n_point_total / n_subgraph;
+            for (std::vector<int>& subgraph: SubPointToOrigin)
+                subgraph.resize(n_point_subg, 0);
+
+            srand((unsigned)time(NULL));
+            std::vector<int> random_list(n_point_total);
+            for (int i = 0; i < n_point_total; i++)
+                random_list[i] = i;
+            shuffle_vector<int>(random_list);
+
+            for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
+                for (int i_ig = 0; i_ig < n_point_subg; i_ig++) {
+                    int origin_id = random_list[i_sg * n_point_subg + i_ig];
+                    SubPointToOrigin[i_sg][i_ig] = origin_id;
+                    OriginToSubPoint[origin_id].graph = i_sg;
+                    OriginToSubPoint[origin_id].ingraph_id = i_ig;
+                }
+            }
+            printf("RandomAlloc successed\n");
+        }
+
+        // 根据METIS的clustering结果分配
+        void MetisAlloc() {
+            vector<int> IdToPart = getIdToPart();
+            vector<int> part_i(n_subgraph, 0);
+            for (int i = 0; i < n_point_total; i++) {
+                int graph = IdToPart[i];
+                OriginToSubPoint[i].graph = graph;
+                OriginToSubPoint[i].ingraph_id = part_i[graph];
+                SubPointToOrigin[graph].push_back(i);
+                part_i[graph]++;
+            }
+
+            for (int pi = 0; pi < n_subgraph; pi++) {
+                if (part_i[pi] != SubPointToOrigin[pi].size()) {
+                    printf("Error, size is error\n"); exit(1);
+                }
+            }
+            printf("MetisAlloc successed\n");
+        }
+
+        vector<int> getIdToPart() {
+            int size_million = n_point_total / 1e6;
+            string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataname + to_string(size_million) + "m.txt";
+            string metis_file = path_txt + ".part." + to_string(n_subgraph);
+
+            vector<int> IdToPart(n_point_total);
+
+            std::ifstream reader(metis_file.c_str());
+            if (reader) {
+                for (int i = 0; i < n_point_total; i++) {
+                    std::string line;
+                    std::getline(reader, line);
+                    IdToPart[i] = std::stoi(line);
+                }
+                reader.close();
+            } else {
+                printf("Error, file unexist: %s\n", metis_file.c_str());
+                exit(1);
+            }
+            return IdToPart;
+        }
+
+        void swapMapByIngraphId(int subg, int ingraph_id_x, int ingraph_id_y) {
+            int origin_x = SubPointToOrigin[subg][ingraph_id_x];
+            int origin_y = SubPointToOrigin[subg][ingraph_id_y];
+
+            OriginToSubPoint[origin_x].ingraph_id = ingraph_id_y;
+            OriginToSubPoint[origin_y].ingraph_id = ingraph_id_x;
+            SubPointToOrigin[subg][ingraph_id_x] = origin_y;
+            SubPointToOrigin[subg][ingraph_id_y] = origin_x;
+        }
+    };
+
         /*
             分析 hotdata
         */
@@ -244,8 +389,10 @@ namespace hnswlib {
 
     class HotData {
     public:
-        HotData(size_t nums_point) {
+        HotData(size_t nums_range, size_t nums_point) {
+            range_size = nums_range;
             base_size = nums_point;
+            printf("[Hotdata] range: %lu, base size: %lu\n", range_size, base_size);
         }
 
         void AddTimes(tableint id) {
@@ -255,41 +402,20 @@ namespace hnswlib {
                 AccessTimesTest[id]++;
         }
 
-        void endQuery() {
-            qi_cur++;
-            if (isTrain && qi_cur >= train_size) {
-                isTrain = false;
-            }
-        }
-
-        // For Training, 目前的做法是将query set 按照1:1的比例切分
-        void initTrainSplit(int qsize, float train_ratio=0.5) {
-            usingSample = false;
-            setTrainStats(true);
-            qi_cur = 0;
-            train_size = qsize * train_ratio;
-            test_size = qsize - train_size;
-        }
-
-        void initTrainSample(int sample_size, int qsize) {
-            usingSample = true;
+        void initTrainSample(size_t sample_size, size_t qsize) {
             setTrainStats(true);
             train_size = sample_size;
             test_size = qsize;
-        }
-
-        bool isSplitQuery() {
-            return (!usingSample);
         }
 
         void setTrainStats(bool is_train) {
             isTrain = is_train;
             if (isTrain) {
                 std::vector<size_t>().swap(AccessTimesTrain);
-                AccessTimesTrain.resize(base_size, 0);
+                AccessTimesTrain.resize(range_size, 0);
             } else {
                 std::vector<size_t>().swap(AccessTimesTest);
-                AccessTimesTest.resize(base_size, 0);
+                AccessTimesTest.resize(range_size, 0);
             }
         }
 
@@ -309,12 +435,12 @@ namespace hnswlib {
 
             printf("Points(%%)\t Access(%%)\t Freq.Avg\t Max\t Min\t Match(%%)\t M.Access(%%)\n");
             for (int si = 0; si < n_steps; si++) {
-                int begin = si * interval;
-                int end = begin + interval;
+                size_t begin = si * interval;
+                size_t end = begin + interval;
 
                 // 分析 Train 数据信息
                 size_t accessTmpTrain = 0;
-                for (int i = begin; i < end; i++) {
+                for (size_t i = begin; i < end; i++) {
                     accessTmpTrain += AccessTdtimesTrain[i].times;
                 }
                 accessCurrent += accessTmpTrain;
@@ -327,13 +453,13 @@ namespace hnswlib {
                                 1.0 * AccessTdtimesTrain[end-1].times / train_size);
 
                 // 比较 Test 和 Train 的一致程度
-                int n_hit = 0;
+                size_t n_hit = 0;
                 size_t accessTmpTest = 0;
                 std::unordered_set<tableint> pointSet;
-                for (int i = 0; i < end; i++) {
+                for (size_t i = 0; i < end; i++) {
                     pointSet.emplace(AccessTdtimesTrain[i].id);
                 }
-                for (int i = 0; i < end; i++) {
+                for (size_t i = 0; i < end; i++) {
                     tableint ptest = AccessTdtimesTest[i].id;
                     if (pointSet.find(ptest) != pointSet.end()) {
                         n_hit++;
@@ -356,38 +482,31 @@ namespace hnswlib {
             transTimesToTdtimes(AccessTimesTrain, AccessTdtimesTrain);
 
             size_t total_size = base_size;
-            size_t hot_size = total_size * hot_r;
-            size_t cold_size = total_size - hot_size;
 
             // output
             std::ofstream writer(path_hc.c_str());
-            writer << "# " << total_size << " " << hot_size << " " << cold_size << "\n";
-            writer << "# hotdata\n";
-            for (int i = 0; i < hot_size; i++)
-                writer << AccessTdtimesTrain[i].id << "\n";
-            writer << "# colddata\n";
-            for (int i = hot_size; i < total_size; i++)
+            writer << "# " << total_size << "\n";
+            for (size_t i = 0; i < total_size; i++)
                 writer << AccessTdtimesTrain[i].id << "\n";
             writer.close();
 
             printf("write hot/cold data to %s done\n", path_hc.c_str());
         }
 
-
     private:
-        size_t base_size;
+        size_t range_size, base_size;
 
         // For Training
         std::vector<size_t> AccessTimesTrain;
         std::vector<size_t> AccessTimesTest;
-        bool usingSample, isTrain;
-        int qi_cur;
-        int train_size, test_size;
+        bool isTrain;
+        size_t qi_cur;
+        size_t train_size, test_size;
 
         void transTimesToTdtimes(std::vector<size_t>& timesList, std::vector<Idtimes>& timesPair) {
-            timesPair.resize(base_size, Idtimes(0, 0));
+            timesPair.resize(range_size, Idtimes(0, 0));
 
-            for (int i = 0; i < base_size; i++) {
+            for (size_t i = 0; i < range_size; i++) {
                 timesPair[i].id = i;
                 timesPair[i].times = timesList[i];
             }
@@ -410,11 +529,12 @@ namespace hnswlib {
 #if QTRACE
     class QueryTrace {
     public:
-        QueryTrace(int qsize, int efs) {
+        QueryTrace(int qsize, int nbor_size, int efs) {
 #if HOTDATA
             printf("Error, During analysis hot data, can't generate query trace\n"); exit(1);
 #endif
             query_size = qsize;
+            max_nbor_size = nbor_size;
             num_step = efs;
             initQueryTrace();
         }
@@ -444,7 +564,8 @@ namespace hnswlib {
         */
         void writeQueryTrace(std::string path_qt) {
             std::ofstream writer(path_qt.c_str());
-            writer << "# " << query_size << " " << num_step << "\n";
+            writer << "# " << query_size << " " << max_nbor_size << " " << num_step << "\n";
+
             for (int qi = 0; qi < query_size; qi++) {
                 writer << "# qid=" << qi << "\n";
                 if (QueryPointSet[qi].size() != num_step) {
@@ -459,10 +580,10 @@ namespace hnswlib {
 
                     writer << QueryPointSet[qi][sti] << " " << num_visited << "\n";
                     for (tableint id: QueryTraceBeHashSet[qi][sti])
-                        writer << id << "\t";
+                        writer << id << " ";
                     writer << "\n";
                     for (tableint id: QueryTraceAfHashSet[qi][sti])
-                        writer << id << "\t";
+                        writer << id << " ";
                     writer << "\n";
                 }
             }
@@ -471,7 +592,7 @@ namespace hnswlib {
             printf("write query trace to %s done\n", path_qt.c_str());
         }
     private:
-        int query_size, num_step;
+        int query_size, max_nbor_size, num_step;
         int qi_cur, sti_cur;
 
         // Query trace

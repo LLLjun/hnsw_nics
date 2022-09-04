@@ -10,17 +10,13 @@
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
-#include <unordered_set>
 #include <list>
 #include <map>
 #include <stack>
-#include <vector>
-#include "dataset.h"
 #include "profile.h"
 #include "omp.h"
 
 namespace hnswlib {
-    // typedef unsigned int tableint;
     typedef unsigned int linklistsizeint;
 
     template<typename dist_t, typename set_t>
@@ -280,7 +276,7 @@ namespace hnswlib {
 
             visited_array[ep_id] = visited_array_tag;
 #if HD_TRAIN
-            Hotdata->AddTimes(ep_id);
+            Hotdata->AddTimes(getExternalLabel(ep_id));
 #endif
 #if PROEFS
             int num_iter = -1;
@@ -310,11 +306,8 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-// #if HD_TRAIN
-//                 Hotdata->AddTimes(current_node_id);
-// #endif
 #if QTRACE
-                Querytrace->addSearchPoint(current_node_id);
+                Querytrace->addSearchPoint(getExternalLabel(current_node_id));
 #endif
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -327,7 +320,7 @@ namespace hnswlib {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
 #if QTRACE
-                    Querytrace->addNeighborBeHash(candidate_id);
+                    Querytrace->addNeighborBeHash(getExternalLabel(candidate_id));
 #endif
 #ifdef USE_SSE
                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
@@ -337,10 +330,10 @@ namespace hnswlib {
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
 #if HD_TRAIN
-                        Hotdata->AddTimes(candidate_id);
+                        Hotdata->AddTimes(getExternalLabel(candidate_id));
 #endif
 #if QTRACE
-                        Querytrace->addNeighborAfHash(candidate_id);
+                        Querytrace->addNeighborAfHash(getExternalLabel(candidate_id));
 #endif
                         metric_distance_computations++;
 
@@ -372,10 +365,6 @@ namespace hnswlib {
                 Querytrace->endStep();
 #endif
             }
-#if HD_TRAIN
-            if (Hotdata->isSplitQuery())
-                Hotdata->endQuery();
-#endif
 #if QTRACE
             Querytrace->endQuery();
 #endif

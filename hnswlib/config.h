@@ -20,7 +20,7 @@
 
 #define PROEFS      true
 
-#define HOTDATA     false
+#define HOTDATA     true
 
 #if HOTDATA
 #define HD_TRAIN    true
@@ -28,5 +28,9 @@
 #define HD_DEGREE   false
 #endif
 
-#define QTRACE      true
-#define EFS         80
+#define QTRACE      false
+
+#if PLATG
+#define SUBG        true
+#define SG_METIS    false
+#endif
