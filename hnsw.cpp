@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <vector>
 
 using namespace std;
 using namespace hnswlib;
@@ -49,18 +50,23 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
     //     efs.push_back(i);
     efs.push_back(EFS_PG);
 
-    cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
+    cout << "efs\t" << "interval\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
         cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
         cout << "NDC_max\t" << "NDC_total\t" << "n_hops\t";
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
-    cout << "Trans.Num\t" << "MaxComput.PG\t";
+    cout << "Spots.Num\t" << "Nbors.Num\t" << "Rlts.Num\t";
     cout << endl;
 
-    for (size_t ef : efs) {
-        appr_alg.setEf(ef);
+    // for (size_t ef : efs) {
+    size_t ef = EFS_PG;
+    appr_alg.setEf(ef);
+    vector<int> sync_interval;
+    for (int i = 1; i <= 10; i++)
+        sync_interval.push_back(i);
+    for (int sync_i: sync_interval) {
 
 #if (RANKMAP && STAT)
         appr_alg.stats->Reset();
@@ -68,6 +74,10 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         appr_alg.metric_hops = 0;
         appr_alg.metric_hops_L = 0;
         appr_alg.metric_distance_computations = 0;
+#endif
+
+#if PARTGRAPH
+        appr_alg.part_graph->setCommuStep(sync_i);
 #endif
 
         vector<vector<unsigned>> result(qsize);
@@ -101,7 +111,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         time_us_per_query = appr_alg.stats->hw_us / qsize;
 #endif
 
-        cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
+        cout << ef << "\t" << sync_i << "\t" << recall << "\t" << time_us_per_query << "\t";
 #if (RANKMAP && STAT)
             cout << appr_alg.stats->all_rank_us / qsize << "\t";
             cout << appr_alg.stats->all_sort_us / qsize << "\t";
@@ -116,8 +126,9 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
 #endif
-        cout << (1.0 * appr_alg.part_graph->transfer_size / qsize) << "\t";
-        cout << (1.0 * appr_alg.part_graph->getMaxComputation() / qsize) << "\t";
+        cout << (1.0 * appr_alg.part_graph->commu_spots_size / qsize) << "\t";
+        cout << (1.0 * appr_alg.part_graph->commu_nbors_size / qsize) << "\t";
+        cout << (1.0 * appr_alg.part_graph->commu_result_size / qsize) << "\t";
         cout << endl;
 
         if (recall > 1.0) {
@@ -271,10 +282,10 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         appr_alg->part_graph = new PartGraph(MapString["dataname"], vecsize, qsize, MapParameter["num_pg"], EFS_PG);
 
         // evaluate MENIS
-        appr_alg->evalMETIS(MapParameter["num_pg"]);
+        // appr_alg->evalMETIS(MapParameter["num_pg"]);
 
         // transfer search
-        appr_alg->part_graph->initTransferSearch();
+        appr_alg->part_graph->initCommuSearch();
 #endif
 
 #if RANKMAP
@@ -283,13 +294,6 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
         printf("Run and comput recall: \n");
         test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
-#if PGMODE == PGTEST
-        // appr_alg->part_graph->testPartGraph(MapParameter["num_pg"]);
-        // exit(1);
-
-        // // transfer search
-        // appr_alg->part_graph->printfTransferStat();
-#endif
 
 #if RANKMAP
         appr_alg->deleteRankMap();

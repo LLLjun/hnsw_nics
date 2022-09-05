@@ -280,14 +280,32 @@ namespace hnswlib {
 
             visited_array[ep_id] = visited_array_tag;
 
+#if PARTGRAPH
+            part_graph->initRequestInfo();
+#endif
+
 #if PROEFS
             int num_iter = -1;
             int max_iter = ef_;
 #endif
-
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
+#if PARTGRAPH
+                // 同步取neighbor
+                // tableint Spot = current_node_pair.second;
+                // while (!part_graph->addCommuSpotSize(Spot)) {
+                //     if (!candidate_set.empty()) {
+                //         candidate_set.pop();
+                //         Spot = candidate_set.top().second;
+                //     } else {
+                //         printf("Error, candidate_set is empty, step_cur: %d\n", num_iter+1); exit(1);
+                //     }
+                // }
+
+                // 需要立刻取
+                part_graph->addCommuSpotSize(current_node_pair.second);
+#endif
 
 #if PROEFS
                 num_iter++;
@@ -308,9 +326,6 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-#if PARTGRAPH
-                // part_graph->addSearchPoint(current_node_id);
-#endif
 
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -332,10 +347,8 @@ namespace hnswlib {
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
                         // metric_distance_computations++;
 #if PARTGRAPH
-                        // part_graph->addCalcuNeighbor(candidate_id);
-                        if (part_graph->keepIdInGraph(candidate_id)) {
+                        if (part_graph->keepNborInLocal(candidate_id)) {
                             metric_distance_computations++;
-                            part_graph->collectComputation(candidate_id);
 
                             visited_array[candidate_id] = visited_array_tag;
                             char *currObj1 = (getDataByInternalId(candidate_id));
@@ -364,18 +377,15 @@ namespace hnswlib {
                     }
                 }
 #if PARTGRAPH
-                // part_graph->endStep();
-                int stat = part_graph->statTransferBySize();
-                // int stat = part_graph->statTransferByStep(num_iter);
-                if (stat != -1) {
-                    // 处理transfer
-                    part_graph->setLocalGraph(stat);
-
-                    for (tableint candidate_id: part_graph->popRequest(stat)) {
+                int stat = part_graph->statCommuByStep(num_iter);
+                if ((stat != -1) || (num_iter + 1 == max_iter)) {
+                    // Local -> Remote: neighbor request
+                    // Remote -> Local: computation result
+                    for (tableint candidate_id: part_graph->getNborsRequest()) {
 
                         if (!(visited_array[candidate_id] == visited_array_tag)) {
                             metric_distance_computations++;
-                            part_graph->collectComputation(candidate_id);
+                            part_graph->addCommuResultSize();
 
                             visited_array[candidate_id] = visited_array_tag;
                             char *currObj1 = (getDataByInternalId(candidate_id));
@@ -401,13 +411,11 @@ namespace hnswlib {
                             }
                         }
                     }
-                }
+
+                    part_graph->clearRequest();
+                } // end of step
 #endif
-            }
-#if PARTGRAPH
-            // part_graph->endQuery();
-            part_graph->initTransInfo();
-#endif
+            } // end of query
 
             visited_list_pool_->releaseVisitedList(vl);
 
@@ -1190,6 +1198,9 @@ namespace hnswlib {
 
             tableint currObj = enterpoint_node_;
             dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
+#if PARTGRAPH
+            part_graph->setLocalGraphById(enterpoint_node_);
+#endif
 
             for (int level = maxlevel_; level > 0; level--) {
 #if PLATG

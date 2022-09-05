@@ -229,51 +229,6 @@ namespace hnswlib {
             query_size = qsize;
             num_partgraph = n_pg;
             num_step = efs;
-            query_cur = 0;
-            step_cur = 0;
-            reserve_size = 100;
-
-            SearchPointTable.resize(query_size);
-            for (std::vector<tableint>& SearchPointList: SearchPointTable)
-                SearchPointList.resize(num_step);
-            CalcuNeighTable.resize(query_size);
-            for (std::vector<std::vector<tableint>>& CalcuNeighList: CalcuNeighTable) {
-                CalcuNeighList.resize(num_step);
-                for (std::vector<tableint>& CalcuNeighPoint: CalcuNeighList)
-                    CalcuNeighPoint.reserve(reserve_size);
-            }
-        }
-
-        void addSearchPoint(tableint id) {
-            SearchPointTable[query_cur][step_cur] = id;
-        }
-
-        void addCalcuNeighbor(tableint id) {
-            CalcuNeighTable[query_cur][step_cur].push_back(id);
-        }
-
-        void endStep() {
-            step_cur++;
-        }
-
-        void endQuery() {
-            query_cur++;
-            step_cur = 0;
-        }
-
-        void testPartGraph(int part_size) {
-            // test random
-            printf("Part-graph Test [random]:\n");
-            std::vector<int> IdToPartitionRandom(base_size);
-            srand(time(0));
-            for (int i = 0; i < base_size; i++)
-                IdToPartitionRandom[i] = rand() % part_size;
-            evalCommucation(IdToPartitionRandom);
-
-            // test METIS
-            printf("Part-graph Test [METIS]:\n");
-            std::vector<int> IdToPartition = getIdToPartMap(part_size);
-            evalCommucation(IdToPartition);
         }
 
         std::string getFileName(int num_part_graph) {
@@ -284,52 +239,41 @@ namespace hnswlib {
             return file_partition;
         }
 
-        // Transfer search
-        void initTransferSearch() {
-            request_threshold = 40;
+        // Communication search
+        void initCommuSearch() {
             IdToPartitionMap = getIdToPartMap(num_partgraph);
-
-            qc_transfer_request.resize(num_partgraph);
-            initTransInfo();
-
-            transfer_size = 0;
-            partgraph_computation.resize(num_partgraph, 0);
+            qc_spots_request.resize(num_partgraph);
+            qc_nbors_request.resize(num_partgraph);
         }
 
-        bool keepIdInGraph(tableint id) {
+        void setCommuStep(int num) {
+            commu_step = num;
+            commu_spots_size = 0;
+            commu_nbors_size = 0;
+            commu_result_size = 0;
+        }
+
+        void initRequestInfo() {
+            for (std::vector<tableint>& rq: qc_spots_request)
+                std::vector<tableint>().swap(rq);
+            for (std::vector<tableint>& rq: qc_nbors_request)
+                std::vector<tableint>().swap(rq);
+        }
+
+        bool keepNborInLocal(tableint id) {
             bool keep = true;
             int pg_id = IdToPartitionMap[id];
             if (pg_id != qc_local_graph) {
-                qc_transfer_request[pg_id].push_back(id);
+                qc_nbors_request[pg_id].push_back(id);
                 keep = false;
             }
             return keep;
         }
 
-        int statTransferBySize() {
+        int statCommuByStep(int step_cur) {
             int stat = -1;
-            int max_size = 0;
-            for (int i = 0; i < num_partgraph; i++) {
-                int rq_size = qc_transfer_request[i].size();
-                if (rq_size >= request_threshold && rq_size > max_size) {
-                    stat = i;
-                    max_size = rq_size;
-                }
-            }
-            return stat;
-        }
-
-        int statTransferByStep(int step_cur) {
-            int stat = -1;
-            if ((step_cur + 1) % 8 == 0) {
-                int max_size = 0;
-                for (int i = 0; i < num_partgraph; i++) {
-                    int rq_size = qc_transfer_request[i].size();
-                    if (rq_size > max_size) {
-                        stat = i;
-                        max_size = rq_size;
-                    }
-                }
+            if ((step_cur + 1) % commu_step == 0) {
+                stat = 0;
             }
             return stat;
         }
@@ -338,36 +282,59 @@ namespace hnswlib {
             qc_local_graph = pg_id;
         }
 
+        void setLocalGraphById(int id) {
+            qc_local_graph = IdToPartitionMap[id];
+        }
+
         int getLocalGraph() {
             return qc_local_graph;
         }
 
-        std::vector<tableint> popRequest(int pg) {
-            std::vector<tableint> popRq;
-            popRq.swap(qc_transfer_request[pg]);
-
-            transfer_size++;
-            return popRq;
+        std::vector<tableint> getSpotsRequest() {
+            std::vector<tableint> request;
+            for (std::vector<tableint>& spot_list: qc_spots_request) {
+                for (tableint spot: spot_list)
+                    request.push_back(spot);
+            }
+            return request;
         }
 
-        void initTransInfo() {
-            qc_local_graph = IdToPartitionMap[0];
-            for (std::vector<tableint>& rq: qc_transfer_request)
-                std::vector<tableint>().swap(rq);
+        std::vector<tableint> getNborsRequest() {
+            std::vector<tableint> request;
+            for (std::vector<tableint>& nbor_list: qc_nbors_request) {
+                for (tableint nbor: nbor_list)
+                    request.push_back(nbor);
+            }
+            commu_nbors_size += request.size();
+            return request;
         }
 
-        void collectComputation(tableint id) {
-            int pg = IdToPartitionMap[id];
-            partgraph_computation[pg]++;
+        void clearRequest() {
+            for (int i = 0; i < num_partgraph; i++) {
+                std::vector<tableint>().swap(qc_spots_request[i]);
+                std::vector<tableint>().swap(qc_nbors_request[i]);
+            }
         }
 
-        // 统计transfer次数
-        size_t transfer_size;
+        // 统计次数
+        size_t commu_spots_size;
+        size_t commu_nbors_size;
+        size_t commu_result_size;
         std::vector<size_t> partgraph_computation;
+
+        void addCommuSpotSize(tableint id) {
+            int pg_id = IdToPartitionMap[id];
+            if (pg_id != qc_local_graph)
+                commu_spots_size++;
+        }
+
+        void addCommuResultSize() {
+            commu_result_size++;
+        }
 
         void printfTransferStat() {
             printf("Transfer.Num\n");
-            printf("%.1f\n", 1.0 * transfer_size / query_size);
+            printf("%.1f\n", 1.0 * commu_spots_size / query_size);
             printf("\n");
         }
 
@@ -383,11 +350,6 @@ namespace hnswlib {
 
     private:
         int base_size, query_size, num_partgraph, num_step;
-        std::vector<std::vector<tableint>> SearchPointTable;
-        std::vector<std::vector<std::vector<tableint>>> CalcuNeighTable;
-
-        int query_cur, step_cur;
-        int reserve_size;
 
         std::string data_name;
 
@@ -418,50 +380,16 @@ namespace hnswlib {
             return IdToPartition;
         }
 
-        void evalCommucation(std::vector<int>& IdToPartition) {
-            size_t num_search_point = query_size * num_step;
-            size_t num_calcu_neighbor = 0;
-            for (std::vector<std::vector<tableint>>& CalcuNeighList: CalcuNeighTable) {
-                for (std::vector<tableint>& CalcuNeighPoint: CalcuNeighList)
-                    num_calcu_neighbor += CalcuNeighPoint.size();
-            }
-
-            // 只考虑单个query，定义local graph
-            int graph_local = IdToPartition[0];
-            size_t commu_search_point = 0;
-            size_t commu_calcu_neighbor = 0;
-
-            for (int qi = 0; qi < query_size; qi++) {
-                for (int sti = 0; sti < num_step; sti++) {
-                    tableint sp_cur = SearchPointTable[qi][sti];
-                    if (IdToPartition[sp_cur] != graph_local)
-                        commu_search_point++;
-                    for (tableint neigh: CalcuNeighTable[qi][sti]) {
-                        if (IdToPartition[neigh] != graph_local)
-                            commu_calcu_neighbor++;
-                    }
-                }
-            }
-
-            // printf
-            printf("Search point\t Calcu neighbor\t Commu.Point\t Commu.Neighbor\n");
-            printf("%lu\t %lu\t %.1f%%\t %.1f%%\n",
-                            num_search_point, num_calcu_neighbor,
-                            100.0 * commu_search_point / num_search_point,
-                            100.0 * commu_calcu_neighbor / num_calcu_neighbor);
-        }
-
-        // to support transfer search
+        // to support communication search
         // 超参数
-        int request_threshold;
+        int commu_step;
 
         std::vector<int> IdToPartitionMap;
         // 存储单个query的transfer 请求
         int qc_local_graph;
         // 可能有重复
-        std::vector<std::vector<tableint>> qc_transfer_request;
-
-
+        std::vector<std::vector<tableint>> qc_spots_request;
+        std::vector<std::vector<tableint>> qc_nbors_request;
 
     };
 #endif

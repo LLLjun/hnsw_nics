@@ -20,7 +20,7 @@
 
 #define PROEFS      true
 
-#define PARTGRAPH     true
+#define PARTGRAPH   true
 #if PARTGRAPH
 #define PGMODE      PGTEST
 
