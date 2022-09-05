@@ -1,9 +1,7 @@
 #pragma once
-#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <sstream>
-#include <string>
+#include <numeric>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -33,6 +31,8 @@
 #include <iostream>
 #include <string.h>
 #include "config.h"
+#include "dataset.h"
+#include "tool.h"
 
 namespace hnswlib {
     typedef unsigned int tableint;
@@ -231,6 +231,39 @@ namespace hnswlib {
             num_step = efs;
         }
 
+        vector<int> getPGCenterList() {
+            return SubCenter;
+        }
+
+        void addUsingCenter(int pg) {
+            FreqCenter[pg]++;
+        }
+
+        template<typename data_T>
+        void computSubgCenter(const data_T *data_m, uint32_t dims, int part_size) {
+            SubCenter.resize(part_size, 0);
+            FreqCenter.resize(part_size, 0);
+            std::vector<int> IdToPartition = getIdToPartation(part_size);
+            std::vector<std::vector<tableint>> PartationToId(part_size);
+            for (int id = 0; id < base_size; id++) {
+                int part = IdToPartition[id];
+                PartationToId[part].push_back(id);
+            }
+
+            for (int pti = 0; pti < part_size; pti++) {
+                int size = PartationToId[pti].size();
+                data_T* data_s = new data_T[size * dims]();
+                for (int i_ig = 0; i_ig < size; i_ig++) {
+                    int origin_id = PartationToId[pti][i_ig];
+                    memcpy(data_s + dims * i_ig, data_m + dims * origin_id, dims * sizeof(data_T));
+                }
+                int ingraph_id = compArrayCenter<data_T>(data_s, size, dims);
+                SubCenter[pti] = PartationToId[pti][ingraph_id];
+                delete[] data_s;
+            }
+            printf("ComputSubgCenter successed\n");
+        }
+
         std::string getFileName(int num_part_graph) {
             int size_million = base_size / 1e6;
             std::string file_partition = "../output/part-graph/" + data_name + std::to_string(size_million) +
@@ -241,7 +274,7 @@ namespace hnswlib {
 
         // Communication search
         void initCommuSearch() {
-            IdToPartitionMap = getIdToPartMap(num_partgraph);
+            IdToPartitionMap = getIdToPartation(num_partgraph);
             qc_spots_request.resize(num_partgraph);
             qc_nbors_request.resize(num_partgraph);
         }
@@ -350,10 +383,12 @@ namespace hnswlib {
 
     private:
         int base_size, query_size, num_partgraph, num_step;
-
         std::string data_name;
 
-        std::vector<int> getIdToPartMap(int part_size) {
+        std::vector<int> SubCenter;
+        std::vector<int> FreqCenter;
+
+        std::vector<int> getIdToPartation(int part_size) {
             std::string partitionMapFile = getFileName(part_size);
             std::vector<int> IdToPartition(base_size, part_size);
 

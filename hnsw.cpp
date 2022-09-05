@@ -7,9 +7,6 @@
 #include "hnswlib/hnswlib.h"
 #include <string>
 #include <unordered_set>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <vector>
 
 using namespace std;
@@ -263,12 +260,12 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
-#if PGMODE == PGTEST
+#if PARTGRAPH && PGMODE == PGTEST
         // 生成EdgeList
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
         string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m.txt";
-        if (!exists_test(path_txt)) 
+        if (!exists_test(path_txt))
             appr_alg->writeNeighborToEdgelist(path_txt);
 
         string metis_file = path_txt + ".part." + to_string(MapParameter["num_pg"]);
@@ -283,6 +280,12 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
         // evaluate MENIS
         // appr_alg->evalMETIS(MapParameter["num_pg"]);
+
+        // getCenter
+        DTset *massB = new DTset[vecsize * vecdim]();
+        LoadBinToArray<DTset>(MapString["path_data"], massB, vecsize, vecdim);
+        appr_alg->part_graph->computSubgCenter(massB, vecdim, MapParameter["num_pg"]);
+        delete[] massB;
 
         // transfer search
         appr_alg->part_graph->initCommuSearch();
@@ -315,14 +318,10 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
 #endif
 
     string path_graphindex = path_project + "/graphindex/" + label;
+    createDir(path_graphindex);
 
     string pre_index = path_graphindex + using_dataset;
-    if (access(pre_index.c_str(), R_OK|W_OK)){
-        if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", pre_index.c_str());
-            exit(1);
-        }
-    }
+    createDir(pre_index);
 
     // for 1m, 10m, 100m
     vector<size_t> efcSet = {20, 30, 40};
