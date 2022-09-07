@@ -32,20 +32,14 @@ float comput_recall(vector<vector<unsigned>>& result,
 
 template<typename DTres, typename DTset>
 static void
-test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
-                DTset *massQ, size_t qsize,
-                vector<vector<unsigned>>& massQA, size_t k) {
-    vector<size_t> efs;// = { 10,10,10,10,10 };
-    // base deep1m
-    // 150     0.99144 343.031 0       155.846 2734.29
-    // base deep10m
-    // 150     0.98684 631.098 0       156.34  4323.5
-    // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
-    // Ours. rank=490, sort=53.6, lookup=136, hlc=3
-
-    // for (int i = 10; i <= 150; i += 10)
-    //     efs.push_back(i);
-    efs.push_back(EFS_PG);
+test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg,
+                DTset *massQ, vector<vector<unsigned>>& massQA,
+                map<string, size_t> &MapParameter) {
+    size_t qsize = MapParameter["qsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t k = MapParameter["k"];
+    // vector<size_t> efs;
+    // efs.push_back(MapParameter["efs"]);
 
     cout << "efs\t" << "interval\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -54,17 +48,20 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
 #endif
-    cout << "Spots.Num\t" << "Nbors.Num\t" << "Rlts.Num\t";
+    cout << "Spots.Num\t" << "Nbors.Num\t";
     cout << endl;
 
     // for (size_t ef : efs) {
-    size_t ef = EFS_PG;
+    size_t ef = MapParameter["efs"];
     appr_alg.setEf(ef);
+#if QTRACE
+    {   int sync_i = MapParameter["interval"];
+#else
     vector<int> sync_interval;
     for (int i = 1; i <= 10; i++)
         sync_interval.push_back(i);
     for (int sync_i: sync_interval) {
-
+#endif
 #if (RANKMAP && STAT)
         appr_alg.stats->Reset();
 #else
@@ -74,7 +71,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
 #endif
 
 #if PARTGRAPH
-        appr_alg.part_graph->setCommuStep(sync_i);
+        appr_alg.Partgraph->setCommuStep(sync_i);
 #endif
 
         vector<vector<unsigned>> result(qsize);
@@ -123,15 +120,10 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
 #endif
-        cout << (1.0 * appr_alg.part_graph->commu_spots_size / qsize) << "\t";
-        cout << (1.0 * appr_alg.part_graph->commu_nbors_size / qsize) << "\t";
-        cout << (1.0 * appr_alg.part_graph->commu_result_size / qsize) << "\t";
+        cout << (1.0 * appr_alg.Partgraph->commu_spots_size / qsize) << "\t";
+        cout << (1.0 * appr_alg.Partgraph->commu_nbors_size / qsize) << "\t";
         cout << endl;
 
-        if (recall > 1.0) {
-            cout << recall << "\t" << time_us_per_query << " us\n";
-            break;
-        }
     }
 }
 
@@ -276,7 +268,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
             system(command_metis.c_str());
         }
 
-        appr_alg->part_graph = new PartGraph(MapString["dataname"], vecsize, qsize, MapParameter["num_pg"], EFS_PG);
+        appr_alg->Partgraph = new PartGraph(MapString["dataname"], vecsize, qsize, MapParameter["num_pg"], MapParameter["efs"]);
 
         // evaluate MENIS
         // appr_alg->evalMETIS(MapParameter["num_pg"]);
@@ -284,11 +276,15 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         // getCenter
         DTset *massB = new DTset[vecsize * vecdim]();
         LoadBinToArray<DTset>(MapString["path_data"], massB, vecsize, vecdim);
-        appr_alg->part_graph->computSubgCenter(massB, vecdim, MapParameter["num_pg"]);
+        appr_alg->Partgraph->computSubgCenter(massB, vecdim, MapParameter["num_pg"]);
         delete[] massB;
 
         // transfer search
-        appr_alg->part_graph->initCommuSearch();
+        appr_alg->Partgraph->initCommuSearch();
+#endif
+#if QTRACE
+        int nbor_size = appr_alg->maxM0_;
+        appr_alg->Querytrace = new QueryTrace(qsize, nbor_size, MapParameter["efs"], MapParameter["interval"], MapParameter["num_pg"]);
 #endif
 
 #if RANKMAP
@@ -296,7 +292,14 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 #endif
 
         printf("Run and comput recall: \n");
-        test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k);
+        test_vs_recall(*appr_alg, massQ, massQA, MapParameter);
+
+#if QTRACE
+        string dir_query_trace = MapString["simu_dir"] + "/trace";
+        createDir(dir_query_trace);
+        string file_query_trace = dir_query_trace + "/" + MapString["uniquename"] + "_fg" + to_string(MapParameter["num_pg"]) + ".txt";
+        appr_alg->Querytrace->writeQueryTrace(file_query_trace);
+#endif
 
 #if RANKMAP
         appr_alg->deleteRankMap();
@@ -343,6 +346,14 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) +
                         "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
     MapString["index"] = hnsw_index;
+#if QTRACE
+    string simu_root_dir = "../output/simulator";
+    string simu_level = "multi_node";
+    string parallel_method = "full_graph";
+    string simu_dir = simu_root_dir + "/" + simu_level + "/" + parallel_method;
+    createDir(simu_dir);
+    MapString["simu_dir"] = simu_dir;
+#endif
     CheckDataset(using_dataset, MapParameter, MapString);
 
     if (stage == "build" || stage == "both") {

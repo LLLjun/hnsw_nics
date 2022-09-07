@@ -125,7 +125,9 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
 // 创建文件夹
 inline void createDir(string& dir) {
     if (access(dir.c_str(), R_OK|W_OK)){
-        if (mkdir(dir.c_str(), S_IRWXU) != 0) {
+        string command = "mkdir -p " + dir;
+        int stat = system(command.c_str());
+        if (stat != 0) {
             printf("Error, dir %s create failed \n", dir.c_str());
             exit(1);
         }

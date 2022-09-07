@@ -277,7 +277,7 @@ namespace hnswlib {
             visited_array[ep_id] = visited_array_tag;
 
 #if PARTGRAPH
-            part_graph->initRequestInfo();
+            Partgraph->initRequestInfo();
 #endif
 
 #if PROEFS
@@ -287,21 +287,6 @@ namespace hnswlib {
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
-#if PARTGRAPH
-                // 同步取neighbor
-                // tableint Spot = current_node_pair.second;
-                // while (!part_graph->addCommuSpotSize(Spot)) {
-                //     if (!candidate_set.empty()) {
-                //         candidate_set.pop();
-                //         Spot = candidate_set.top().second;
-                //     } else {
-                //         printf("Error, candidate_set is empty, step_cur: %d\n", num_iter+1); exit(1);
-                //     }
-                // }
-
-                // 需要立刻取
-                part_graph->addCommuSpotSize(current_node_pair.second);
-#endif
 
 #if PROEFS
                 num_iter++;
@@ -322,7 +307,15 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-
+#if PARTGRAPH
+                // 需要立刻取
+                int state = Partgraph->getIdState(current_node_pair.second);
+                if (state != -1)
+                    Partgraph->addCommuSpotSize();
+#if QTRACE
+                Querytrace->addSearchPoint(getExternalLabel(current_node_id), state);
+#endif
+#endif
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
                 _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
@@ -333,7 +326,9 @@ namespace hnswlib {
                 for (size_t j = 1; j <= size; j++) {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
-
+#if QTRACE
+                    Querytrace->addNeighborBeHash(getExternalLabel(candidate_id));
+#endif
 #ifdef USE_SSE
                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
@@ -341,12 +336,18 @@ namespace hnswlib {
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        visited_array[candidate_id] = visited_array_tag;
+#if QTRACE
+                        Querytrace->addNeighborAfHash(getExternalLabel(candidate_id));
+#endif
                         // metric_distance_computations++;
 #if PARTGRAPH
-                        if (part_graph->keepNborInLocal(candidate_id)) {
+                        if (Partgraph->keepNborInLocal(candidate_id)) {
+#if QTRACE
+                            Querytrace->addNeighborLocal(getExternalLabel(candidate_id));
+#endif
                             metric_distance_computations++;
 
-                            visited_array[candidate_id] = visited_array_tag;
                             char *currObj1 = (getDataByInternalId(candidate_id));
                             dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
@@ -373,45 +374,50 @@ namespace hnswlib {
                     }
                 }
 #if PARTGRAPH
-                int stat = part_graph->statCommuByStep(num_iter);
+                int stat = Partgraph->statCommuByStep(num_iter);
                 if ((stat != -1) || (num_iter + 1 == max_iter)) {
+#if QTRACE
+                    vector<vector<tableint>> request =  Partgraph->getNborsRequest();
+                    Querytrace->addRequest(request);
+#endif
                     // Local -> Remote: neighbor request
                     // Remote -> Local: computation result
-                    for (tableint candidate_id: part_graph->getNborsRequest()) {
+                    for (tableint candidate_id: Partgraph->concatNborsRequest()) {
+                        metric_distance_computations++;
 
-                        if (!(visited_array[candidate_id] == visited_array_tag)) {
-                            metric_distance_computations++;
-                            part_graph->addCommuResultSize();
+                        char *currObj1 = (getDataByInternalId(candidate_id));
+                        dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
-                            visited_array[candidate_id] = visited_array_tag;
-                            char *currObj1 = (getDataByInternalId(candidate_id));
-                            dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
-
-                            if (top_candidates.size() < ef || lowerBound > dist) {
-                                candidate_set.emplace(-dist, candidate_id);
+                        if (top_candidates.size() < ef || lowerBound > dist) {
+                            candidate_set.emplace(-dist, candidate_id);
 
 #ifdef USE_SSE
-                                _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                                            offsetLevel0_,///////////
-                                            _MM_HINT_T0);////////////////////////
+                            _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
+                                        offsetLevel0_,///////////
+                                        _MM_HINT_T0);////////////////////////
 #endif
 
-                                if (!has_deletions || !isMarkedDeleted(candidate_id))
-                                    top_candidates.emplace(dist, candidate_id);
+                            if (!has_deletions || !isMarkedDeleted(candidate_id))
+                                top_candidates.emplace(dist, candidate_id);
 
-                                if (top_candidates.size() > ef)
-                                    top_candidates.pop();
+                            if (top_candidates.size() > ef)
+                                top_candidates.pop();
 
-                                if (!top_candidates.empty())
-                                    lowerBound = top_candidates.top().first;
-                            }
+                            if (!top_candidates.empty())
+                                lowerBound = top_candidates.top().first;
                         }
                     }
 
-                    part_graph->clearRequest();
+                    Partgraph->clearRequest();
                 } // end of step
 #endif
+#if QTRACE
+                Querytrace->endStep();
+#endif
             } // end of query
+#if QTRACE
+            Querytrace->endQuery();
+#endif
 
             visited_list_pool_->releaseVisitedList(vl);
 
@@ -1193,7 +1199,7 @@ namespace hnswlib {
             if (cur_element_count == 0) return result;
 
 #if PARTGRAPH
-            vector<int> PG_center = part_graph->getPGCenterList();
+            vector<int> PG_center = Partgraph->getPGCenterList();
             int pg_size = PG_center.size();
             priority_queue<pair<dist_t, int>> center_cand;
             for (int i = 0; i < PG_center.size(); i++) {
@@ -1204,8 +1210,11 @@ namespace hnswlib {
 
             int using_pg = center_cand.top().second;
             tableint currObj = PG_center[using_pg];
-            part_graph->addUsingCenter(using_pg);
-            part_graph->setLocalGraphById(currObj);
+            Partgraph->setLocalGraph(using_pg);
+            Partgraph->addUsingCenter(using_pg);
+#if QTRACE
+            Querytrace->addQueryLocalNode(using_pg);
+#endif
 #else
             tableint currObj = enterpoint_node_;
 #endif
@@ -1264,7 +1273,7 @@ namespace hnswlib {
         };
 
 #if PARTGRAPH
-        PartGraph* part_graph = nullptr;
+        PartGraph* Partgraph = nullptr;
 
         struct EdgeWeight {
             int id;
@@ -1314,10 +1323,10 @@ namespace hnswlib {
         void evalMETIS(int part_size) {
             printf("Evaluate Remote Edge (total = 2 * undirect + direct):\n");
 
-            if (part_graph == nullptr) {
-                printf("Error, initial part_graph\n"); exit(1);
+            if (Partgraph == nullptr) {
+                printf("Error, initial Partgraph\n"); exit(1);
             }
-            std::string partitionMapFile = part_graph->getFileName(part_size);
+            std::string partitionMapFile = Partgraph->getFileName(part_size);
             std::vector<int> IdToPartition(cur_element_count, part_size);
             std::ifstream reader(partitionMapFile.c_str());
             if (reader) {
@@ -1574,6 +1583,11 @@ namespace hnswlib {
         }
 
 #endif
+
+#if QTRACE
+        QueryTrace* Querytrace = nullptr;
+#endif
+
 
         /*
             using one queue to search

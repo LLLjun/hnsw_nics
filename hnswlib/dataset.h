@@ -12,8 +12,24 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
     size_t data_size_millions = MapParameter["data_size_millions"];
     string path_dataset = "../dataset/" + dataname + "/";
     MapString["dataname"] = dataname;
+    MapString["uniquename"] = dataname + to_string(data_size_millions) + "m";
 #if PGMODE == PGGRAPH || PGMODE == PGTEST
     MapString["index_ro"] = MapString["index"] + "_reorder";
+#endif
+
+#if QTRACE || PARTGRAPH
+    // 转换baseline中同样的召回率，对应在实际配置中的结果
+    if (dataname == "sift") {
+        // R@10=0.95
+        MapParameter["efs"] = 64;
+        MapParameter["interval"] = 8;
+    } else if (dataname == "spacev") {
+        // R@10=0.90
+        MapParameter["efs"] = 80;
+        MapParameter["interval"] = 5;
+    } else {
+        printf("Error, unsupport dataset: %s \n", dataname.c_str()); exit(1);
+    }
 #endif
 
     if (dataname == "sift"){

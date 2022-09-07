@@ -29,5 +29,7 @@
 #define PGTEST      2
 #define PGTRANSFER  3
 
-#define EFS_PG      80
+// #define EFS_PG      60
 #endif
+
+#define QTRACE      true

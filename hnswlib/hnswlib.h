@@ -283,7 +283,6 @@ namespace hnswlib {
             commu_step = num;
             commu_spots_size = 0;
             commu_nbors_size = 0;
-            commu_result_size = 0;
         }
 
         void initRequestInfo() {
@@ -315,10 +314,6 @@ namespace hnswlib {
             qc_local_graph = pg_id;
         }
 
-        void setLocalGraphById(int id) {
-            qc_local_graph = IdToPartitionMap[id];
-        }
-
         int getLocalGraph() {
             return qc_local_graph;
         }
@@ -332,7 +327,7 @@ namespace hnswlib {
             return request;
         }
 
-        std::vector<tableint> getNborsRequest() {
+        std::vector<tableint> concatNborsRequest() {
             std::vector<tableint> request;
             for (std::vector<tableint>& nbor_list: qc_nbors_request) {
                 for (tableint nbor: nbor_list)
@@ -352,17 +347,21 @@ namespace hnswlib {
         // 统计次数
         size_t commu_spots_size;
         size_t commu_nbors_size;
-        size_t commu_result_size;
         std::vector<size_t> partgraph_computation;
 
-        void addCommuSpotSize(tableint id) {
+        int getIdState(tableint id) {
+            int state = -1;
             int pg_id = IdToPartitionMap[id];
             if (pg_id != qc_local_graph)
-                commu_spots_size++;
+                state = pg_id;
+            return state;
+        }
+        void addCommuSpotSize() {
+            commu_spots_size++;
         }
 
-        void addCommuResultSize() {
-            commu_result_size++;
+        std::vector<std::vector<tableint>> getNborsRequest() {
+            return qc_nbors_request;
         }
 
         void printfTransferStat() {
@@ -422,10 +421,143 @@ namespace hnswlib {
         std::vector<int> IdToPartitionMap;
         // 存储单个query的transfer 请求
         int qc_local_graph;
-        // 可能有重复
+        // 在local node内完成去重
         std::vector<std::vector<tableint>> qc_spots_request;
         std::vector<std::vector<tableint>> qc_nbors_request;
 
+    };
+#endif
+
+#if QTRACE
+    class QueryTrace {
+    public:
+        QueryTrace(int qsize, int nbor_size, int efs, int interval, int num_pg) {
+#if HOTDATA
+            printf("Error, During analysis hot data, can't generate query trace\n"); exit(1);
+#endif
+            query_size = qsize;
+            max_nbor_size = nbor_size;
+            num_step = efs;
+            interval_step = interval;
+            num_node = num_pg;
+            num_communication = (int) (1.0 * num_step / interval_step + 0.5);
+            initQueryTrace();
+        }
+
+        void addQueryLocalNode(int node) {
+            QueryLocalNode[qi_cur] = node;
+        }
+        void addSearchPoint(tableint id, int state) {
+            QueryPointSet[qi_cur][sti_cur].first = id;
+            QueryPointSet[qi_cur][sti_cur].second = state;
+        }
+        void addNeighborBeHash(tableint id) {
+            QueryTraceBeHashSet[qi_cur][sti_cur].push_back(id);
+        }
+        void addNeighborAfHash(tableint id) {
+            QueryTraceAfHashSet[qi_cur][sti_cur].push_back(id);
+        }
+        void addNeighborLocal(tableint id) {
+            QueryTraceLocalSet[qi_cur][sti_cur].push_back(id);
+        }
+        void addRequest(std::vector<std::vector<tableint>>& request) {
+            QueryCommunicationSet[qi_cur][cmi_cur].assign(request.begin(), request.end());
+            cmi_cur++;
+        }
+        void endStep() {
+            sti_cur++;
+        }
+        void endQuery() {
+            if (sti_cur != num_step || cmi_cur != num_communication) {
+                printf("Error, counter is error\n"); exit(1);
+            }
+            qi_cur++;
+            sti_cur = 0;
+            cmi_cur = 0;
+        }
+
+        // 根据Query的Trace 输出 相关信息
+        /*
+            search_point state num_visited
+            list of neighbor before hash
+            list of neighbor after hash
+        */
+        void writeQueryTrace(std::string path_qt) {
+            std::ofstream writer(path_qt.c_str());
+            writer << "# " << query_size << " " << max_nbor_size << " " << num_step << " "
+                           << interval_step << " " << num_communication << " " << num_node << "\n";
+            for (int ns: QueryLocalNode)
+                writer << ns << " ";
+            writer << "\n";
+
+            for (int qi = 0; qi < query_size; qi++) {
+                writer << "# qid=" << qi << "\n";
+                if (QueryPointSet[qi].size() != num_step) {
+                    printf("Error, search point size is: %lu\n", QueryPointSet[qi].size()); exit(1);
+                }
+
+                for (int sti = 0; sti < num_step; sti++) {
+                    int num_visited = QueryTraceBeHashSet[qi][sti].size() - QueryTraceAfHashSet[qi][sti].size();
+                    if (num_visited < 0) {
+                        printf("Error, num_visited is: %d\n", num_visited); exit(1);
+                    }
+
+                    writer << QueryPointSet[qi][sti].first << " " << QueryPointSet[qi][sti].second << " " << num_visited << "\n";
+                    for (tableint id: QueryTraceBeHashSet[qi][sti])
+                        writer << id << " ";
+                    writer << "\n";
+                    for (tableint id: QueryTraceLocalSet[qi][sti])
+                        writer << id << " ";
+                    writer << "\n";
+                }
+                // for communication
+                for (int cmi = 0; cmi < num_communication; cmi++) {
+                    for (std::vector<tableint>& request: QueryCommunicationSet[qi][cmi]) {
+                        for (tableint id: request)
+                            writer << id << " ";
+                        writer << "\n";
+                    }
+                }
+            }
+            writer.close();
+
+            printf("write query trace to %s done\n", path_qt.c_str());
+        }
+    private:
+        int query_size, max_nbor_size, num_step, interval_step, num_communication, num_node;
+        int qi_cur, sti_cur, cmi_cur;
+
+        // Query trace
+        std::vector<std::vector<std::vector<tableint>>> QueryTraceBeHashSet;
+        std::vector<std::vector<std::vector<tableint>>> QueryTraceAfHashSet;
+        std::vector<std::vector<std::vector<tableint>>> QueryTraceLocalSet;
+        // query's local node
+        std::vector<int> QueryLocalNode;
+        // search point and its state
+        std::vector<std::vector<std::pair<tableint, int>>> QueryPointSet;
+        std::vector<std::vector<std::vector<std::vector<tableint>>>> QueryCommunicationSet;
+
+        void initQueryTrace() {
+            qi_cur = 0;
+            sti_cur = 0;
+            cmi_cur = 0;
+            QueryTraceBeHashSet.resize(query_size);
+            QueryTraceAfHashSet.resize(query_size);
+            QueryTraceLocalSet.resize(query_size);
+            QueryLocalNode.resize(query_size);
+            QueryPointSet.resize(query_size);
+            QueryCommunicationSet.resize(query_size);
+            for (int i = 0; i < query_size; i++) {
+                QueryTraceBeHashSet[i].resize(num_step);
+                QueryTraceAfHashSet[i].resize(num_step);
+                QueryTraceLocalSet[i].resize(num_step);
+                QueryPointSet[i].resize(num_step);
+
+                QueryCommunicationSet[i].resize(num_communication);
+                // for (int j = 0; j < num_communication; j++)
+                //     QueryCommunicationSet[i][j].resize(num_node);
+            }
+        }
     };
 #endif
 
