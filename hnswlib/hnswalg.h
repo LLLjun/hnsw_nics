@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <numeric>
 #include <random>
 #include <stdlib.h>
@@ -13,6 +14,8 @@
 #include <list>
 #include <map>
 #include <stack>
+#include <thread>
+#include <unordered_map>
 #include "profile.h"
 #include "omp.h"
 
@@ -32,7 +35,7 @@ namespace hnswlib {
         }
 
         HierarchicalNSW(SpaceInterface<dist_t, set_t> *s, size_t max_elements, size_t M = 16, size_t ef_construction = 200, size_t random_seed = 100) :
-                link_list_locks_(max_elements), link_list_update_locks_(max_update_element_locks), element_levels_(max_elements) {
+                link_list_locks_(N_THREADS), link_list_locks_el(N_THREADS) {
             max_elements_ = max_elements;
 
             has_deletions_=false;
@@ -54,22 +57,27 @@ namespace hnswlib {
             label_offset_ = size_links_level0_ + data_size_;
             offsetLevel0_ = 0;
 
+            printf("size_data_per_element_ : %lu\n", size_data_per_element_);
             data_level0_memory_ = (char *) malloc(max_elements_ * size_data_per_element_);
             if (data_level0_memory_ == nullptr)
                 throw std::runtime_error("Not enough memory");
 
             cur_element_count = 0;
-
+#if !HASHLIST
             visited_list_pool_ = new VisitedListPool(1, max_elements);
-
+#endif
 
             //initializations for special treatment of the first node
             enterpoint_node_ = -1;
             maxlevel_ = -1;
 
+#if !PLATG
+            link_list_update_locks_(max_update_element_locks)
+            element_levels_(max_elements);
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements_);
             if (linkLists_ == nullptr)
                 throw std::runtime_error("Not enough memory: HierarchicalNSW failed to allocate linklists");
+#endif
             size_links_per_element_ = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
             mult_ = 1 / log(1.0 * M_);
             revSize_ = 1.0 / mult_;
@@ -86,12 +94,16 @@ namespace hnswlib {
         ~HierarchicalNSW() {
 
             free(data_level0_memory_);
+#if !PLATG
             for (tableint i = 0; i < cur_element_count; i++) {
                 if (element_levels_[i] > 0)
                     free(linkLists_[i]);
             }
-            free(linkLists_);
-            delete visited_list_pool_;
+#endif
+            if (linkLists_ != nullptr)
+                free(linkLists_);
+            if (visited_list_pool_ != nullptr)
+                delete visited_list_pool_;
         }
 
         size_t max_elements_;
@@ -108,10 +120,12 @@ namespace hnswlib {
         int maxlevel_;
 
 
-        VisitedListPool *visited_list_pool_;
+        VisitedListPool *visited_list_pool_ = nullptr;
         std::mutex cur_element_count_guard_;
 
+        // reduce mutex size
         std::vector<std::mutex> link_list_locks_;
+        std::vector<std::mutex> link_list_locks_el;
 
         // Locks to prevent race condition during update/insert of an element at same time.
         // Note: Locks for additions can also be used to prevent this race condition if the querying of KNN is not exposed along with update/inserts i.e multithread insert/update/query in parallel.
@@ -124,7 +138,7 @@ namespace hnswlib {
 
 
         char *data_level0_memory_;
-        char **linkLists_;
+        char **linkLists_ = nullptr;
         std::vector<int> element_levels_;
 
         size_t data_size_;
@@ -135,7 +149,7 @@ namespace hnswlib {
         size_t label_offset_;
         DISTFUNC<dist_t> fstdistfunc_;
         void *dist_func_param_;
-        std::unordered_map<labeltype, tableint> label_lookup_;
+        // std::unordered_map<labeltype, tableint> label_lookup_;
 
         std::default_random_engine level_generator_;
         std::default_random_engine update_probability_generator_;
@@ -165,12 +179,48 @@ namespace hnswlib {
             return (int) r;
         }
 
+        // reduce memory overhead
+        void featureToIndex(string path_data, size_t vecdim, labeltype* labelList) {
+            printf("Load base vectors: \n");
+            ifstream base_reader(path_data.c_str());
+            uint64_t head_offest = 2 * sizeof(uint32_t);
+            int vec_offest = vecdim * sizeof(set_t);
+
+            uint32_t nums_r, dims_r;
+            base_reader.read((char *) &nums_r, sizeof(uint32_t));
+            base_reader.read((char *) &dims_r, sizeof(uint32_t));
+            uint32_t nums_ex = max_elements_;
+#if FROMBILLION
+            nums_ex = 1e9;
+#endif
+            if ((nums_ex != nums_r) || (vecdim != dims_r)){
+                printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
+                exit(1);
+            }
+            printf("vecsize: %lu, vecdim: %lu, path: %s\n", max_elements_, vecdim, path_data.c_str());
+
+            for (tableint id_in = 0; id_in < max_elements_; id_in++) {
+                labeltype id_ex = labelList[id_in];
+                base_reader.seekg(head_offest + vec_offest * id_ex, ios::beg);
+                base_reader.read(getDataByInternalId(id_in), vec_offest);
+                if (base_reader.gcount() != vec_offest) {
+                    printf("Read Error\n"); exit(1);
+                }
+                setExternalLabel(id_in, id_ex);
+            }
+            base_reader.close();
+            printf("Set feature and label done\n");
+        }
 
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayer(tableint ep_id, const void *data_point, int layer) {
+#if HASHLIST
+            VisitedHashList vl;
+#else
             VisitedList *vl = visited_list_pool_->getFreeVisitedList();
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
+#endif
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidateSet;
@@ -185,7 +235,11 @@ namespace hnswlib {
                 lowerBound = std::numeric_limits<dist_t>::max();
                 candidateSet.emplace(-lowerBound, ep_id);
             }
+#if HASHLIST
+            vl.isExisted(ep_id);
+#else
             visited_array[ep_id] = visited_array_tag;
+#endif
 
             while (!candidateSet.empty()) {
                 std::pair<dist_t, tableint> curr_el_pair = candidateSet.top();
@@ -196,7 +250,8 @@ namespace hnswlib {
 
                 tableint curNodeNum = curr_el_pair.second;
 
-                std::unique_lock <std::mutex> lock(link_list_locks_[curNodeNum]);
+                // std::unique_lock <std::mutex> lock(link_list_locks_[curNodeNum]);
+                std::unique_lock <std::mutex> lock(link_list_locks_[omp_get_thread_num()]);
 
                 int *data;// = (int *)(linkList0_ + curNodeNum * size_links_per_element0_);
                 if (layer == 0) {
@@ -208,8 +263,8 @@ namespace hnswlib {
                 size_t size = getListCount((linklistsizeint*)data);
                 tableint *datal = (tableint *) (data + 1);
 #ifdef USE_SSE
-                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+                // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+                // _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
                 _mm_prefetch(getDataByInternalId(*datal), _MM_HINT_T0);
                 _mm_prefetch(getDataByInternalId(*(datal + 1)), _MM_HINT_T0);
 #endif
@@ -218,11 +273,16 @@ namespace hnswlib {
                     tableint candidate_id = *(datal + j);
 //                    if (candidate_id == 0) continue;
 #ifdef USE_SSE
-                    _mm_prefetch((char *) (visited_array + *(datal + j + 1)), _MM_HINT_T0);
+                    // _mm_prefetch((char *) (visited_array + *(datal + j + 1)), _MM_HINT_T0);
                     _mm_prefetch(getDataByInternalId(*(datal + j + 1)), _MM_HINT_T0);
 #endif
+#if HASHLIST
+                    if (vl.isExisted(candidate_id)) continue;
+#else
                     if (visited_array[candidate_id] == visited_array_tag) continue;
                     visited_array[candidate_id] = visited_array_tag;
+#endif
+
                     char *currObj1 = (getDataByInternalId(candidate_id));
 
                     dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
@@ -243,7 +303,9 @@ namespace hnswlib {
                     }
                 }
             }
+#if !HASHLIST
             visited_list_pool_->releaseVisitedList(vl);
+#endif
 
             return top_candidates;
         }
@@ -255,11 +317,13 @@ namespace hnswlib {
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
-
+#if HASHLIST
+            VisitedHashList vl;
+#else
             VisitedList *vl = visited_list_pool_->getFreeVisitedList();
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
-
+#endif
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
 
@@ -274,7 +338,12 @@ namespace hnswlib {
                 candidate_set.emplace(-lowerBound, ep_id);
             }
 
+#if HASHLIST
+            vl.isExisted(ep_id);
+#else
             visited_array[ep_id] = visited_array_tag;
+#endif
+
 #if HD_TRAIN
             Hotdata->AddTimes(getExternalLabel(ep_id));
 #endif
@@ -310,8 +379,8 @@ namespace hnswlib {
                 Querytrace->addSearchPoint(getExternalLabel(current_node_id));
 #endif
 #ifdef USE_SSE
-                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+                // _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+                // _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
                 _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
                 _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
@@ -323,12 +392,18 @@ namespace hnswlib {
                     Querytrace->addNeighborBeHash(getExternalLabel(candidate_id));
 #endif
 #ifdef USE_SSE
-                    _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+                    // _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                                  _MM_HINT_T0);////////////
 #endif
 
+#if HASHLIST
+                    if (!vl.isExisted(candidate_id)) {
+#else
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        visited_array[candidate_id] = visited_array_tag;
+#endif
+
 #if HD_TRAIN
                         Hotdata->AddTimes(getExternalLabel(candidate_id));
 #endif
@@ -337,7 +412,7 @@ namespace hnswlib {
 #endif
                         metric_distance_computations++;
 
-                        visited_array[candidate_id] = visited_array_tag;
+
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
@@ -368,8 +443,9 @@ namespace hnswlib {
 #if QTRACE
             Querytrace->endQuery();
 #endif
-
+#if !HASHLIST
             visited_list_pool_->releaseVisitedList(vl);
+#endif
 
             return top_candidates;
         }
@@ -465,9 +541,10 @@ namespace hnswlib {
                 for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
                     if (data[idx] && !isUpdate)
                         throw std::runtime_error("Possible memory corruption");
+#if !PLATG
                     if (level > element_levels_[selectedNeighbors[idx]])
                         throw std::runtime_error("Trying to make a link on a non-existent level");
-
+#endif
                     data[idx] = selectedNeighbors[idx];
 
                 }
@@ -475,7 +552,8 @@ namespace hnswlib {
 
             for (size_t idx = 0; idx < selectedNeighbors.size(); idx++) {
 
-                std::unique_lock <std::mutex> lock(link_list_locks_[selectedNeighbors[idx]]);
+                // std::unique_lock <std::mutex> lock(link_list_locks_[selectedNeighbors[idx]]);
+                std::unique_lock <std::mutex> lock(link_list_locks_[omp_get_thread_num()]);
 
                 linklistsizeint *ll_other;
                 if (level == 0)
@@ -489,9 +567,10 @@ namespace hnswlib {
                     throw std::runtime_error("Bad value of sz_link_list_other");
                 if (selectedNeighbors[idx] == cur_c)
                     throw std::runtime_error("Trying to connect an element to itself");
+#if !PLATG
                 if (level > element_levels_[selectedNeighbors[idx]])
                     throw std::runtime_error("Trying to make a link on a non-existent level");
-
+#endif
                 tableint *data = (tableint *) (ll_other + 1);
 
                 bool is_cur_c_present = false;
@@ -617,7 +696,8 @@ namespace hnswlib {
 
             element_levels_.resize(new_max_elements);
 
-            std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+            // std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
+            std::vector<std::mutex>(N_THREADS).swap(link_list_locks_);
 
             // Reallocate base layer
             char * data_level0_memory_new = (char *) realloc(data_level0_memory_, new_max_elements * size_data_per_element_);
@@ -626,11 +706,12 @@ namespace hnswlib {
             data_level0_memory_ = data_level0_memory_new;
 
             // Reallocate all other layers
+#if !PLATG
             char ** linkLists_new = (char **) realloc(linkLists_, sizeof(void *) * new_max_elements);
             if (linkLists_new == nullptr)
                 throw std::runtime_error("Not enough memory: resizeIndex failed to allocate other layers");
             linkLists_ = linkLists_new;
-
+#endif
             max_elements_ = new_max_elements;
         }
 
@@ -654,13 +735,14 @@ namespace hnswlib {
             writeBinaryPOD(output, ef_construction_);
 
             output.write(data_level0_memory_, cur_element_count * size_data_per_element_);
-
+#if !PLATG
             for (size_t i = 0; i < cur_element_count; i++) {
                 unsigned int linkListSize = element_levels_[i] > 0 ? size_links_per_element_ * element_levels_[i] : 0;
                 writeBinaryPOD(output, linkListSize);
                 if (linkListSize)
                     output.write(linkLists_[i], linkListSize);
             }
+#endif
             output.close();
         }
 
@@ -704,7 +786,7 @@ namespace hnswlib {
 
             auto pos=input.tellg();
 
-
+#if !PLATG
             /// Optional - check if index is ok:
 
             input.seekg(cur_element_count * size_data_per_element_,input.cur);
@@ -727,37 +809,35 @@ namespace hnswlib {
             input.clear();
 
             /// Optional check end
+#endif
 
             input.seekg(pos,input.beg);
-
-
             data_level0_memory_ = (char *) malloc(max_elements * size_data_per_element_);
             if (data_level0_memory_ == nullptr)
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate level0");
             input.read(data_level0_memory_, cur_element_count * size_data_per_element_);
 
-
-
-
             size_links_per_element_ = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
 
-
             size_links_level0_ = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
-            std::vector<std::mutex>(max_elements).swap(link_list_locks_);
-            std::vector<std::mutex>(max_update_element_locks).swap(link_list_update_locks_);
+            // std::vector<std::mutex>(max_elements).swap(link_list_locks_);
+            std::vector<std::mutex>(N_THREADS).swap(link_list_locks_);
 
-
+#if !HASHLIST
             visited_list_pool_ = new VisitedListPool(1, max_elements);
-
+#endif
+#if !PLATG
+            std::vector<std::mutex>(max_update_element_locks).swap(link_list_update_locks_);
 
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements);
             if (linkLists_ == nullptr)
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
+
             element_levels_ = std::vector<int>(max_elements);
             revSize_ = 1.0 / mult_;
             ef_ = 10;
             for (size_t i = 0; i < cur_element_count; i++) {
-                label_lookup_[getExternalLabel(i)]=i;
+                // label_lookup_[getExternalLabel(i)]=i;
                 unsigned int linkListSize;
                 readBinaryPOD(input, linkListSize);
                 if (linkListSize == 0) {
@@ -772,7 +852,7 @@ namespace hnswlib {
                     input.read(linkLists_[i], linkListSize);
                 }
             }
-
+#endif
             has_deletions_=false;
 
             for (size_t i = 0; i < cur_element_count; i++) {
@@ -785,26 +865,26 @@ namespace hnswlib {
             return;
         }
 
-        template<typename data_t>
-        std::vector<data_t> getDataByLabel(labeltype label)
-        {
-            tableint label_c;
-            auto search = label_lookup_.find(label);
-            if (search == label_lookup_.end() || isMarkedDeleted(search->second)) {
-                throw std::runtime_error("Label not found");
-            }
-            label_c = search->second;
+        // template<typename data_t>
+        // std::vector<data_t> getDataByLabel(labeltype label)
+        // {
+        //     tableint label_c;
+        //     auto search = label_lookup_.find(label);
+        //     if (search == label_lookup_.end() || isMarkedDeleted(search->second)) {
+        //         throw std::runtime_error("Label not found");
+        //     }
+        //     label_c = search->second;
 
-            char* data_ptrv = getDataByInternalId(label_c);
-            size_t dim = *((size_t *) dist_func_param_);
-            std::vector<data_t> data;
-            data_t* data_ptr = (data_t*) data_ptrv;
-            for (int i = 0; i < dim; i++) {
-                data.push_back(*data_ptr);
-                data_ptr += 1;
-            }
-            return data;
-        }
+        //     char* data_ptrv = getDataByInternalId(label_c);
+        //     size_t dim = *((size_t *) dist_func_param_);
+        //     std::vector<data_t> data;
+        //     data_t* data_ptr = (data_t*) data_ptrv;
+        //     for (int i = 0; i < dim; i++) {
+        //         data.push_back(*data_ptr);
+        //         data_ptr += 1;
+        //     }
+        //     return data;
+        // }
 
         static const unsigned char DELETE_MARK = 0x01;
 //        static const unsigned char REUSE_MARK = 0x10;
@@ -812,15 +892,15 @@ namespace hnswlib {
          * Marks an element with the given label deleted, does NOT really change the current graph.
          * @param label
          */
-        void markDelete(labeltype label)
-        {
-            has_deletions_=true;
-            auto search = label_lookup_.find(label);
-            if (search == label_lookup_.end()) {
-                throw std::runtime_error("Label not found");
-            }
-            markDeletedInternal(search->second);
-        }
+        // void markDelete(labeltype label)
+        // {
+        //     has_deletions_=true;
+        //     auto search = label_lookup_.find(label);
+        //     if (search == label_lookup_.end()) {
+        //         throw std::runtime_error("Label not found");
+        //     }
+        //     markDeletedInternal(search->second);
+        // }
 
         /**
          * Uses the first 8 bits of the memory for the linked list to store the mark,
@@ -859,9 +939,9 @@ namespace hnswlib {
             *((unsigned short int*)(ptr))=*((unsigned short int *)&size);
         }
 
-        void addPoint(const void *data_point, labeltype label) {
-            addPoint(data_point, label,-1);
-        }
+        // void addPoint(const void *data_point, labeltype label) {
+        //     addPoint(data_point, label, -1);
+        // }
 
         void updatePoint(const void *dataPoint, tableint internalId, float updateNeighborProbability) {
             // update the feature vector associated with existing point with new vector
@@ -924,7 +1004,8 @@ namespace hnswlib {
                     getNeighborsByHeuristic2(candidates, layer == 0 ? maxM0_ : maxM_);
 
                     {
-                        std::unique_lock <std::mutex> lock(link_list_locks_[neigh]);
+                        // std::unique_lock <std::mutex> lock(link_list_locks_[neigh]);
+                        std::unique_lock <std::mutex> lock(link_list_locks_[omp_get_thread_num()]);
                         linklistsizeint *ll_cur;
                         ll_cur = get_linklist_at_level(neigh, layer);
                         size_t candSize = candidates.size();
@@ -950,7 +1031,8 @@ namespace hnswlib {
                     while (changed) {
                         changed = false;
                         unsigned int *data;
-                        std::unique_lock <std::mutex> lock(link_list_locks_[currObj]);
+                        // std::unique_lock <std::mutex> lock(link_list_locks_[currObj]);
+                        std::unique_lock <std::mutex> lock(link_list_locks_[omp_get_thread_num()]);
                         data = get_linklist_at_level(currObj,level);
                         int size = getListCount(data);
                         tableint *datal = (tableint *) (data + 1);
@@ -1004,7 +1086,8 @@ namespace hnswlib {
         }
 
         std::vector<tableint> getConnectionsWithLock(tableint internalId, int level) {
-            std::unique_lock <std::mutex> lock(link_list_locks_[internalId]);
+            // std::unique_lock <std::mutex> lock(link_list_locks_[internalId]);
+            std::unique_lock <std::mutex> lock(link_list_locks_[omp_get_thread_num()]);
             unsigned int *data = get_linklist_at_level(internalId, level);
             int size = getListCount(data);
             std::vector<tableint> result(size);
@@ -1013,50 +1096,51 @@ namespace hnswlib {
             return result;
         };
 
-        tableint addPoint(const void *data_point, labeltype label, int level) {
-
-            tableint cur_c = 0;
+        // tableint addPoint(const void *data_point, labeltype label, int level) {
+        void addPoint(tableint cur_c, int level=-1) {
+            const void *data_point = getDataByInternalId(cur_c);
+            // tableint cur_c = 0;
             {
                 // Checking if the element with the same label already exists
                 // if so, updating it *instead* of creating a new element.
                 std::unique_lock <std::mutex> templock_curr(cur_element_count_guard_);
-                auto search = label_lookup_.find(label);
-                if (search != label_lookup_.end()) {
-                    tableint existingInternalId = search->second;
-                    templock_curr.unlock();
+                // auto search = label_lookup_.find(label);
+                // if (search != label_lookup_.end()) {
+                //     tableint existingInternalId = search->second;
+                //     templock_curr.unlock();
 
-                    std::unique_lock <std::mutex> lock_el_update(link_list_update_locks_[(existingInternalId & (max_update_element_locks - 1))]);
+                //     std::unique_lock <std::mutex> lock_el_update(link_list_update_locks_[(existingInternalId & (max_update_element_locks - 1))]);
 
-                    if (isMarkedDeleted(existingInternalId)) {
-                        unmarkDeletedInternal(existingInternalId);
-                    }
-                    updatePoint(data_point, existingInternalId, 1.0);
+                //     if (isMarkedDeleted(existingInternalId)) {
+                //         unmarkDeletedInternal(existingInternalId);
+                //     }
+                //     updatePoint(data_point, existingInternalId, 1.0);
 
-                    return existingInternalId;
-                }
+                //     return existingInternalId;
+                // }
 
                 if (cur_element_count >= max_elements_) {
                     throw std::runtime_error("The number of elements exceeds the specified limit");
                 };
 
-                cur_c = cur_element_count;
+                // cur_c = cur_element_count;
                 cur_element_count++;
-                label_lookup_[label] = cur_c;
+                // label_lookup_[label] = cur_c;
             }
 
             // Take update lock to prevent race conditions on an element with insertion/update at the same time.
-            std::unique_lock <std::mutex> lock_el_update(link_list_update_locks_[(cur_c & (max_update_element_locks - 1))]);
-            std::unique_lock <std::mutex> lock_el(link_list_locks_[cur_c]);
+            // std::unique_lock <std::mutex> lock_el(link_list_locks_[cur_c]);
+            std::unique_lock <std::mutex> lock_el(link_list_locks_el[omp_get_thread_num()]);
             int curlevel;
 #if PLATG
             curlevel = 0;
 #else
+            std::unique_lock <std::mutex> lock_el_update(link_list_update_locks_[(cur_c & (max_update_element_locks - 1))]);
             curlevel = getRandomLevel(mult_);
             if (level > 0)
                 curlevel = level;
-#endif
             element_levels_[cur_c] = curlevel;
-
+#endif
 
             std::unique_lock <std::mutex> templock(global);
             int maxlevelcopy = maxlevel_;
@@ -1066,20 +1150,21 @@ namespace hnswlib {
             tableint enterpoint_copy = enterpoint_node_;
 
 
-            memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0, size_data_per_element_);
+            // memset(data_level0_memory_ + cur_c * size_data_per_element_ + offsetLevel0_, 0, size_data_per_element_);
+            memset((char *)get_linklist0(cur_c), 0, size_links_level0_);
 
             // Initialisation of the data and label
-            memcpy(getExternalLabeLp(cur_c), &label, sizeof(labeltype));
-            memcpy(getDataByInternalId(cur_c), data_point, data_size_);
+            // memcpy(getExternalLabeLp(cur_c), &label, sizeof(labeltype));
+            // memcpy(getDataByInternalId(cur_c), data_point, data_size_);
 
-
+#if !PLATG
             if (curlevel) {
                 linkLists_[cur_c] = (char *) malloc(size_links_per_element_ * curlevel + 1);
                 if (linkLists_[cur_c] == nullptr)
                     throw std::runtime_error("Not enough memory: addPoint failed to allocate linklist");
                 memset(linkLists_[cur_c], 0, size_links_per_element_ * curlevel + 1);
             }
-
+#endif
             if ((signed)currObj != -1) {
 
                 if (curlevel < maxlevelcopy) {
@@ -1092,7 +1177,8 @@ namespace hnswlib {
                         while (changed) {
                             changed = false;
                             unsigned int *data;
-                            std::unique_lock <std::mutex> lock(link_list_locks_[currObj]);
+                            // std::unique_lock <std::mutex> lock(link_list_locks_[currObj]);
+                            std::unique_lock <std::mutex> lock(link_list_locks_[omp_get_thread_num()]);
                             data = get_linklist(currObj,level);
                             int size = getListCount(data);
 
@@ -1140,7 +1226,7 @@ namespace hnswlib {
                 enterpoint_node_ = cur_c;
                 maxlevel_ = curlevel;
             }
-            return cur_c;
+            // return cur_c;
         };
 
         std::priority_queue<std::pair<dist_t, labeltype >>

@@ -2,11 +2,14 @@
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
+#include <omp.h>
 #include <queue>
 #include <chrono>
 #include <memory>
 #include "hnswlib/hnswlib.h"
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -293,69 +296,78 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
         printf("Index %s is existed \n", index.c_str());
         return;
     } else {
-
-        printf("Load base vectors: \n");
-        ifstream base_reader(path_data.c_str());
-        uint64_t head_offest = 2 * sizeof(uint32_t);
-        int vec_offest = vecdim * sizeof(DTset);
-
-        uint32_t nums_r, dims_r;
-        base_reader.read((char *) &nums_r, sizeof(uint32_t));
-        base_reader.read((char *) &dims_r, sizeof(uint32_t));
-        uint32_t nums_ex = vecsize;
-#if FROMBILLION
-        nums_ex = 1e9;
-#endif
-        if ((nums_ex != nums_r) || (vecdim != dims_r)){
-            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
-            exit(1);
-        }
-        printf("vecsize: %lu, vecdim: %lu, path: %s\n", vecsize, vecdim, path_data.c_str());
-
+        // comput the center point
         size_t build_start_id = 0;
         DTset* build_start_vector = new DTset[vecdim]();
 #if PLATG
-        DTset *massB = new DTset[vecsize * vecdim]();
-        for (int i = 0; i < vecsize; i++)
-            base_reader.read((char *) (massB + vecdim * i), vec_offest);
-        build_start_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
-        delete[] massB;
+        if (MapParameter["data_size_millions"] == 1000)
+            build_start_id = MapParameter["start_point"];
+        else {
+            ifstream base_reader(path_data.c_str());
+            int vec_offest = vecdim * sizeof(DTset);
+            uint32_t nums_r, dims_r;
+            base_reader.read((char *) &nums_r, sizeof(uint32_t));
+            base_reader.read((char *) &dims_r, sizeof(uint32_t));
+            uint32_t nums_ex = vecsize;
+#if FROMBILLION
+            nums_ex = 1e9;
 #endif
+            if ((nums_ex != nums_r) || (vecdim != dims_r)){
+                printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
+                exit(1);
+            }
 
+            DTset *massB = new DTset[vecsize * vecdim]();
+            for (int i = 0; i < vecsize; i++)
+                base_reader.read((char *) (massB + vecdim * i), vec_offest);
+            build_start_id = compArrayCenter<DTset>(massB, vecsize, vecdim);
+            delete[] massB;
+            base_reader.close();
+        }
+#endif
+        printf("End comput center, mem: %.2f MB\n", 1.0 * getCurrentRSS() / 1024 / 1024);
+
+        // labelList, the first point of index is the start point
+        labeltype* labelList = new labeltype[vecsize];
+        labelList[0] = build_start_id;
+        for (size_t vi = 1; vi < vecsize; vi++) {
+            if (vi <= build_start_id)
+                labelList[vi] = vi - 1;
+            else
+                labelList[vi] = vi;
+        }
+
+        // add feature and label to index
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, vecsize, M, efConstruction);
+        printf("End appr_alg, mem: %.2f MB\n", 1.0 * getCurrentRSS() / 1024 / 1024);
+        appr_alg->featureToIndex(path_data, vecdim, labelList);
+        delete[] labelList;
+        printf("End add feature, mem: %.2f MB\n", 1.0 * getCurrentRSS() / 1024 / 1024);
+
 
         printf("Building index:\n");
-        base_reader.seekg(head_offest + vec_offest * build_start_id, ios::beg);
-        base_reader.read((char *) build_start_vector, vec_offest);
-        appr_alg->addPoint((void *) build_start_vector, (size_t) build_start_id);
+        appr_alg->addPoint(0);
 
-        int j1 = 1;
+        size_t j1 = 1;
         StopW stopw = StopW();
         StopW stopw_full = StopW();
-        size_t report_every = vecsize / 10;
-#pragma omp parallel for
+        int report_times = 20;
+        size_t report_every = vecsize / report_times;
+        omp_set_num_threads(N_THREADS);
+#pragma omp parallel for schedule(dynamic, 10)
         for (size_t vi = 1; vi < vecsize; vi++) {
-            unique_ptr<DTset> vecb(new DTset[vecdim]());
-            size_t ic = vi;
-#if PLATG
-            if (vi <= build_start_id)
-                ic = vi - 1;
-#endif
 #pragma omp critical
             {
-                base_reader.seekg(head_offest + vec_offest * ic, ios::beg);
-                base_reader.read((char *) vecb.get(), vec_offest);
                 j1++;
                 if (j1 % report_every == 0) {
-                    cout << j1 * 10 / report_every << " %, "
+                    cout << 100.0 * j1 / report_times / report_every << " %, "
                          << report_every / (1000.0 * stopw.getElapsedTimes()) << " kips " << " Mem: "
-                         << getCurrentRSS() / 1000000 << " Mb \n";
+                         << getCurrentRSS() / 1024 / 1024 << " MB \n";
                     stopw.reset();
                 }
             }
-            appr_alg->addPoint((void *) vecb.get(), ic);
+            appr_alg->addPoint(vi);
         }
-        base_reader.close();
         printf("Build time: %.3f seconds\n", stopw_full.getElapsedTimes());
 
         if (isSave)
@@ -639,10 +651,11 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapParameter["vecsize"] = vecsize;
 
     map<string, string> MapString;
+    CheckDataset(using_dataset, MapParameter, MapString);
 
 #if SUBG
     string sub_index_dir = pre_index + "/" + using_dataset + to_string(data_size_millions) +
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) +
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) +
                         "_subg" + to_string(num_subgraph);
     createDir(sub_index_dir);
     MapParameter["num_subg"] = num_subgraph;
@@ -650,7 +663,7 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapString["index"] = sub_index_dir + "/0.bin";
 #else
     string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) +
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) + ".bin";
     MapString["index"] = hnsw_index;
 #endif
 #if QTRACE || HOTDATA
@@ -664,7 +677,6 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     createDir(simu_dir);
     MapString["simu_dir"] = simu_dir;
 #endif
-    CheckDataset(using_dataset, MapParameter, MapString);
 
     if (stage == "build" || stage == "both") {
 #if SUBG

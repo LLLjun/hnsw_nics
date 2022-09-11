@@ -25,6 +25,11 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
 #endif
 
     if (dataname == "sift"){
+        if (data_size_millions == 1000) {
+            MapParameter["M"] = 40;
+            MapParameter["efConstruction"] = MapParameter["M"] * 10;
+            MapParameter["start_point"] = 992035959;
+        }
         MapParameter["qsize"] = 10000;
         MapParameter["vecdim"] = 128;
         MapParameter["gt_maxnum"] = 100;
@@ -69,9 +74,10 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
         MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.fbin";
         MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin";
     } else if (dataname == "spacev"){
-        if (data_size_millions > 100){
-            printf("error: spacev size set error.\n");
-            exit(1);
+        if (data_size_millions == 1000) {
+            MapParameter["M"] = 40;
+            MapParameter["efConstruction"] = MapParameter["M"] * 10;
+            MapParameter["start_point"] = 15248034;
         }
         MapParameter["qsize"] = 29316;
         MapParameter["vecdim"] = 100;
@@ -84,7 +90,9 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
         printf("Error, unknow dataset: %s \n", dataname.c_str()); exit(1);
     }
 #if FROMBILLION
-    MapString["path_data"] = path_dataset + "base1b";
+    MapString["path_data"] = "../dataset/billion/" + dataname + "/base";
+    MapString["path_q"] = "../dataset/billion/" + dataname + "/query";
+    MapString["path_gt"] = "../dataset/billion/" + dataname + "/groundtruth.bin";
 #endif
 
     if (MapParameter["k"] > MapParameter["gt_maxnum"]){

@@ -1,5 +1,9 @@
 #define PLATG       true
-#define FROMBILLION false
+#define FROMBILLION true
+#define N_THREADS   256
+
+// Visited list实现方式？hash表会占用更少的内存
+#define HASHLIST    true
 
 // rank-level的映射
 #define RANKMAP     false
@@ -20,7 +24,7 @@
 
 #define PROEFS      true
 
-#define HOTDATA     true
+#define HOTDATA     false
 
 #if HOTDATA
 #define HD_TRAIN    true
@@ -31,6 +35,6 @@
 #define QTRACE      false
 
 #if PLATG
-#define SUBG        true
+#define SUBG        false
 #define SG_METIS    false
 #endif
