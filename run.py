@@ -3,8 +3,9 @@ import os
 def main():
     stage = "both"
     Datasets = ["sift", "spacev"]
-    datasize = 1
-    Sub_graph = [2, 4, 8]
+    datasize = 100
+    Sub_graph = [4, 8]
+    # Sub_graph = [1]
 
     for dataset in Datasets:
         for sg in Sub_graph:

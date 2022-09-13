@@ -84,7 +84,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
         printf("Error, unknow dataset: %s \n", dataname.c_str()); exit(1);
     }
 #if FROMBILLION
-    MapString["path_data"] = path_dataset + "base1b";
+    MapString["path_data"] = "../dataset/billion/" + dataname + "/base";
 #endif
 
     if (MapParameter["k"] > MapParameter["gt_maxnum"]){
@@ -117,12 +117,23 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
                     printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
                     exit(1);
             }
+        } else if (data_size_millions == 100) {
+            switch (MapParameter["num_subg"]) {
+                // case 2: MapParameter["efs"] = 0; break;
+                case 4: MapParameter["efs"] = 42; break;
+                case 8: MapParameter["efs"] = 34; break;
+                default:
+                    printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
+                    exit(1);
+            }
         }
 #else
         if (data_size_millions == 1)
             MapParameter["efs"] = 55;
         else if (data_size_millions == 10)
             MapParameter["efs"] = 60;
+        else if (data_size_millions == 100)
+            MapParameter["efs"] = 75;
 #endif
     } else if (dataname == "spacev") {
         // R@10=0.90
@@ -145,11 +156,22 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
                     printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
                     exit(1);
             }
+        } else if (data_size_millions == 100) {
+            switch (MapParameter["num_subg"]) {
+                // case 2: MapParameter["efs"] = 0; break;
+                case 4: MapParameter["efs"] = 36; break;
+                case 8: MapParameter["efs"] = 34; break;
+                default:
+                    printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
+                    exit(1);
+            }
         }
 #else
         if (data_size_millions == 1)
             MapParameter["efs"] = 70;
         else if (data_size_millions == 10)
+            MapParameter["efs"] = 50;
+        else if (data_size_millions == 100)
             MapParameter["efs"] = 50;
 #endif
     } else {

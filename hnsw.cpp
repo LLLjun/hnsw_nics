@@ -147,7 +147,7 @@ test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
 #if QTRACE || HOTDATA
     efs.push_back(MapParameter["efs"]);
 #else
-    for (int i = 10; i <= 40; i += 2)
+    for (int i = 20; i <= 60; i += 2)
         efs.push_back(i);
 #endif
 
@@ -296,8 +296,8 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
 
         printf("Load base vectors: \n");
         ifstream base_reader(path_data.c_str());
-        uint64_t head_offest = 2 * sizeof(uint32_t);
-        int vec_offest = vecdim * sizeof(DTset);
+        size_t head_offest = 2 * sizeof(uint32_t);
+        size_t vec_offest = vecdim * sizeof(DTset);
 
         uint32_t nums_r, dims_r;
         base_reader.read((char *) &nums_r, sizeof(uint32_t));
@@ -386,8 +386,8 @@ void build_multi_index(map<string, size_t> &MapParameter, map<string, string> &M
 
         printf("Load base vectors: \n");
         ifstream base_reader(path_data.c_str());
-        uint64_t head_offest = 2 * sizeof(uint32_t);
-        int vec_offest = vecdim * sizeof(DTset);
+        size_t head_offest = 2 * sizeof(uint32_t);
+        size_t vec_offest = vecdim * sizeof(DTset);
 
         uint32_t nums_r, dims_r;
         base_reader.read((char *) &nums_r, sizeof(uint32_t));

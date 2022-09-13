@@ -1,5 +1,5 @@
 #define PLATG       true
-#define FROMBILLION false
+#define FROMBILLION true
 
 // rank-level的映射
 #define RANKMAP     false
@@ -20,7 +20,7 @@
 
 #define PROEFS      true
 
-#define HOTDATA     true
+#define HOTDATA     false
 
 #if HOTDATA
 #define HD_TRAIN    true
@@ -31,6 +31,6 @@
 #define QTRACE      false
 
 #if PLATG
-#define SUBG        true
+#define SUBG        false
 #define SG_METIS    false
 #endif
