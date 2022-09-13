@@ -18,18 +18,18 @@ inline bool exists_test(const std::string &name) {
 }
 
 template<typename DTres, typename DTset>
-void search_index(map<string, size_t> &index_parameter, map<string, string> &index_string,
+void search_index(map<string, size_t> &MapParameter, map<string, string> &MapString,
                     SpaceInterface<DTres, DTset> *l2space, bool isTrans){
     //
-    size_t vecsize = index_parameter["vecsize"];
-    size_t vecdim = index_parameter["vecdim"];
-    size_t qsize = index_parameter["qsize"];
-    size_t gt_maxnum = index_parameter["gt_maxnum"];
+    size_t vecsize = MapParameter["vecsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t qsize = MapParameter["qsize"];
+    size_t gt_maxnum = MapParameter["gt_maxnum"];
     size_t k = gt_maxnum;
 
-    string path_data = index_string["path_data"];
-    string path_q = index_string["path_q"];
-    string path_gt = index_string["path_gt"] + "_test";
+    string path_data = MapString["path_data"];
+    string path_q = MapString["path_q"];
+    string path_gt = MapString["path_gt"] + "_test";
 
     cout << "path_data: " << path_data.c_str() << "\n"
          << "path_q: " << path_q.c_str() << "\n"
@@ -65,7 +65,7 @@ void search_index(map<string, size_t> &index_parameter, map<string, string> &ind
 #if TESTGT
     {
         unsigned *massQA = new unsigned[qsize * gt_maxnum];
-        LoadBinToArray<unsigned>(index_string["path_gt"], massQA, qsize, gt_maxnum);
+        LoadBinToArray<unsigned>(MapString["path_gt"], massQA, qsize, gt_maxnum);
 
         unsigned *massQA_test = new unsigned[qsize * gt_maxnum];
         LoadBinToArray<unsigned>(path_gt, massQA_test, qsize, gt_maxnum);
@@ -101,6 +101,7 @@ void search_index(map<string, size_t> &index_parameter, map<string, string> &ind
     delete[] massB;
 
     unsigned *massQA = new unsigned[qsize * gt_maxnum];
+    DTres *massQA_dist = new DTres[qsize * gt_maxnum];
     DTset *massQ = new DTset[qsize * vecdim];
 
     cout << "Loading queries:\n";
@@ -111,11 +112,12 @@ void search_index(map<string, size_t> &index_parameter, map<string, string> &ind
     int ti = 0;
     int qsize_aligned = qsize / 10;
 #pragma omp parallel for
-    for (size_t i = 0; i < qsize; i++){
+    for (int i = 0; i < qsize; i++){
         std::priority_queue<std::pair<DTres, labeltype>> rs = brute_alg->searchKnn(massQ + i * vecdim, k);
-        size_t kk = k;
+        int kk = k;
         while (!rs.empty()){
             massQA[i * gt_maxnum + kk - 1] = (unsigned) rs.top().second;
+            massQA_dist[i * gt_maxnum + kk - 1] = rs.top().first;
             rs.pop();
             kk--;
         }
@@ -134,38 +136,39 @@ void search_index(map<string, size_t> &index_parameter, map<string, string> &ind
     }
 
     cout << "Writing GT:\n";
-    WriteBinToArray<unsigned>(path_gt, massQA, qsize, gt_maxnum);
+    WriteGroundTruth<unsigned, DTres>(path_gt, massQA, massQA_dist, qsize, gt_maxnum);
     printf("Write GT to %s done \n", path_gt.c_str());
 
     delete[] massQ;
     delete[] massQA;
+    delete[] massQA_dist;
 }
 
 // 修改 base vector 的数量（可选），以及生成真实值
 void hnsw_impl(const string &using_dataset, size_t sizeVectorM, string isTrans){
 
-	size_t subset_size_milllions = sizeVectorM;
-    size_t vecsize = subset_size_milllions * 1000000;
+	size_t data_size_millions = sizeVectorM;
+    size_t vecsize = data_size_millions * 1000000;
 
-    std::map<string, size_t> index_parameter;
-    index_parameter["subset_size_milllions"] = subset_size_milllions;
-    index_parameter["vecsize"] = vecsize;
+    std::map<string, size_t> MapParameter;
+    MapParameter["data_size_millions"] = data_size_millions;
+    MapParameter["vecsize"] = vecsize;
 
-    std::map<string, string> index_string;
+    std::map<string, string> MapString;
 
-    CheckDataset(using_dataset, index_parameter, index_string);
+    CheckDataset(using_dataset, MapParameter, MapString);
 
-    if (index_string["format"] == "Float") {
-        L2Space l2space(index_parameter["vecdim"]);
-        search_index<float, float>(index_parameter, index_string, &l2space, (isTrans == "trans"));
-    } else if (index_string["format"] == "Uint8") {
-        L2SpaceI<int, uint8_t> l2space(index_parameter["vecdim"]);
-        search_index<int, uint8_t>(index_parameter, index_string, &l2space, (isTrans == "trans"));
-    } else if (index_string["format"] == "Int8") {
-        L2SpaceI<int, int8_t> l2space(index_parameter["vecdim"]);
-        search_index<int, int8_t>(index_parameter, index_string, &l2space, (isTrans == "trans"));
+    if (MapString["format"] == "Float") {
+        L2Space l2space(MapParameter["vecdim"]);
+        search_index<float, float>(MapParameter, MapString, &l2space, (isTrans == "trans"));
+    } else if (MapString["format"] == "Uint8") {
+        L2SpaceI<int, uint8_t> l2space(MapParameter["vecdim"]);
+        search_index<int, uint8_t>(MapParameter, MapString, &l2space, (isTrans == "trans"));
+    } else if (MapString["format"] == "Int8") {
+        L2SpaceI<int, int8_t> l2space(MapParameter["vecdim"]);
+        search_index<int, int8_t>(MapParameter, MapString, &l2space, (isTrans == "trans"));
     } else {
-        printf("Error, unsupport format: %s \n", index_string["format"].c_str()); exit(1);
+        printf("Error, unsupport format: %s \n", MapString["format"].c_str()); exit(1);
     }
 
     return;

@@ -3,74 +3,69 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <map>
+#include "config.h"
 
 using namespace std;
 
-void CheckDataset(const string &dataname, map<string, size_t> &index_parameter, map<string, string> &index_string){
+void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map<string, string> &MapString){
 
-    size_t subset_size_milllions = index_parameter["subset_size_milllions"];
+    size_t data_size_millions = MapParameter["data_size_millions"];
     string path_dataset = "../dataset/" + dataname + "/";
 
     if (dataname == "sift"){
-        index_parameter["qsize"] = 10000;
-        index_parameter["vecdim"] = 128;
-        index_parameter["gt_maxnum"] = 100;
-        index_string["format"] = "Uint8";
-        index_string["path_q"] = path_dataset + "query.public.10K.u8bin";
-        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.u8bin";
-        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+        MapParameter["qsize"] = 10000;
+        MapParameter["vecdim"] = 128;
+        MapParameter["gt_maxnum"] = 100;
+        MapString["format"] = "Uint8";
+        MapString["path_q"] = path_dataset + "query.public.10K.u8bin";
+        MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.u8bin";
+        MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin_brute";
     } else if (dataname == "gist"){
-        if (subset_size_milllions > 1){
+        if (data_size_millions > 1){
             printf("error: gist size set error.\n");
             exit(1);
         }
-        index_parameter["qsize"] = 1000;
-        index_parameter["vecdim"] = 960;
-        index_parameter["gt_maxnum"] = 100;
-        index_string["format"] = "Float";
-        index_string["path_q"] = path_dataset + "gist_query.fvecs";
-        index_string["path_data"] = path_dataset + "gist_base.fvecs";
-        index_string["path_gt"] = path_dataset + "gist_groundtruth.ivecs";
+        MapParameter["qsize"] = 1000;
+        MapParameter["vecdim"] = 960;
+        MapParameter["gt_maxnum"] = 100;
+        MapString["format"] = "Float";
+        MapString["path_q"] = path_dataset + "gist_query.fvecs";
+        MapString["path_data"] = path_dataset + "gist_base.fvecs";
+        MapString["path_gt"] = path_dataset + "gist_groundtruth.ivecs";
     } else if (dataname == "deep"){
-        if (subset_size_milllions > 100){
-            printf("error: deep size set error.\n");
-            exit(1);
-        }
-        index_parameter["qsize"] = 10000;
-        index_parameter["vecdim"] = 96;
-        index_parameter["gt_maxnum"] = 100;
-        index_string["format"] = "Float";
-        index_string["path_q"] = path_dataset + "query.public.10K.fbin";
-        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
-        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+        MapParameter["qsize"] = 10000;
+        MapParameter["vecdim"] = 96;
+        MapParameter["gt_maxnum"] = 100;
+        MapString["format"] = "Float";
+        MapString["path_q"] = path_dataset + "query.public.10K.fbin";
+        MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.fbin";
+        MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin";
     } else if (dataname == "turing"){
-        if (subset_size_milllions > 100){
-            printf("error: turing size set error.\n");
-            exit(1);
-        }
-        index_parameter["qsize"] = 100000;
-        index_parameter["vecdim"] = 100;
-        index_parameter["gt_maxnum"] = 100;
-        index_string["format"] = "Float";
-        index_string["path_q"] = path_dataset + "query100K.fbin";
-        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.fbin";
-        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+        MapParameter["qsize"] = 100000;
+        MapParameter["vecdim"] = 100;
+        MapParameter["gt_maxnum"] = 100;
+        MapString["format"] = "Float";
+        MapString["path_q"] = path_dataset + "query100K.fbin";
+        MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.fbin";
+        MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin";
     } else if (dataname == "spacev"){
-        if (subset_size_milllions > 100){
-            printf("error: spacev size set error.\n");
-            exit(1);
-        }
-        index_parameter["qsize"] = 29316;
-        index_parameter["vecdim"] = 100;
-        index_parameter["gt_maxnum"] = 100;
-        index_string["format"] = "Int8";
-        index_string["path_q"] = path_dataset + "query.i8bin";
-        index_string["path_data"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/base." + to_string(subset_size_milllions) + "m.i8bin";
-        index_string["path_gt"] = path_dataset + dataname + to_string(subset_size_milllions) + "m/groundtruth." + to_string(subset_size_milllions) + "m.bin";
+        MapParameter["qsize"] = 29316;
+        MapParameter["vecdim"] = 100;
+        MapParameter["gt_maxnum"] = 100;
+        MapString["format"] = "Int8";
+        MapString["path_q"] = path_dataset + "query.i8bin";
+        MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.i8bin";
+        MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin";
     } else{
         printf("Error, unknow dataset: %s \n", dataname.c_str());
         exit(1);
     }
+#if FROMBILLION
+    MapParameter["gt_maxnum"] = 10;
+    MapString["path_data"] = "../dataset/billion/" + dataname + "/base";
+    MapString["path_q"] = "../dataset/billion/" + dataname + "/query";
+    MapString["path_gt"] = "../dataset/billion/" + dataname + "/groundtruth.bin_brute";
+#endif
 }
 
 
@@ -136,6 +131,37 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
     }
     file_writer.close();
     printf("Write %u * %u data to %s done.\n", nums, dims, file_path.c_str());
+}
+
+template<typename DTid, typename DTdist>
+void WriteGroundTruth(std::string& file_path, const DTid *data_id, const DTdist *data_dist, uint32_t nums, uint32_t cols){
+    std::ofstream file_writer(file_path.c_str(), ios::binary);
+    file_writer.write((char *) &nums, sizeof(uint32_t));
+    file_writer.write((char *) &cols, sizeof(uint32_t));
+
+    uint32_t writesize = cols * sizeof(DTid);
+    for (int i = 0; i < nums; i++) {
+        file_writer.write((char *) (data_id + cols * i), writesize);
+        if (file_writer.fail() || file_writer.bad()) {
+            printf("Write Error\n"); exit(1);
+        }
+    }
+
+    float* data_dist_float = new float[nums * cols];
+    for (int i = 0; i < nums; i++) {
+        for (int j = 0; j < cols; j++)
+            data_dist_float[i * cols + j] = 1.0 * data_dist[i * cols + j];
+    }
+    writesize = cols * sizeof(float);
+    for (int i = 0; i < nums; i++) {
+        file_writer.write((char *) (data_dist_float + cols * i), writesize);
+        if (file_writer.fail() || file_writer.bad()) {
+            printf("Write Error\n"); exit(1);
+        }
+    }
+    file_writer.close();
+    delete[] data_dist_float;
+    printf("Write %u * %u data to %s done.\n", nums, cols, file_path.c_str());
 }
 
 template<typename data_T>

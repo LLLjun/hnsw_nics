@@ -10,5 +10,9 @@ var/
 experiment/
 graphindex/
 output/
-dataset
+dataset/
 .vscode/
+.cache/
+dataset
+graphindex
+output

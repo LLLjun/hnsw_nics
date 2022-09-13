@@ -1,11 +1,12 @@
 import os
 
 def main():
-    dataset = "spacev"
-    datasize = 1
+    Datasets = ["sift", "spacev"]
+    datasize = 1000
     trans = "no_trans"
 
-    command = "./main " + dataset + " " + str(datasize) + " " + trans
-    os.system("cd build && make main && " + command)
+    for dataset in Datasets:
+        command = "./main " + dataset + " " + str(datasize) + " " + str(trans)
+        os.system("cd build && make main && " + command)
 
 main()
