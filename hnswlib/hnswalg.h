@@ -1305,16 +1305,25 @@ namespace hnswlib {
             vector<vector<EdgeWeight>> EdgeTable;
             size_t num_edge_undirect, num_edge_direct;
             size_t num_total = generateEdgelist(EdgeTable, num_edge_undirect, num_edge_direct);
-            int num_row = cur_element_count;
+            size_t num_row = cur_element_count;
 
             // write
             ofstream file_output(path_output.c_str());
+#if UNWEIGHT
+            file_output << num_row << " " << num_total << "\n";
+            for (vector<EdgeWeight>& EdgeList: EdgeTable) {
+                for (EdgeWeight& ew: EdgeList)
+                    file_output << (ew.id + 1) << " ";
+                file_output << "\n";
+            }
+#else
             file_output << num_row << " " << num_total << " 001\n";
             for (vector<EdgeWeight>& EdgeList: EdgeTable) {
                 for (EdgeWeight& ew: EdgeList)
                     file_output << (ew.id + 1) << " " << ew.weight << " ";
                 file_output << "\n";
             }
+#endif
             file_output.close();
 
             printf("write to %s done\n", path_output.c_str());
@@ -1359,15 +1368,15 @@ namespace hnswlib {
                             (num_edge_undirect + num_edge_direct),
                             100.0 * total_remote_random / (num_edge_undirect + num_edge_direct));
 
-            // MENIS
-            size_t total_remote_menis = getRemoteEdge(EdgeTable, IdToPartition);
+            // METIS
+            size_t total_remote_metis = getRemoteEdge(EdgeTable, IdToPartition);
             size_t total_expand_point = getExpandPoint(IdToPartition);
             // printf
-            printf("Edge Test [MENIS]:\n");
+            printf("Edge Test [METIS]:\n");
             printf("Total Edge\t External Edge\t Expand Point\n");
             printf("%lu\t %.1f%%\t %.2f\n",
                             (num_edge_undirect + num_edge_direct),
-                            100.0 * total_remote_menis / (num_edge_undirect + num_edge_direct),
+                            100.0 * total_remote_metis / (num_edge_undirect + num_edge_direct),
                             1.0 * total_expand_point / max_elements_);
             printf("\n");
         }
@@ -1375,7 +1384,7 @@ namespace hnswlib {
         // 考虑双向边的权值为2
         size_t generateEdgelist(vector<vector<EdgeWeight>>& EdgeTable,
                                 size_t& num_edge_undirect, size_t& num_edge_direct) {
-            int num_row = cur_element_count;
+            size_t num_row = cur_element_count;
             size_t num_total = 0;
             // vector<vector<EdgeWeight>> EdgeTable;
             EdgeTable.resize(num_row);

@@ -1,5 +1,5 @@
 #define PLATG       true
-#define FROMBILLION false
+#define FROMBILLION true
 
 // rank-level的映射
 #define RANKMAP     false
@@ -22,14 +22,7 @@
 
 #define PARTGRAPH   true
 #if PARTGRAPH
-#define PGMODE      PGTEST
-
-#define PGEDGE      0
-#define PGGRAPH     1
-#define PGTEST      2
-#define PGTRANSFER  3
-
-// #define EFS_PG      60
+#define UNWEIGHT    true
 #endif
 
-#define QTRACE      true
+#define QTRACE      false

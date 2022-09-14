@@ -152,8 +152,8 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
 
         printf("Load base vectors: \n");
         ifstream base_reader(path_data.c_str());
-        uint64_t head_offest = 2 * sizeof(uint32_t);
-        int vec_offest = vecdim * sizeof(DTset);
+        size_t head_offest = 2 * sizeof(uint32_t);
+        size_t vec_offest = vecdim * sizeof(DTset);
 
         uint32_t nums_r, dims_r;
         base_reader.read((char *) &nums_r, sizeof(uint32_t));
@@ -252,25 +252,36 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
-#if PARTGRAPH && PGMODE == PGTEST
+#if PARTGRAPH
         // 生成EdgeList
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
+#if UNWEIGHT
+        string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m_unweight.txt";
+#else
         string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m.txt";
-        if (!exists_test(path_txt))
+#endif
+        printf("[Generate EdgeList]: %s\n", path_txt.c_str());
+        if (!exists_test(path_txt)) {
             appr_alg->writeNeighborToEdgelist(path_txt);
+            printf("[Generate EdgeList]: Done\n");
+        } else
+            printf("[Generate EdgeList]: Existed\n");
 
         string metis_file = path_txt + ".part." + to_string(MapParameter["num_pg"]);
+        printf("[METIS clustering]: %s\n", metis_file.c_str());
         if (!exists_test(metis_file)) {
-            // MENIS clustering
+            // METIS clustering
             string metis_program = "~/self_data/METIS/build/programs/gpmetis";
-            string command_metis = metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
+            string command_metis = "sudo " + metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
             system(command_metis.c_str());
-        }
+            printf("[METIS clustering]: Done\n");
+        } else
+            printf("[METIS clustering]: Existed\n");
 
         appr_alg->Partgraph = new PartGraph(MapString["dataname"], vecsize, qsize, MapParameter["num_pg"], MapParameter["efs"]);
 
-        // evaluate MENIS
+        // evaluate METIS
         // appr_alg->evalMETIS(MapParameter["num_pg"]);
 
         // getCenter
