@@ -304,7 +304,7 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
             build_start_id = MapParameter["start_point"];
         else {
             ifstream base_reader(path_data.c_str());
-            int vec_offest = vecdim * sizeof(DTset);
+            size_t vec_offest = vecdim * sizeof(DTset);
             uint32_t nums_r, dims_r;
             base_reader.read((char *) &nums_r, sizeof(uint32_t));
             base_reader.read((char *) &dims_r, sizeof(uint32_t));
@@ -398,8 +398,8 @@ void build_multi_index(map<string, size_t> &MapParameter, map<string, string> &M
 
         printf("Load base vectors: \n");
         ifstream base_reader(path_data.c_str());
-        uint64_t head_offest = 2 * sizeof(uint32_t);
-        int vec_offest = vecdim * sizeof(DTset);
+        size_t head_offest = 2 * sizeof(uint32_t);
+        size_t vec_offest = vecdim * sizeof(DTset);
 
         uint32_t nums_r, dims_r;
         base_reader.read((char *) &nums_r, sizeof(uint32_t));

@@ -183,8 +183,8 @@ namespace hnswlib {
         void featureToIndex(string path_data, size_t vecdim, labeltype* labelList) {
             printf("Load base vectors: \n");
             ifstream base_reader(path_data.c_str());
-            uint64_t head_offest = 2 * sizeof(uint32_t);
-            int vec_offest = vecdim * sizeof(set_t);
+            size_t head_offest = 2 * sizeof(uint32_t);
+            size_t vec_offest = vecdim * sizeof(set_t);
 
             uint32_t nums_r, dims_r;
             base_reader.read((char *) &nums_r, sizeof(uint32_t));
