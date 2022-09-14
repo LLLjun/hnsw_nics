@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <numeric>
+#include <unordered_set>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -229,6 +230,8 @@ namespace hnswlib {
             query_size = qsize;
             num_partgraph = n_pg;
             num_step = efs;
+
+            initCommuSearch();
         }
 
         vector<int> getPGCenterList() {
@@ -240,17 +243,17 @@ namespace hnswlib {
         }
 
         template<typename data_T>
-        void computSubgCenter(const data_T *data_m, uint32_t dims, int part_size) {
-            SubCenter.resize(part_size, 0);
-            FreqCenter.resize(part_size, 0);
-            std::vector<int> IdToPartition = getIdToPartation(part_size);
-            std::vector<std::vector<tableint>> PartationToId(part_size);
+        void computSubgCenter(const data_T *data_m, size_t dims) {
+            SubCenter.resize(num_partgraph, 0);
+            FreqCenter.resize(num_partgraph, 0);
+
+            std::vector<std::vector<tableint>> PartationToId(num_partgraph);
             for (int id = 0; id < base_size; id++) {
-                int part = IdToPartition[id];
+                int part = IdToPartitionMap[id];
                 PartationToId[part].push_back(id);
             }
 
-            for (int pti = 0; pti < part_size; pti++) {
+            for (int pti = 0; pti < num_partgraph; pti++) {
                 int size = PartationToId[pti].size();
                 data_T* data_s = new data_T[size * dims]();
                 for (int i_ig = 0; i_ig < size; i_ig++) {
@@ -277,6 +280,7 @@ namespace hnswlib {
             IdToPartitionMap = getIdToPartation(num_partgraph);
             qc_spots_request.resize(num_partgraph);
             qc_nbors_request.resize(num_partgraph);
+            // qc_spots_cache.resize(num_partgraph);
         }
 
         void setCommuStep(int num) {
@@ -285,11 +289,13 @@ namespace hnswlib {
             commu_nbors_size = 0;
         }
 
+        // For per query
         void initRequestInfo() {
-            for (std::vector<tableint>& rq: qc_spots_request)
-                std::vector<tableint>().swap(rq);
-            for (std::vector<tableint>& rq: qc_nbors_request)
-                std::vector<tableint>().swap(rq);
+            for (int i = 0; i < num_partgraph; i++) {
+                std::vector<tableint>().swap(qc_spots_request[i]);
+                std::vector<tableint>().swap(qc_nbors_request[i]);
+                // qc_spots_cache[i].clear();
+            }
         }
 
         bool keepNborInLocal(tableint id) {
@@ -388,9 +394,19 @@ namespace hnswlib {
         std::vector<int> FreqCenter;
 
         std::vector<int> getIdToPartation(int part_size) {
-            std::string partitionMapFile = getFileName(part_size);
             std::vector<int> IdToPartition(base_size, part_size);
-
+#if PGRANDOM
+            std::vector<int> random_list(base_size);
+            for (int i = 0; i < base_size; i++)
+                random_list[i] = i;
+            shuffle_vector<int>(random_list);
+            int size_per_part = base_size / part_size;
+            for (int pi = 0; pi < part_size; pi++) {
+                for (int i = 0; i < size_per_part; i++)
+                    IdToPartition[random_list[pi * size_per_part + i]] = pi;
+            }
+#else
+            std::string partitionMapFile = getFileName(part_size);
             std::ifstream reader(partitionMapFile.c_str());
             if (reader) {
                 for (int i = 0; i < base_size; i++) {
@@ -411,6 +427,7 @@ namespace hnswlib {
                     printf("Error, read partition error \n"); exit(1);
                 }
             }
+#endif
             return IdToPartition;
         }
 
@@ -425,6 +442,9 @@ namespace hnswlib {
         std::vector<std::vector<tableint>> qc_spots_request;
         std::vector<std::vector<tableint>> qc_nbors_request;
 
+#if PGFETCH
+        // std::vector<std::unordered_set<tableint>> qc_spots_cache;
+#endif
     };
 #endif
 

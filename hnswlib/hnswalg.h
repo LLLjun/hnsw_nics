@@ -385,7 +385,7 @@ namespace hnswlib {
                     for (tableint candidate_id: Partgraph->concatNborsRequest()) {
                         metric_distance_computations++;
 
-                        char *currObj1 = (getDataByInternalId(candidate_id));
+                        char *currObj1 = getDataByInternalId(candidate_id);
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
                         if (top_candidates.size() < ef || lowerBound > dist) {
@@ -1605,9 +1605,10 @@ namespace hnswlib {
             tableint id;
             dist_t distance;
             bool flag;
+            bool pg_fetch;
 
             Neighbor() = default;
-            Neighbor(tableint id, dist_t distance, bool f) : id{id}, distance{distance}, flag(f) {}
+            Neighbor(tableint id, dist_t distance, bool f) : id{id}, distance{distance}, flag(f), pg_fetch(false) {}
 
             inline bool operator<(const Neighbor &other) const {
                 return distance < other.distance;
@@ -1748,6 +1749,15 @@ namespace hnswlib {
             rank_min.resize(num_ranks, std::make_pair(0, Result()));
 #endif
 
+#if PARTGRAPH
+            mem_pg_remote_gather = new Result[num_ranks * 4096]();
+            pg_remote_gather.resize(num_ranks);
+            for (int ri = 0; ri < num_ranks; ri++){
+                pg_remote_gather[ri].first = 0;
+                pg_remote_gather[ri].second = mem_pg_remote_gather + ri * 4096;
+            }
+#endif
+
 #if STAT
             stats = new QueryStats();
             clk_query = new clk_get();
@@ -1776,6 +1786,10 @@ namespace hnswlib {
         std::vector<std::pair<int, Result*>> buffer_rank_gather;
         tableint* mem_rank_alloc = nullptr;
         Result* mem_rank_gather = nullptr;
+#if PARTGRAPH
+        std::vector<std::pair<int, Result*>> pg_remote_gather;
+        Result* mem_pg_remote_gather = nullptr;
+#endif
 
 #if (OPT_SORT && OPT_VISITED)
         // 由于存在地址上的冲突（在CPU模拟上），因此需要一块额外的 buffer_alloc 用于预取neighbor
@@ -1832,7 +1846,26 @@ namespace hnswlib {
             // 实际上是只计算了中心点所在的rank，其余rank空闲。
             for (int ri = 0; ri < num_ranks; ri++){
                 if (ri == 0) {
+#if PARTGRAPH
+                    vector<int> PG_center = Partgraph->getPGCenterList();
+                    int pg_size = PG_center.size();
+                    priority_queue<pair<dist_t, int>> center_cand;
+                    for (int i = 0; i < PG_center.size(); i++) {
+                        int center = PG_center[i];
+                        dist_t dd = fstdistfunc_(info->query_data, getDataByInternalId(center), dist_func_param_);
+                        center_cand.emplace(make_pair(-dd, i));
+                    }
+
+                    int using_pg = center_cand.top().second;
+                    Partgraph->setLocalGraph(using_pg);
+                    Partgraph->addUsingCenter(using_pg);
+                    tableint curid = PG_center[using_pg];
+#if QTRACE
+                    Querytrace->addQueryLocalNode(using_pg);
+#endif
+#else
                     tableint curid = ept_rank[ri];
+#endif
                     dist_t curdist = fstdistfunc_(info->query_data, getDataByInternalId(curid), dist_func_param_);
                     visited_array[curid] = visited_array_tag;
                     // todo, true or false?
@@ -1972,6 +2005,27 @@ namespace hnswlib {
             stats->hlc_us += clk_query->getElapsedTimeus();
             stats->all_n_hops++;
 #endif
+
+#if PARTGRAPH
+            // 需要立刻取
+            int state = Partgraph->getIdState(search_point);
+            if (state != -1) {
+                // is miss?
+                if (retset[info->p_queue_min].pg_fetch == false) {
+                    for (int cur_min = info->p_queue_min; cur_min < info->cur_queue_size; cur_min++) {
+                        int cur_state = Partgraph->getIdState(retset[cur_min].id);
+                        if (retset[cur_min].flag == true && cur_state == state) {
+                            retset[cur_min].pg_fetch = true;
+                        }
+                    }
+                    Partgraph->addCommuSpotSize();
+                }
+            }
+#if QTRACE
+            Querytrace->addSearchPoint(getExternalLabel(search_point), state);
+#endif
+#endif
+
             return search_point;
         }
 
@@ -1988,15 +2042,30 @@ namespace hnswlib {
             size_t size = getListCount((linklistsizeint*) data);
             for (size_t j = 1; j <= size; j++) {
                 tableint candidate_id = *(data + j);
+#if QTRACE
+                Querytrace->addNeighborBeHash(getExternalLabel(candidate_id));
+#endif
                 // 在硬件上可以把查表和查rankLabel合在一起
                 if (!(visited_array[candidate_id] == visited_array_tag)) {
 #if (!OPT_VISITED)
                     visited_array[candidate_id] = visited_array_tag;
 #endif
+#if QTRACE
+                    Querytrace->addNeighborAfHash(getExternalLabel(candidate_id));
+#endif
+#if PARTGRAPH
+                    if (Partgraph->keepNborInLocal(candidate_id)) {
+                        vl_type rank_label = candidate_id % num_ranks;
+                        int len = rank_alloc[rank_label].first;
+                        rank_alloc[rank_label].second[len] = candidate_id;
+                        rank_alloc[rank_label].first++;
+                    }
+#else
                     vl_type rank_label = candidate_id % num_ranks;
                     int len = rank_alloc[rank_label].first;
                     rank_alloc[rank_label].second[len] = candidate_id;
                     rank_alloc[rank_label].first++;
+#endif
                 }
             }
 #if OPT_VISITED
@@ -2055,13 +2124,16 @@ namespace hnswlib {
 #endif
         }
 
-        inline void SortQueue(std::vector<std::pair<int, Result*>>& rank_gather, std::vector<Neighbor>& retset) {
+        inline void SortQueue(std::vector<std::pair<int, Result*>>& rank_gather, std::vector<Neighbor>& retset, bool isPgAdd=false) {
 #if STAT
             clk_query->reset();
 #endif
 
 #if (!OPT_SORT)
-            retset[info->p_queue_min].flag = false;
+#if PARTGRAPH
+            if (!isPgAdd)
+#endif
+                retset[info->p_queue_min].flag = false;
 #endif
             int nk = info->cur_queue_size;
             for (int ri = 0; ri < num_ranks; ri++){
@@ -2172,6 +2244,9 @@ namespace hnswlib {
             // Initialize priority queue
             std::vector<Neighbor> retset(info->l_search + 1);
             info->Reset(query_data);
+#if PARTGRAPH
+            Partgraph->initRequestInfo();
+#endif
 
             InitSearch(retset, visited_array, visited_array_tag, buffer_rank_alloc, buffer_rank_gather);
 
@@ -2234,6 +2309,37 @@ namespace hnswlib {
                 DistCalculate(buffer_rank_alloc, buffer_rank_gather);
 
                 SortQueue(buffer_rank_gather, retset);
+
+#if PARTGRAPH
+                int stat = Partgraph->statCommuByStep(num_iter);
+                if ((stat != -1) || (num_iter + 1 == max_iter)) {
+#if QTRACE
+                    vector<vector<tableint>> request =  Partgraph->getNborsRequest();
+                    Querytrace->addRequest(request);
+#endif
+                    // std::vector<std::pair<int, Result*>> pg_remote_gather(1);
+                    Result* pg_res = pg_remote_gather[0].second;
+                    // Local -> Remote: neighbor request
+                    // Remote -> Local: computation result
+                    int cur_num = 0;
+                    for (tableint candidate_id: Partgraph->concatNborsRequest()) {
+                        // metric_distance_computations++;
+                        stats->n_DC_total++;
+
+                        char *currObj1 = getDataByInternalId(candidate_id);
+                        dist_t dist = fstdistfunc_(info->query_data, currObj1, dist_func_param_);
+                        pg_res[cur_num].id = candidate_id;
+                        pg_res[cur_num].distance = dist;
+                        cur_num++;
+                    }
+                    pg_remote_gather[0].first = cur_num;
+
+                    Partgraph->clearRequest();
+
+                    SortQueue(pg_remote_gather, retset, true);
+                    
+                } // end of step
+#endif
 
 #endif
 

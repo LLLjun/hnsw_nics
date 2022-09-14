@@ -43,7 +43,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg,
 
     cout << "efs\t" << "interval\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
-        cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
+        // cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
         cout << "NDC_max\t" << "NDC_total\t" << "n_hops\t";
 #else
     cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
@@ -107,10 +107,10 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg,
 
         cout << ef << "\t" << sync_i << "\t" << recall << "\t" << time_us_per_query << "\t";
 #if (RANKMAP && STAT)
-            cout << appr_alg.stats->all_rank_us / qsize << "\t";
-            cout << appr_alg.stats->all_sort_us / qsize << "\t";
-            cout << appr_alg.stats->all_hlc_us / qsize << "\t";
-            cout << appr_alg.stats->all_visited_us / qsize << "\t";
+            // cout << appr_alg.stats->all_rank_us / qsize << "\t";
+            // cout << appr_alg.stats->all_sort_us / qsize << "\t";
+            // cout << appr_alg.stats->all_hlc_us / qsize << "\t";
+            // cout << appr_alg.stats->all_visited_us / qsize << "\t";
 
             cout << (1.0 * appr_alg.stats->all_n_DC_max / qsize) << "\t";
             cout << (1.0 * appr_alg.stats->all_n_DC_total / qsize) << "\t";
@@ -287,11 +287,8 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         // getCenter
         DTset *massB = new DTset[vecsize * vecdim]();
         LoadBinToArray<DTset>(MapString["path_data"], massB, vecsize, vecdim);
-        appr_alg->Partgraph->computSubgCenter(massB, vecdim, MapParameter["num_pg"]);
+        appr_alg->Partgraph->computSubgCenter(massB, vecdim);
         delete[] massB;
-
-        // transfer search
-        appr_alg->Partgraph->initCommuSearch();
 #endif
 #if QTRACE
         int nbor_size = appr_alg->maxM0_;
