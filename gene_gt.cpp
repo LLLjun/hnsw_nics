@@ -29,7 +29,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
     string path_data = MapString["path_data"];
     string path_q = MapString["path_q"];
-    string path_gt = MapString["path_gt"] + "_test";
+    string path_gt = MapString["path_gt"] + "_genegt";
 
     cout << "path_data: " << path_data.c_str() << "\n"
          << "path_q: " << path_q.c_str() << "\n"

@@ -64,7 +64,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
     MapParameter["gt_maxnum"] = 10;
     MapString["path_data"] = "../dataset/billion/" + dataname + "/base";
     MapString["path_q"] = "../dataset/billion/" + dataname + "/query";
-    MapString["path_gt"] = "../dataset/billion/" + dataname + "/groundtruth.bin_brute";
+    MapString["path_gt"] = "../dataset/billion/" + dataname + "/groundtruth.bin";
 #endif
 }
 
@@ -84,8 +84,8 @@ void LoadBinToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint3
     }
 
     uint32_t readsize = dims * sizeof(data_T);
-    for (int i = 0; i < nums; i++) {
-        file_reader.read((char *) (data_m + dims * i), readsize);
+    for (size_t ni = 0; ni < nums; ni++) {
+        file_reader.read((char *) (data_m + dims * ni), readsize);
         if (file_reader.gcount() != readsize) {
             printf("Read Error\n"); exit(1);
         }
@@ -103,8 +103,8 @@ void LoadBinToArrayIghead(std::string& file_path, data_T *data_m, uint32_t nums,
     file_reader.read((char *) &dims_r, sizeof(uint32_t));
 
     uint32_t readsize = dims * sizeof(data_T);
-    for (int i = 0; i < nums; i++) {
-        file_reader.read((char *) (data_m + dims * i), readsize);
+    for (size_t ni = 0; ni < nums; ni++) {
+        file_reader.read((char *) (data_m + dims * ni), readsize);
         if (file_reader.gcount() != readsize) {
             printf("Read Error\n"); exit(1);
         }
@@ -123,8 +123,8 @@ void WriteBinToArray(std::string& file_path, const data_T *data_m, uint32_t nums
     }
 
     uint32_t writesize = dims * sizeof(data_T);
-    for (int i = 0; i < nums; i++) {
-        file_writer.write((char *) (data_m + dims * i), writesize);
+    for (size_t ni = 0; ni < nums; ni++) {
+        file_writer.write((char *) (data_m + dims * ni), writesize);
         if (file_writer.fail() || file_writer.bad()) {
             printf("Write Error\n"); exit(1);
         }
@@ -140,21 +140,21 @@ void WriteGroundTruth(std::string& file_path, const DTid *data_id, const DTdist 
     file_writer.write((char *) &cols, sizeof(uint32_t));
 
     uint32_t writesize = cols * sizeof(DTid);
-    for (int i = 0; i < nums; i++) {
-        file_writer.write((char *) (data_id + cols * i), writesize);
+    for (size_t ni = 0; ni < nums; ni++) {
+        file_writer.write((char *) (data_id + cols * ni), writesize);
         if (file_writer.fail() || file_writer.bad()) {
             printf("Write Error\n"); exit(1);
         }
     }
 
     float* data_dist_float = new float[nums * cols];
-    for (int i = 0; i < nums; i++) {
+    for (size_t ni = 0; ni < nums; ni++) {
         for (int j = 0; j < cols; j++)
-            data_dist_float[i * cols + j] = 1.0 * data_dist[i * cols + j];
+            data_dist_float[ni * cols + j] = 1.0 * data_dist[ni * cols + j];
     }
     writesize = cols * sizeof(float);
-    for (int i = 0; i < nums; i++) {
-        file_writer.write((char *) (data_dist_float + cols * i), writesize);
+    for (size_t ni = 0; ni < nums; ni++) {
+        file_writer.write((char *) (data_dist_float + cols * ni), writesize);
         if (file_writer.fail() || file_writer.bad()) {
             printf("Write Error\n"); exit(1);
         }
@@ -167,14 +167,14 @@ void WriteGroundTruth(std::string& file_path, const DTid *data_id, const DTdist 
 template<typename data_T>
 void LoadVecsToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint32_t dims){
     std::ifstream file_reader(file_path.c_str(), ios::binary);
-    for (size_t i = 0; i < nums; i++){
+    for (size_t ni = 0; ni < nums; ni++){
         uint32_t dims_r;
         file_reader.read((char *) &dims_r, sizeof(uint32_t));
         if (dims != dims_r){
             printf("Error, file size is error, dims_r: %u\n", dims_r);
             exit(1);
         }
-        file_reader.read((char *) (data_m + i * dims), dims * sizeof(data_T));
+        file_reader.read((char *) (data_m + ni * dims), dims * sizeof(data_T));
     }
     file_reader.close();
     printf("Load %u * %u Data from %s done.\n", nums, dims, file_path.c_str());
@@ -182,9 +182,9 @@ void LoadVecsToArray(std::string& file_path, data_T *data_m, uint32_t nums, uint
 
 template<typename data_T>
 void TransIntToFloat(float *dest, data_T *src, size_t &nums, size_t &dims){
-    for (size_t i = 0; i < nums; i++){
+    for (size_t ni = 0; ni < nums; ni++){
         for (size_t j = 0; j < dims; j++){
-            dest[i * dims + j] = (float) src[i * dims + j];
+            dest[ni * dims + j] = (float) src[ni * dims + j];
         }
     }
 }
@@ -194,9 +194,9 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     cout << "Comput the center point: \n";
     float *sum_m = new float[dims]();
     float *avg_m = new float[dims]();
-    for (size_t i = 0; i < nums; i++){
+    for (size_t ni = 0; ni < nums; ni++){
         for (size_t j = 0; j < dims; j++){
-            sum_m[j] += data_m[i * dims + j];
+            sum_m[j] += data_m[ni * dims + j];
         }
     }
     for (size_t j = 0; j < dims; j++){
@@ -206,16 +206,16 @@ uint32_t compArrayCenter(const data_T *data_m, uint32_t nums, uint32_t dims){
     float cur_max = std::numeric_limits<float>::max();
     uint32_t center_pt_id = 0;
 // #pragma omp parallel for
-    for (size_t i = 0; i < nums; i++){
+    for (size_t ni = 0; ni < nums; ni++){
         float tmp_sum = 0;
         for (size_t j = 0; j < dims; j++){
-            tmp_sum += powf((data_m[i * dims + j] - avg_m[j]), 2);
+            tmp_sum += powf((data_m[ni * dims + j] - avg_m[j]), 2);
         }
 // #pragma omp cratical
         {
             if (tmp_sum < cur_max){
                 cur_max = tmp_sum;
-                center_pt_id = i;
+                center_pt_id = ni;
             }
         }
     }
