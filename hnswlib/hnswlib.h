@@ -251,7 +251,7 @@ namespace hnswlib {
         // 根据分配后的mapping关系，得到对应subgraph的中心点
         // 支持no-balance 分配
         template<typename data_T>
-        void computSubgCenter(const data_T *data_m, uint32_t dims) {
+        void computSubgCenter(const data_T *data_m, size_t dims) {
             for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
                 int size = SubPointToOrigin[i_sg].size();
                 data_T* data_s = new data_T[size * dims]();

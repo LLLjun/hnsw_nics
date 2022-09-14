@@ -31,6 +31,6 @@
 #define QTRACE      false
 
 #if PLATG
-#define SUBG        false
+#define SUBG        true
 #define SG_METIS    false
 #endif
