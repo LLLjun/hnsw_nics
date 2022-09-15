@@ -119,7 +119,7 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
             }
         } else if (data_size_millions == 100) {
             switch (MapParameter["num_subg"]) {
-                // case 2: MapParameter["efs"] = 0; break;
+                case 2: MapParameter["efs"] = 54; break;
                 case 4: MapParameter["efs"] = 42; break;
                 case 8: MapParameter["efs"] = 34; break;
                 default:
@@ -128,12 +128,15 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
             }
         }
 #else
-        if (data_size_millions == 1)
-            MapParameter["efs"] = 55;
-        else if (data_size_millions == 10)
-            MapParameter["efs"] = 60;
-        else if (data_size_millions == 100)
-            MapParameter["efs"] = 75;
+        switch (data_size_millions) {
+            case 1: MapParameter["efs"] = 55; break;
+            case 10: MapParameter["efs"] = 60; break;
+            case 50: MapParameter["efs"] = 70; break;
+            case 100: MapParameter["efs"] = 75; break;
+            default:
+                printf("Error, unsupport size: %lu\n",data_size_millions);
+                exit(1);
+        }
 #endif
     } else if (dataname == "spacev") {
         // R@10=0.90
@@ -158,7 +161,7 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
             }
         } else if (data_size_millions == 100) {
             switch (MapParameter["num_subg"]) {
-                // case 2: MapParameter["efs"] = 0; break;
+                case 2: MapParameter["efs"] = 42; break;
                 case 4: MapParameter["efs"] = 36; break;
                 case 8: MapParameter["efs"] = 34; break;
                 default:
@@ -167,12 +170,15 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
             }
         }
 #else
-        if (data_size_millions == 1)
-            MapParameter["efs"] = 70;
-        else if (data_size_millions == 10)
-            MapParameter["efs"] = 50;
-        else if (data_size_millions == 100)
-            MapParameter["efs"] = 50;
+        switch (data_size_millions) {
+            case 1: MapParameter["efs"] = 70; break;
+            case 10: MapParameter["efs"] = 50; break;
+            case 50: MapParameter["efs"] = 50; break;
+            case 100: MapParameter["efs"] = 50; break;
+            default:
+                printf("Error, unsupport size: %lu\n",data_size_millions);
+                exit(1);
+        }
 #endif
     } else {
         printf("Error, unsupport dataset: %s \n", dataname.c_str()); exit(1);

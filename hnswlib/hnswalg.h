@@ -86,12 +86,16 @@ namespace hnswlib {
         ~HierarchicalNSW() {
 
             free(data_level0_memory_);
+#if !PLATG
             for (tableint i = 0; i < cur_element_count; i++) {
                 if (element_levels_[i] > 0)
                     free(linkLists_[i]);
             }
-            free(linkLists_);
-            delete visited_list_pool_;
+#endif
+            if (linkLists_ != nullptr)
+                free(linkLists_);
+            if (visited_list_pool_ != nullptr)
+                delete visited_list_pool_;
         }
 
         size_t max_elements_;
@@ -704,7 +708,7 @@ namespace hnswlib {
 
             auto pos=input.tellg();
 
-
+#if !PLATG
             /// Optional - check if index is ok:
 
             input.seekg(cur_element_count * size_data_per_element_,input.cur);
@@ -727,6 +731,7 @@ namespace hnswlib {
             input.clear();
 
             /// Optional check end
+#endif
 
             input.seekg(pos,input.beg);
 
@@ -749,7 +754,7 @@ namespace hnswlib {
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);
 
-
+#if !PLATG
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements);
             if (linkLists_ == nullptr)
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
@@ -772,7 +777,7 @@ namespace hnswlib {
                     input.read(linkLists_[i], linkListSize);
                 }
             }
-
+#endif
             has_deletions_=false;
 
             for (size_t i = 0; i < cur_element_count; i++) {

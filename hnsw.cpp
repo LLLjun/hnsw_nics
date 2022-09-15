@@ -637,12 +637,18 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapParameter["M"] = M;
     MapParameter["k"] = k;
     MapParameter["vecsize"] = vecsize;
+#if BFMETIS
+    if (data_size_millions == 50) {
+        MapParameter["M"] = 35;
+        MapParameter["efConstruction"] = MapParameter["M"] * 10;
+    }
+#endif
 
     map<string, string> MapString;
 
 #if SUBG
     string sub_index_dir = pre_index + "/" + using_dataset + to_string(data_size_millions) +
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) +
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) +
                         "_subg" + to_string(num_subgraph);
     createDir(sub_index_dir);
     MapParameter["num_subg"] = num_subgraph;
@@ -650,7 +656,7 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapString["index"] = sub_index_dir + "/0.bin";
 #else
     string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) +
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) + ".bin";
     MapString["index"] = hnsw_index;
 #endif
 #if QTRACE || HOTDATA
