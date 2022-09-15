@@ -5,8 +5,6 @@
 #include "hnswlib/hnswlib.h"
 #include <unordered_set>
 #include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
 using namespace std;
 using namespace hnswlib;
@@ -88,8 +86,13 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         string path_test = path_data + "_rewrite";
         WriteBinToArray<DTset>(path_test, massB, vecsize, vecdim);
         // exit(1);
-    } else
+    } else {
+#if FROMBILLION
+        LoadBinToArrayIghead<DTset>(path_data, massB, vecsize, vecdim);
+#else
         LoadBinToArray<DTset>(path_data, massB, vecsize, vecdim);
+#endif
+    }
 
     cout << "Building index:\n";
     BruteforceSearch<DTres, DTset>* brute_alg = new BruteforceSearch<DTres, DTset>(l2space, vecsize);
@@ -112,7 +115,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
     int ti = 0;
     int qsize_aligned = qsize / 10;
 #pragma omp parallel for
-    for (int i = 0; i < qsize; i++){
+    for (size_t i = 0; i < qsize; i++){
         std::priority_queue<std::pair<DTres, labeltype>> rs = brute_alg->searchKnn(massQ + i * vecdim, k);
         int kk = k;
         while (!rs.empty()){
@@ -122,7 +125,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
             kk--;
         }
         if (kk != 0){
-            printf("Error, expect nums: %u \n", k);
+            printf("Error, expect nums: %lu \n", k);
             exit(1);
         }
 #pragma omp critical
