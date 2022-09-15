@@ -2,7 +2,7 @@
 #define FROMBILLION false
 
 // rank-level的映射
-#define RANKMAP     true
+#define RANKMAP     false
 
 #if RANKMAP
 #define NUM_RANKS   1
@@ -24,7 +24,7 @@
 #if PARTGRAPH
 #define UNWEIGHT    false
 #define PGRANDOM    false
-#define PGFETCH     true
+#define PGFETCH     false
 #endif
 
 #define QTRACE      false

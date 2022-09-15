@@ -257,9 +257,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         string dataset = MapString["dataname"];
         int size_million = vecsize / 1000000;
 #if UNWEIGHT
-        string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m_unweight.txt";
+        string path_txt = "../output/part-graph/" + dataset + to_string(size_million) + "m_unweight.txt";
 #else
-        string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataset + to_string(size_million) + "m.txt";
+        string path_txt = "../output/part-graph/" + dataset + to_string(size_million) + "m.txt";
 #endif
         printf("[Generate EdgeList]: %s\n", path_txt.c_str());
         if (!exists_test(path_txt)) {
@@ -272,12 +272,13 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("[METIS clustering]: %s\n", metis_file.c_str());
         if (!exists_test(metis_file)) {
             // METIS clustering
-            string metis_program = "~/self_data/METIS/build/programs/gpmetis";
-            string command_metis = "sudo " + metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
+            string metis_program = "../../METIS/build/programs/gpmetis";
+            string command_metis = metis_program + " " + path_txt + " " + to_string(MapParameter["num_pg"]);
             system(command_metis.c_str());
             printf("[METIS clustering]: Done\n");
         } else
             printf("[METIS clustering]: Existed\n");
+        exit(1);
 
         appr_alg->Partgraph = new PartGraph(MapString["dataname"], vecsize, qsize, MapParameter["num_pg"], MapParameter["efs"]);
 
