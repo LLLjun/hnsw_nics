@@ -4,10 +4,12 @@
 #include "hnswlib.h"
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <queue>
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <list>
 #include <map>
@@ -754,7 +756,7 @@ namespace hnswlib {
 
             auto pos=input.tellg();
 
-
+#if !PLATG
             /// Optional - check if index is ok:
 
             input.seekg(cur_element_count * size_data_per_element_,input.cur);
@@ -777,7 +779,7 @@ namespace hnswlib {
             input.clear();
 
             /// Optional check end
-
+#endif
             input.seekg(pos,input.beg);
 
 
@@ -799,7 +801,7 @@ namespace hnswlib {
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);
 
-
+#if !PLATG
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements);
             if (linkLists_ == nullptr)
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
@@ -822,7 +824,7 @@ namespace hnswlib {
                     input.read(linkLists_[i], linkListSize);
                 }
             }
-
+#endif
             has_deletions_=false;
 
             for (size_t i = 0; i < cur_element_count; i++) {
@@ -1286,7 +1288,7 @@ namespace hnswlib {
             }
         };
 
-        bool isNeighbor(tableint id, tableint neighbor) {
+        inline bool isNeighbor(tableint id, tableint neighbor) {
             bool isneighbor = false;
             linklistsizeint *ll_cur = get_linklist0(id);
             int size = getListCount(ll_cur);
@@ -1300,24 +1302,43 @@ namespace hnswlib {
             return isneighbor;
         }
 
+        vector<tableint> getNeighborList(tableint id) {
+            linklistsizeint *ll_cur = get_linklist0(id);
+            int size = getListCount(ll_cur);
+            vector<tableint> neighbor(size);
+
+            tableint *data = (tableint *) (ll_cur + 1);
+            for (int j = 0; j < size; j++)
+                neighbor[j] = data[j];
+            return neighbor;
+        }
+
+        size_t getNeighborSizeTotal() {
+            size_t total = 0;
+            for (tableint id = 0; id < max_elements_; id++) {
+                linklistsizeint *ll_cur = get_linklist0(id);
+                int size = getListCount(ll_cur);
+                total += size;
+            }
+            return total;
+        }
 
         void writeNeighborToEdgelist(string& path_output) {
             vector<vector<EdgeWeight>> EdgeTable;
-            size_t num_edge_undirect, num_edge_direct;
-            size_t num_total = generateEdgelist(EdgeTable, num_edge_undirect, num_edge_direct);
+            size_t num_edge_total = generateEdgelist(EdgeTable);
             size_t num_row = cur_element_count;
 
             // write
             ofstream file_output(path_output.c_str());
 #if UNWEIGHT
-            file_output << num_row << " " << num_total << "\n";
+            file_output << num_row << " " << num_edge_total << "\n";
             for (vector<EdgeWeight>& EdgeList: EdgeTable) {
                 for (EdgeWeight& ew: EdgeList)
                     file_output << (ew.id + 1) << " ";
                 file_output << "\n";
             }
 #else
-            file_output << num_row << " " << num_total << " 001\n";
+            file_output << num_row << " " << num_edge_total << " 001\n";
             for (vector<EdgeWeight>& EdgeList: EdgeTable) {
                 for (EdgeWeight& ew: EdgeList)
                     file_output << (ew.id + 1) << " " << ew.weight << " ";
@@ -1351,8 +1372,7 @@ namespace hnswlib {
             }
 
             vector<vector<EdgeWeight>> EdgeTable;
-            size_t num_edge_undirect, num_edge_direct;
-            size_t _ = generateEdgelist(EdgeTable, num_edge_undirect, num_edge_direct);
+            size_t num_edge_total = generateEdgelist(EdgeTable);
             int num_row = cur_element_count;
 
             // random
@@ -1365,8 +1385,8 @@ namespace hnswlib {
             // printf
             printf("Total Edge\t External Edge\n");
             printf("%lu\t %.1f%%\n",
-                            (num_edge_undirect + num_edge_direct),
-                            100.0 * total_remote_random / (num_edge_undirect + num_edge_direct));
+                            num_edge_total,
+                            100.0 * total_remote_random / num_edge_total);
 
             // METIS
             size_t total_remote_metis = getRemoteEdge(EdgeTable, IdToPartition);
@@ -1375,45 +1395,49 @@ namespace hnswlib {
             printf("Edge Test [METIS]:\n");
             printf("Total Edge\t External Edge\t Expand Point\n");
             printf("%lu\t %.1f%%\t %.2f\n",
-                            (num_edge_undirect + num_edge_direct),
-                            100.0 * total_remote_metis / (num_edge_undirect + num_edge_direct),
+                            num_edge_total,
+                            100.0 * total_remote_metis / num_edge_total,
                             1.0 * total_expand_point / max_elements_);
             printf("\n");
         }
 
         // 考虑双向边的权值为2
-        size_t generateEdgelist(vector<vector<EdgeWeight>>& EdgeTable,
-                                size_t& num_edge_undirect, size_t& num_edge_direct) {
+        size_t generateEdgelist(vector<vector<EdgeWeight>>& EdgeTable) {
             size_t num_row = cur_element_count;
-            size_t num_total = 0;
-            // vector<vector<EdgeWeight>> EdgeTable;
+            size_t num_edge_total = 0;
             EdgeTable.resize(num_row);
-            for (vector<EdgeWeight>& EdgeList: EdgeTable)
-                EdgeList.reserve(2 * maxM0_);
-            num_edge_undirect = 0;
-            num_edge_direct = 0;
+
+            vector<unordered_map<tableint, int>> HashEdgeTable(num_row);
 
             for (tableint id_r = 0; id_r < num_row; id_r++) {
                 vector<tableint> neighbor = getNeighborList(id_r);
                 for (tableint nb: neighbor) {
-                    if (isNeighbor(nb, id_r)) {
-                        EdgeTable[id_r].push_back(EdgeWeight(nb, 2));
-                        num_edge_undirect++;
-                    } else {
-                        EdgeTable[id_r].push_back(EdgeWeight(nb, 1));
-                        EdgeTable[nb].push_back(EdgeWeight(id_r, 1));
-                        num_edge_direct++;
+                    bool is_neighbor = isNeighbor(nb, id_r);
+                    if (is_neighbor)
+                        HashEdgeTable[id_r].emplace(nb, 2);
+                    else {
+                        HashEdgeTable[id_r].emplace(nb, 1);
+                        HashEdgeTable[nb].emplace(id_r, 2);
                     }
                 }
             }
-            if (num_edge_undirect % 2 != 0) {
-                printf("Error, num_edge_undirect is %lu\n", num_edge_undirect); exit(1);
+
+            for (tableint id_r = 0; id_r < num_row; id_r++) {
+                unordered_map<tableint, int>& HashEdgeList = HashEdgeTable[id_r];
+                size_t list_size = HashEdgeList.size();
+                EdgeTable[id_r].reserve(list_size);
+                for (auto it = HashEdgeList.begin(); it != HashEdgeList.end(); ++it)
+                    EdgeTable[id_r].push_back(EdgeWeight(it->first, it->second));
+                num_edge_total += list_size;
             }
-            num_total = num_edge_undirect / 2 + num_edge_direct;
-            printf("Edge, total (undirect/2+direct): %lu, undirect: %lu, direct: %lu \n", num_total, num_edge_undirect, num_edge_direct);
+            if (num_edge_total % 2 != 0) {
+                printf("Error, num_edge_total (undivide two) is %lu\n", num_edge_total); exit(1);
+            }
+            num_edge_total /= 2;
+            printf("Edge, total: %lu \n", num_edge_total);
             printf("\n");
 
-            return num_total;
+            return num_edge_total;
         }
 
         size_t getRemoteEdge(vector<vector<EdgeWeight>>& EdgeTable, vector<int>& IdToPartition) {
@@ -1502,17 +1526,6 @@ namespace hnswlib {
             free(data_level0_memory_);
             data_level0_memory_ = data_level0_memory_reorder;
             printf("Reorder graph done\n");
-        }
-
-        vector<tableint> getNeighborList(tableint id) {
-            linklistsizeint *ll_cur = get_linklist0(id);
-            int size = getListCount(ll_cur);
-            vector<tableint> neighbor(size);
-
-            tableint *data = (tableint *) (ll_cur + 1);
-            for (int j = 0; j < size; j++)
-                neighbor[j] = data[j];
-            return neighbor;
         }
 
         void writeNeighborList(tableint id, vector<tableint>& neighbor) {
@@ -2337,7 +2350,7 @@ namespace hnswlib {
                     Partgraph->clearRequest();
 
                     SortQueue(pg_remote_gather, retset, true);
-                    
+
                 } // end of step
 #endif
 

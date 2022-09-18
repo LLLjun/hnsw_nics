@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
@@ -349,11 +350,17 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapParameter["k"] = k;
     MapParameter["vecsize"] = vecsize;
     MapParameter["num_pg"] = num_pg;
+#if BFMETIS
+    if (data_size_millions == 50) {
+        MapParameter["M"] = 35;
+        MapParameter["efConstruction"] = MapParameter["M"] * 10;
+    }
+#endif
 
     map<string, string> MapString;
 
     string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) +
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) + ".bin";
     MapString["index"] = hnsw_index;
 #if QTRACE
     string simu_root_dir = "../output/simulator";

@@ -28,3 +28,5 @@
 #endif
 
 #define QTRACE      false
+
+#define BFMETIS     true
