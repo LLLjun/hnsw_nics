@@ -2,20 +2,21 @@
 
 #include "visited_list_pool.h"
 #include "hnswlib.h"
+#include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <cstdio>
+#include <numeric>
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
-#include <unordered_set>
 #include <list>
 #include <map>
 #include <stack>
-#include "dataset.h"
 #include "profile.h"
 #include "omp.h"
 
 namespace hnswlib {
-    typedef unsigned int tableint;
     typedef unsigned int linklistsizeint;
 
     template<typename dist_t, typename set_t>
@@ -85,12 +86,16 @@ namespace hnswlib {
         ~HierarchicalNSW() {
 
             free(data_level0_memory_);
+#if !PLATG
             for (tableint i = 0; i < cur_element_count; i++) {
                 if (element_levels_[i] > 0)
                     free(linkLists_[i]);
             }
-            free(linkLists_);
-            delete visited_list_pool_;
+#endif
+            if (linkLists_ != nullptr)
+                free(linkLists_);
+            if (visited_list_pool_ != nullptr)
+                delete visited_list_pool_;
         }
 
         size_t max_elements_;
@@ -274,14 +279,25 @@ namespace hnswlib {
             }
 
             visited_array[ep_id] = visited_array_tag;
+#if PROEFS
+            int num_iter = -1;
+            int max_iter = ef_;
+#endif
 
             while (!candidate_set.empty()) {
 
                 std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
 
+#if PROEFS
+                num_iter++;
+                if (num_iter >= max_iter)
+                    break;
+#else
                 if ((-current_node_pair.first) > lowerBound) {
                     break;
                 }
+#endif
+
                 candidate_set.pop();
 
                 tableint current_node_id = current_node_pair.second;
@@ -291,7 +307,6 @@ namespace hnswlib {
                 if(collect_metrics){
                     metric_hops++;
                 }
-
 
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -674,7 +689,7 @@ namespace hnswlib {
 
             auto pos=input.tellg();
 
-
+#if !PLATG
             /// Optional - check if index is ok:
 
             input.seekg(cur_element_count * size_data_per_element_,input.cur);
@@ -697,6 +712,7 @@ namespace hnswlib {
             input.clear();
 
             /// Optional check end
+#endif
 
             input.seekg(pos,input.beg);
 
@@ -719,7 +735,7 @@ namespace hnswlib {
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);
 
-
+#if !PLATG
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements);
             if (linkLists_ == nullptr)
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
@@ -742,7 +758,7 @@ namespace hnswlib {
                     input.read(linkLists_[i], linkListSize);
                 }
             }
-
+#endif
             has_deletions_=false;
 
             for (size_t i = 0; i < cur_element_count; i++) {
@@ -1758,7 +1774,13 @@ namespace hnswlib {
             initOptVisited();
 #endif
 
+#if PROEFS
+            int num_iter = 0;
+            int max_iter = info->l_search;
+            for (; num_iter < max_iter; num_iter++) {
+#else
             while (true) {
+#endif
 #if (OPT_SORT && OPT_VISITED)
                 tableint search_point = GetStart(retset, visited_array, visited_array_tag, buffer_rank_alloc, fetch_buffer_rank_alloc);
                 if (info->is_done)

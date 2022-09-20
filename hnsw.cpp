@@ -1,13 +1,14 @@
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <queue>
 #include <chrono>
 #include <memory>
 #include "hnswlib/hnswlib.h"
+#include <string>
 #include <unordered_set>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <vector>
 
 using namespace std;
 using namespace hnswlib;
@@ -32,22 +33,20 @@ float comput_recall(vector<vector<unsigned>>& result,
 
 template<typename DTres, typename DTset>
 static void
-test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
-                DTset *massQ, size_t qsize,
-                vector<vector<unsigned>>& massQA, size_t k,
-                map<size_t, vector<float>>& mapResult) {
-    vector<size_t> efs;// = { 10,10,10,10,10 };
-    // base deep1m
-    // 150     0.99144 343.031 0       155.846 2734.29
-    // base deep10m
-    // 150     0.98684 631.098 0       156.34  4323.5
-    // 根据VTune的分析, rank=460.61, others=141.3, (sort=82, so lookup=61.3)
-    // Ours. rank=490, sort=53.6, lookup=136, hlc=3
+test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg,
+                DTset *massQ, vector<vector<unsigned>>& massQA,
+                map<string, size_t> &MapParameter,
+                map<size_t, vector<float>>& mapResult,
+                DTset *massSample=nullptr, size_t sample_size=0) {
+    size_t qsize = MapParameter["qsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t k = MapParameter["k"];
 
-    for (int i = 10; i <= 150; i += 10)
+    vector<size_t> efs;
+    for (int i = 20; i <= 100; i += 5)
         efs.push_back(i);
 
-    int column_map = 2;
+    int column_map = 3;
 
     cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
 #if (RANKMAP && STAT)
@@ -109,6 +108,7 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg, size_t vecdim,
         cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
         result_ef[0] = recall;
         result_ef[1] = time_us_per_query;
+        result_ef[2] = 1.0 * appr_alg.metric_distance_computations / qsize;
 #if (RANKMAP && STAT)
             cout << appr_alg.stats->all_rank_us / qsize << "\t";
             cout << appr_alg.stats->all_sort_us / qsize << "\t";
@@ -166,8 +166,8 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
 
         printf("Load base vectors: \n");
         ifstream base_reader(path_data.c_str());
-        uint64_t head_offest = 2 * sizeof(uint32_t);
-        int vec_offest = vecdim * sizeof(DTset);
+        size_t head_offest = 2 * sizeof(uint32_t);
+        size_t vec_offest = vecdim * sizeof(DTset);
 
         uint32_t nums_r, dims_r;
         base_reader.read((char *) &nums_r, sizeof(uint32_t));
@@ -180,7 +180,7 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
             printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
             exit(1);
         }
-        printf("vecsize: %d, vecdim: %d, path: %s\n", vecsize, vecdim, path_data.c_str());
+        printf("vecsize: %lu, vecdim: %lu, path: %s\n", vecsize, vecdim, path_data.c_str());
 
         size_t build_start_id = 0;
         DTset* build_start_vector = new DTset[vecdim]();
@@ -237,6 +237,96 @@ void build_index(map<string, size_t> &MapParameter, map<string, string> &MapStri
 }
 
 template<typename DTres, typename DTset>
+void build_multi_index(map<string, size_t> &MapParameter, map<string, string> &MapString,
+                SpaceInterface<DTres, DTset> *l2space, bool isSave = true){
+    //
+    size_t efConstruction = MapParameter["efConstruction"];
+    size_t M = MapParameter["M"];
+    size_t vecsize = MapParameter["vecsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t qsize = MapParameter["qsize"];
+
+    string path_data = MapString["path_data"];
+    string index = MapString["index"];
+
+    if (exists_test(index)){
+        printf("Index %s is existed \n", index.c_str());
+        return;
+    } else {
+
+        printf("Load base vectors: \n");
+        ifstream base_reader(path_data.c_str());
+        size_t head_offest = 2 * sizeof(uint32_t);
+        size_t vec_offest = vecdim * sizeof(DTset);
+
+        uint32_t nums_r, dims_r;
+        base_reader.read((char *) &nums_r, sizeof(uint32_t));
+        base_reader.read((char *) &dims_r, sizeof(uint32_t));
+        uint32_t nums_ex = vecsize;
+#if FROMBILLION
+        nums_ex = 1e9;
+#endif
+        if ((nums_ex != nums_r) || (vecdim != dims_r)){
+            printf("Error, file %s is error, nums_r: %u, dims_r: %u\n", path_data.c_str(), nums_r, dims_r);
+            exit(1);
+        }
+        printf("vecsize: %lu, vecdim: %lu, path: %s\n", vecsize, vecdim, path_data.c_str());
+
+        DTset *massB = new DTset[vecsize * vecdim]();
+        for (int i = 0; i < vecsize; i++)
+            base_reader.read((char *) (massB + vecdim * i), vec_offest);
+
+        int num_subgraph = MapParameter["num_subg"];
+
+        AllocSubGraph allocSubGraph(MapString["dataname"], (int)vecsize, num_subgraph);
+        allocSubGraph.computSubgCenter<DTset>(massB, vecdim);
+        delete[] massB;
+
+        for (int subg_i = 0; subg_i < num_subgraph; subg_i++) {
+            size_t vecsize_subg = allocSubGraph.getSubgSize(subg_i);
+            string sub_index = MapString["index_dir"] + "/" + to_string(subg_i) + ".bin";
+            printf("Building sub-index %d:\n", subg_i);
+
+            HierarchicalNSW<DTres, DTset>* appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, vecsize_subg, M, efConstruction);
+
+            size_t build_start_id = allocSubGraph.getSubgCenter(subg_i);
+            DTset* build_start_vector = new DTset[vecdim]();
+            base_reader.seekg(head_offest + vec_offest * build_start_id, ios::beg);
+            base_reader.read((char *) build_start_vector, vec_offest);
+
+            appr_alg->addPoint((void *) build_start_vector, (size_t) build_start_id);
+
+            StopW stopw_full = StopW();
+#pragma omp parallel for
+            for (size_t vi = 1; vi < vecsize_subg; vi++) {
+                unique_ptr<DTset> vecb(new DTset[vecdim]());
+                size_t ic = allocSubGraph.getOriginId(subg_i, vi);
+#pragma omp critical
+                {
+                    base_reader.seekg(head_offest + vec_offest * ic, ios::beg);
+                    base_reader.read((char *) vecb.get(), vec_offest);
+                }
+                appr_alg->addPoint((void *) vecb.get(), ic);
+            }
+
+            if (appr_alg->cur_element_count != vecsize_subg) {
+                printf("Error, cur_element_count is not equal size\n"); exit(1);
+            }
+
+            printf("Build time: %.3f seconds\n", stopw_full.getElapsedTimes());
+
+            if (isSave)
+                appr_alg->saveIndex(sub_index);
+            appr_alg->~HierarchicalNSW();
+
+            printf("Build sub_index %s is succeed \n", sub_index.c_str());
+        }
+
+        base_reader.close();
+    }
+}
+
+template<typename DTres, typename DTset>
 void search_index(map<string, size_t> &MapParameter, map<string, string> &MapString,
                 SpaceInterface<DTres, DTset> *l2space){
     //
@@ -263,59 +353,88 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading queries:\n");
         LoadBinToArray<DTset>(path_q, massQ, qsize, vecdim);
 
+#if SUBG
+        int num_subgraph = MapParameter["num_subg"];
+        vector<HierarchicalNSW<DTres, DTset> *> appr_alg_set(num_subgraph, nullptr);
+        for (int subg_i = 0; subg_i < num_subgraph; subg_i++) {
+            string sub_index = MapString["index_dir"] + "/" + to_string(subg_i) + ".bin";
+            printf("Loading sub index from %s ...\n", sub_index.c_str());
+            appr_alg_set[subg_i] = new HierarchicalNSW<DTres, DTset>(l2space, sub_index, false);
+        }
+#else
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
-#if THREAD
-        omp_set_num_threads(MapParameter["threads"]);
 #endif
+
+// #if THREAD
+//         omp_set_num_threads(MapParameter["threads"]);
+// #endif
 
 #if RANKMAP
         appr_alg->initRankMap();
 #endif
 
-        int test_times = TTIMES;
-        printf("[Test Mode] Run %d times and comput recall: \n", test_times);
-        vector<map<size_t, vector<float>>> finishedResult(test_times);
-        for (int i = 0; i < test_times; i++) {
-            test_vs_recall(*appr_alg, vecdim, massQ, qsize, massQA, k, finishedResult[i]);
-        }
+        vector<int> threadSet = {1, 2, 4, 8, 16, 32, 64};
+        for (int num_thread: threadSet) {
 
-        ofstream result_writer(MapString["result"].c_str());
-        result_writer << "efs\t" << "R@" << k << "\t" << "time_us\t";
-#if RANKMAP
-        if (appr_alg->stats != nullptr) {
-            result_writer << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
-            result_writer << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
-        }
+            omp_set_num_threads(num_thread);
+
+            int test_times = TTIMES;
+            printf("[Test Mode] Run %d times with %d threads and comput recall: \n", test_times, num_thread);
+            vector<map<size_t, vector<float>>> finishedResult(test_times);
+            for (int i = 0; i < test_times; i++) {
+#if SUBG
+            test_vs_recall_multi_index(appr_alg_set, massQ, massQA, MapParameter, finishedResult[i]);
+#else
+            test_vs_recall(*appr_alg, massQ, massQA, MapParameter, finishedResult[i]);
 #endif
-        result_writer << "\n";
-
-        for (auto iter = finishedResult[0].begin(); iter != finishedResult[0].end(); iter++) {
-            size_t ef = iter->first;
-            vector<float> recall_list(test_times);
-            for (int ri = 0; ri < test_times; ri++){
-                recall_list[ri] = finishedResult[ri][ef][1];
             }
-            int pos = selectNearAvgPos(recall_list);
 
-            vector<float> res_selected(finishedResult[pos][ef]);
-            result_writer << ef << "\t";
-            for (float& r : res_selected)
-                result_writer << r << "\t";
+            string result_file = MapString["result"] + to_string(num_thread) + ".log";
+            ofstream result_writer(result_file.c_str());
+            result_writer << "efs\t" << "R@" << k << "\t" << "time_us\t" << "NDC_total\t";
+#if RANKMAP
+            if (appr_alg->stats != nullptr) {
+                result_writer << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
+                result_writer << "NDC_max\t" << "NDC_total\t" << "old_vst\t";
+            }
+#endif
             result_writer << "\n";
+
+            for (auto iter = finishedResult[0].begin(); iter != finishedResult[0].end(); iter++) {
+                size_t ef = iter->first;
+                vector<float> recall_list(test_times);
+                for (int ri = 0; ri < test_times; ri++){
+                    recall_list[ri] = finishedResult[ri][ef][1];
+                }
+                int pos = selectNearAvgPos(recall_list);
+
+                vector<float> res_selected(finishedResult[pos][ef]);
+                result_writer << ef << "\t";
+                for (float& r : res_selected)
+                    result_writer << r << "\t";
+                result_writer << "\n";
+            }
+            result_writer.close();
+            printf("Write final result to %s is successd\n", result_file.c_str());
         }
-        result_writer.close();
-        printf("Write final result to %s is successd\n", MapString["result"].c_str());
 
 #if RANKMAP
         appr_alg->deleteRankMap();
 #endif
-        appr_alg->~HierarchicalNSW();
+#if SUBG
+        // for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set)
+        //     appr_alg->~HierarchicalNSW();
+        printf("Search sub index %s is succeed \n", MapString["index_dir"].c_str());
+#else
+        // appr_alg->~HierarchicalNSW();
         printf("Search index %s is succeed \n", index.c_str());
+#endif
+
     }
 }
 
-void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, size_t n_threads){
+void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, size_t n_threads, size_t num_subgraph){
     string path_project = "..";
 #if RANKMAP
     string label = "rank-map/";
@@ -324,16 +443,15 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
 #else
     string label = "hnsw/";
 #endif
+#if SUBG
+    label = "sub-graph/";
+#endif
 
     string path_graphindex = path_project + "/graphindex/" + label;
+    createDir(path_graphindex);
 
     string pre_index = path_graphindex + using_dataset;
-    if (access(pre_index.c_str(), R_OK|W_OK)){
-        if (mkdir(pre_index.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", pre_index.c_str());
-            exit(1);
-        }
-    }
+    createDir(pre_index);
 
     // for 1m, 10m, 100m
     vector<size_t> efcSet = {20, 30, 40};
@@ -348,12 +466,33 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapParameter["M"] = M;
     MapParameter["k"] = k;
     MapParameter["vecsize"] = vecsize;
+#if BFMETIS
+    if (data_size_millions == 50) {
+        MapParameter["M"] = 35;
+        MapParameter["efConstruction"] = MapParameter["M"] * 10;
+    }
+    if (data_size_millions == 500) {
+        MapParameter["M"] = 40;
+        MapParameter["efConstruction"] = MapParameter["M"] * 10;
+    }
+#endif
 
     map<string, string> MapString;
 
+#if SUBG
+    string sub_index_dir = pre_index + "/" + using_dataset + to_string(data_size_millions) +
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) +
+                        "_subg" + to_string(num_subgraph);
+    createDir(sub_index_dir);
+    MapParameter["num_subg"] = num_subgraph;
+    MapString["index_dir"] = sub_index_dir;
+    MapString["index"] = sub_index_dir + "/0.bin";
+#else
     string hnsw_index = pre_index + "/" + using_dataset + to_string(data_size_millions) +
-                        "m_ef" + to_string(efConstruction) + "m" + to_string(M) + ".bin";
+                        "m_ef" + to_string(MapParameter["efConstruction"]) + "m" + to_string(MapParameter["M"]) + ".bin";
     MapString["index"] = hnsw_index;
+#endif
+
     CheckDataset(using_dataset, MapParameter, MapString);
 #if THREAD
     MapParameter["threads"] = n_threads;
@@ -362,44 +501,39 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     string save_dir;
     string file_name = using_dataset + to_string(data_size_millions) + "m_rc" + to_string(k);
     string suffix = "";
-#if (RANKMAP && PLATG)
-    int num_rank = NUM_RANKS;
-    save_dir = "rank_" + to_string(num_rank);
-#if (!STAT)
-    suffix = "_bs";
-#elif (OPT_SORT && OPT_VISITED)
-    suffix = "_ob";
-#elif OPT_SORT
-    suffix = "_os";
-#elif OPT_VISITED
-    suffix = "_ov";
-#else
-    suffix = "_mp";
-#endif
 
-#elif PLATG
-    save_dir = "plat_pf";
+#if PLATG
+    save_dir = "plat";
 #else
-    save_dir = "hnsw_pf";
+    save_dir = "hnsw";
 #endif
 
 #if THREAD
-    save_dir = "hnsw_pf_multithread";
-    suffix = "_t" + to_string(n_threads);
+    save_dir += "_multithread";
+    suffix = "_t";
 #endif
 
     save_dir = path_project + "/output/result/" + save_dir;
-    if (access(save_dir.c_str(), R_OK|W_OK)){
-        if (mkdir(save_dir.c_str(), S_IRWXU) != 0) {
-            printf("Error, dir %s create failed \n", save_dir.c_str());
-            exit(1);
-        }
-    }
+    createDir(save_dir);
 
-    MapString["result"] = save_dir + "/" + file_name + suffix + ".log";
+    MapString["result"] = save_dir + "/" + file_name + suffix;
 
 
     if (stage == "build" || stage == "both") {
+#if SUBG
+        if (MapString["format"] == "Float") {
+            L2Space l2space(MapParameter["vecdim"]);
+            build_multi_index<float, float>(MapParameter, MapString, &l2space);
+        } else if (MapString["format"] == "Uint8") {
+            L2SpaceI<int, uint8_t> l2space(MapParameter["vecdim"]);
+            build_multi_index<int, uint8_t>(MapParameter, MapString, &l2space);
+        } else if (MapString["format"] == "Int8") {
+            L2SpaceI<int, int8_t> l2space(MapParameter["vecdim"]);
+            build_multi_index<int, int8_t>(MapParameter, MapString, &l2space);
+        } else {
+            printf("Error, unsupport format: %s \n", MapString["format"].c_str()); exit(1);
+        }
+#else
         if (MapString["format"] == "Float") {
             L2Space l2space(MapParameter["vecdim"]);
             build_index<float, float>(MapParameter, MapString, &l2space);
@@ -412,6 +546,7 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
         } else {
             printf("Error, unsupport format: %s \n", MapString["format"].c_str()); exit(1);
         }
+#endif
     }
 
     if (stage == "search" || stage == "both") {

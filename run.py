@@ -49,10 +49,19 @@ class RunGraph:
 
 def main():
     stage = "search"
-    Datasize = [100]
-    Dataset = ["deep", "spacev"]
+    Datasets = ["sift", "spacev"]
+    Datasize = [1, 10, 50, 100, 500]
+    Threads = [1]
+    # Sub_graph = [1]
 
-    run = RunGraph(stage, Datasize, Dataset)    
-    run.testMultiGraph()
+    os.system("cd build && make main")
+    for datasize in Datasize:
+        for dataset in Datasets:
+            for thread in Threads:
+                command = "./main " + stage + " " + dataset + " " + str(datasize) + " " + str(thread) + " 1"
+                os.system("cd build && " + command)
+
+    # run = RunGraph(stage, Datasize, Datasets)
+    # run.testMultiGraph()
 
 main()
