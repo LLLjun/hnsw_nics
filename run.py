@@ -50,15 +50,15 @@ class RunGraph:
 def main():
     stage = "search"
     Datasets = ["sift", "spacev"]
-    Datasize = [1, 10, 50, 100, 500]
+    Datasize = [1000]
     Threads = [1]
-    # Sub_graph = [1]
+    sub_graph = 8
 
     os.system("cd build && make main")
     for datasize in Datasize:
         for dataset in Datasets:
             for thread in Threads:
-                command = "./main " + stage + " " + dataset + " " + str(datasize) + " " + str(thread) + " 1"
+                command = "./main " + stage + " " + dataset + " " + str(datasize) + " " + str(thread) + " " + str(sub_graph)
                 os.system("cd build && " + command)
 
     # run = RunGraph(stage, Datasize, Datasets)

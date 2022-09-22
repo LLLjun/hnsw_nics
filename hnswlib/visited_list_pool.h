@@ -3,9 +3,28 @@
 #include <deque>
 #include <mutex>
 #include <string.h>
+#include "hnswlib.h"
 
 namespace hnswlib {
     typedef unsigned short int vl_type;
+
+    class VisitedHashList {
+    public:
+        VisitedHashList() {}
+        ~VisitedHashList() { visited.clear(); }
+
+        bool isExisted(tableint id) {
+            if (visited.find(id) != visited.end())
+                return true;
+            else {
+                visited.emplace(id);
+                return false;
+            }
+        }
+
+    private:
+        unordered_set<tableint> visited;
+    };
 
     class VisitedList {
     public:

@@ -36,14 +36,15 @@ static void
 test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg,
                 DTset *massQ, vector<vector<unsigned>>& massQA,
                 map<string, size_t> &MapParameter,
-                map<size_t, vector<float>>& mapResult,
-                DTset *massSample=nullptr, size_t sample_size=0) {
+                map<size_t, vector<float>>& mapResult) {
     size_t qsize = MapParameter["qsize"];
     size_t vecdim = MapParameter["vecdim"];
     size_t k = MapParameter["k"];
 
     vector<size_t> efs;
-    for (int i = 20; i <= 100; i += 5)
+    for (int i = 50; i < 100; i += 5)
+        efs.push_back(i);
+    for (int i = 100; i <= 200; i += 10)
         efs.push_back(i);
 
     int column_map = 3;
@@ -129,6 +130,139 @@ test_vs_recall(HierarchicalNSW<DTres, DTset>& appr_alg,
         cout << (1.0 * appr_alg.metric_hops_L / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_hops / qsize) << "\t";
         cout << (1.0 * appr_alg.metric_distance_computations / qsize) << "\t";
+#endif
+        cout << endl;
+
+        mapResult.insert(pair<size_t, vector<float>>(ef, result_ef));
+
+        if (recall > 1.0) {
+            cout << recall << "\t" << time_us_per_query << " us\n";
+            break;
+        }
+    }
+}
+
+
+template<typename DTres, typename DTset>
+static void
+test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
+                DTset *massQ, vector<vector<unsigned>>& massQA,
+                map<string, size_t> &MapParameter,
+                map<size_t, vector<float>>& mapResult) {
+    size_t qsize = MapParameter["qsize"];
+    size_t vecdim = MapParameter["vecdim"];
+    size_t k = MapParameter["k"];
+    int num_subgraph = MapParameter["num_subg"];
+
+    vector<size_t> efs;
+    // for (int i = 30; i < 100; i += 5)
+    //     efs.push_back(i);
+    efs.push_back(85);
+
+    int column_map = 3;
+
+    cout << "efs\t" << "R@" << k << "\t" << "time_us\t";
+#if (RANKMAP && STAT)
+        cout << "rank_us\t" << "sort_us\t" << "hlc_us\t" << "visited_us\t";
+        cout << "NDC_max\t" << "NDC_total\t" << "n_hops\t";
+        column_map = 9;
+#else
+    cout << "n_hop_L\t" << "n_hop_0\t" << "NDC\t";
+#endif
+    cout << endl;
+
+    vector<float> result_ef(column_map);
+
+    for (size_t ef : efs) {
+        for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set)
+            appr_alg->setEf(ef);
+
+#if (RANKMAP && STAT)
+        appr_alg.stats->Reset();
+#else
+        for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set) {
+            appr_alg->metric_hops = 0;
+            appr_alg->metric_distance_computations = 0;
+        }
+#endif
+
+        vector<vector<unsigned>> result(qsize);
+        for (vector<unsigned>& r: result)
+            r.resize(k, 0);
+
+        Timer stopw = Timer();
+#if THREAD
+#pragma omp parallel for
+#endif
+        for (int qi = 0; qi < qsize; qi++) {
+#if RANKMAP
+            priority_queue<pair<DTres, labeltype>> res = appr_alg.searchParaRank(massQ + vecdim * qi, k);
+#else
+            priority_queue<pair<DTres, labeltype>> res;
+            for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set) {
+                priority_queue<pair<DTres, labeltype>> res_sub = appr_alg->searchKnn(massQ + vecdim * qi, k);
+                if (res.empty())
+                    res.swap(res_sub);
+                else {
+                    while (!res_sub.empty()) {
+                        res.emplace(res_sub.top());
+                        res.pop();
+
+                        res_sub.pop();
+                    }
+                }
+#if DDEBUG
+                if (res.size() != k) {
+                    printf("Error, res.size must is k\n"); exit(1);
+                }
+#endif
+            }
+#endif
+
+#if THREAD
+#pragma omp critical
+#endif
+            {
+                int i = 0;
+                while (!res.empty()){
+                    result[qi][i] = (unsigned) res.top().second;
+                    res.pop();
+                    i++;
+                }
+            }
+        }
+        float time_us_per_query = stopw.getElapsedTimeus() / qsize / num_subgraph;
+        float recall = comput_recall(result, massQA, qsize, k);
+
+#if (RANKMAP && STAT)
+        time_us_per_query = appr_alg.stats->hw_us / qsize;
+#endif
+
+        cout << ef << "\t" << recall << "\t" << time_us_per_query << "\t";
+        size_t metric_hops = 0;
+        size_t metric_distance_computations_total = 0;
+        size_t metric_distance_computations_max = 0;
+        for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set) {
+            metric_hops += appr_alg->metric_hops;
+            metric_distance_computations_total += appr_alg->metric_distance_computations;
+            metric_distance_computations_max = max<size_t>(metric_distance_computations_max, appr_alg->metric_distance_computations);
+        }
+        result_ef[0] = recall;
+        result_ef[1] = time_us_per_query;
+        result_ef[2] = 1.0 * metric_distance_computations_total / qsize;
+#if (RANKMAP && STAT)
+            cout << appr_alg.stats->all_rank_us / qsize << "\t";
+            cout << appr_alg.stats->all_sort_us / qsize << "\t";
+            cout << appr_alg.stats->all_hlc_us / qsize << "\t";
+            cout << appr_alg.stats->all_visited_us / qsize << "\t";
+
+            cout << (1.0 * appr_alg.stats->all_n_DC_max / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->all_n_DC_total / qsize) << "\t";
+            cout << (1.0 * appr_alg.stats->all_n_hops / qsize) << "\t";
+#else
+        cout << (1.0 * metric_hops / qsize) << "\t";
+        cout << (1.0 * metric_distance_computations_total / qsize) << "\t";
+        cout << (1.0 * metric_distance_computations_max / qsize) << "\t";
 #endif
         cout << endl;
 
@@ -374,7 +508,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         appr_alg->initRankMap();
 #endif
 
-        vector<int> threadSet = {1, 2, 4, 8, 16, 32, 64};
+        vector<int> threadSet;
+        for (int i = 1; i <= 8; i++)
+            threadSet.push_back(i);
         for (int num_thread: threadSet) {
 
             omp_set_num_threads(num_thread);
@@ -407,7 +543,10 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
                 for (int ri = 0; ri < test_times; ri++){
                     recall_list[ri] = finishedResult[ri][ef][1];
                 }
-                int pos = selectNearAvgPos(recall_list);
+
+                int pos = 0;
+                if (test_times >= 3)
+                    pos = selectNearAvgPos(recall_list);
 
                 vector<float> res_selected(finishedResult[pos][ef]);
                 result_writer << ef << "\t";
@@ -467,14 +606,11 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapParameter["k"] = k;
     MapParameter["vecsize"] = vecsize;
 #if BFMETIS
-    if (data_size_millions == 50) {
+    if (data_size_millions == 50)
         MapParameter["M"] = 35;
-        MapParameter["efConstruction"] = MapParameter["M"] * 10;
-    }
-    if (data_size_millions == 500) {
+    if (data_size_millions == 500 || data_size_millions == 1000)
         MapParameter["M"] = 40;
-        MapParameter["efConstruction"] = MapParameter["M"] * 10;
-    }
+    MapParameter["efConstruction"] = MapParameter["M"] * 10;
 #endif
 
     map<string, string> MapString;
@@ -502,14 +638,18 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     string file_name = using_dataset + to_string(data_size_millions) + "m_rc" + to_string(k);
     string suffix = "";
 
+#if SUBG
+    file_name += "_sg" + to_string(num_subgraph);
+#endif
+
 #if PLATG
-    save_dir = "plat";
+    save_dir = "plat_billion";
 #else
     save_dir = "hnsw";
 #endif
 
 #if THREAD
-    save_dir += "_multithread";
+    save_dir += "_multithread_multinode";
     suffix = "_t";
 #endif
 

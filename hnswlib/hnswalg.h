@@ -259,11 +259,13 @@ namespace hnswlib {
         template <bool has_deletions, bool collect_metrics=false>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
-
+#if LIGHTWEIGHT
+            VisitedHashList vl;
+#else
             VisitedList *vl = visited_list_pool_->getFreeVisitedList();
             vl_type *visited_array = vl->mass;
             vl_type visited_array_tag = vl->curV;
-
+#endif
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
 
@@ -278,7 +280,11 @@ namespace hnswlib {
                 candidate_set.emplace(-lowerBound, ep_id);
             }
 
+#if LIGHTWEIGHT
+            vl.isExisted(ep_id);
+#else
             visited_array[ep_id] = visited_array_tag;
+#endif
 #if PROEFS
             int num_iter = -1;
             int max_iter = ef_;
@@ -309,8 +315,10 @@ namespace hnswlib {
                 }
 
 #ifdef USE_SSE
+#if !LIGHTWEIGHT
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
                 _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+#endif
                 _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
                 _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
@@ -320,15 +328,21 @@ namespace hnswlib {
 //                    if (candidate_id == 0) continue;
 
 #ifdef USE_SSE
+#if !LIGHTWEIGHT
                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+#endif
                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                                  _MM_HINT_T0);////////////
 #endif
 
+#if LIGHTWEIGHT
+                    if (!vl.isExisted(candidate_id)) {
+#else
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+                        visited_array[candidate_id] = visited_array_tag;
+#endif
                         metric_distance_computations++;
 
-                        visited_array[candidate_id] = visited_array_tag;
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
@@ -354,7 +368,9 @@ namespace hnswlib {
                 }
             }
 
+#if !LIGHTWEIGHT
             visited_list_pool_->releaseVisitedList(vl);
+#endif
 
             return top_candidates;
         }
@@ -722,15 +738,14 @@ namespace hnswlib {
                 throw std::runtime_error("Not enough memory: loadIndex failed to allocate level0");
             input.read(data_level0_memory_, cur_element_count * size_data_per_element_);
 
-
-
-
             size_links_per_element_ = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
 
-
             size_links_level0_ = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
+
+#if !LIGHTWEIGHT
             std::vector<std::mutex>(max_elements).swap(link_list_locks_);
             std::vector<std::mutex>(max_update_element_locks).swap(link_list_update_locks_);
+#endif
 
 
             visited_list_pool_ = new VisitedListPool(1, max_elements);

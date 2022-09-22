@@ -1,5 +1,6 @@
 #define PLATG       true
-#define FROMBILLION false
+#define FROMBILLION true
+#define LIGHTWEIGHT false
 
 // rank-level的映射
 #define RANKMAP     false
@@ -29,7 +30,7 @@
 #define PROEFS      true
 
 #if PLATG
-#define SUBG        false
+#define SUBG        true
 #define SG_METIS    false
 #endif
 
