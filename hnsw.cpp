@@ -247,6 +247,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         printf("Loading index from %s ...\n", index.c_str());
         HierarchicalNSW<DTres, DTset> *appr_alg = new HierarchicalNSW<DTres, DTset>(l2space, index, false);
 
+        appr_alg->ResortNbor();
 #if WALK
         appr_alg->RW = new RandomWalk(qsize, EFS);
         appr_alg->topk = k;

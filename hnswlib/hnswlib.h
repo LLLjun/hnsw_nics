@@ -1,5 +1,7 @@
 #pragma once
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <numeric>
@@ -238,25 +240,33 @@ namespace hnswlib {
             // int item = steps_ / n_item;
             std::vector<float> ICMean(steps_, 0);
             std::vector<float> ICStdev(steps_, 0);
+            std::vector<float> ICMax(steps_, 0);
 
-            std::vector<std::vector<float>> ICTablePerStep;
-            transPosition(ICTablePerStep);
+            // std::vector<std::vector<float>> ICTablePerStep;
+            // transPosition(ICTablePerStep);
 
-            for (int si = 0; si < steps_; si++) {
-                float mean = getMean(ICTablePerStep[si]);
-                if (mean < 0) {
-                    printf("Walk Error, mean: %.3f less than 0\n", mean); exit(1);
-                }
-                ICMean[si] = mean;
-                ICStdev[si] = getStdev(mean, ICTablePerStep[si]);
+            // for (int si = 0; si < steps_; si++) {
+            //     float mean = getMean(ICTablePerStep[si]);
+            //     if (mean < 0) {
+            //         printf("Walk Error, mean: %.3f less than 0\n", mean); exit(1);
+            //     }
+            //     ICMean[si] = mean;
+            //     ICStdev[si] = getStdev(mean, ICTablePerStep[si]);
+            //     ICMax[si] = *std::max_element(ICTablePerStep[si].begin(), ICTablePerStep[si].end());
+            // }
+
+            // // printf
+            // printf("Step\t ICMean\t ICStdev\t ICMax\n");
+            // for (int si = 0; si < steps_; si++) {
+            //     printf("%d\t %.4f\t %.4f\t %.2f\n", si, ICMean[si], ICStdev[si], ICMax[si]);
+            // }
+            // printf("\n");
+
+            // 
+            printf("No\t Ratio\t Uncomput\t Insert\n");
+            for (int i = 0; i < 60; i++) {
+                printf("%d\t %.2f\t %lu\t %lu\n", i, (1.0 * NborWeight[i].second / NborWeight[i].first), NborWeight[i].first, NborWeight[i].second);
             }
-
-            // printf
-            printf("Step\t ICMean\t ICStdev\n");
-            for (int si = 0; si < steps_; si++) {
-                printf("%d\t %.3f\t %.3f\n", si, ICMean[si], ICStdev[si]);
-            }
-            printf("\n");
         }
         void addICInQuery(float value) {
             ICListQuery.push_back(value);
@@ -271,15 +281,25 @@ namespace hnswlib {
             cur_qid_++;
         }
 
+        void addNborWeight(int no, int uncomput, int insert) {
+            if (uncomput != 0)
+                NborWeight[no].first++;
+            else if (insert != 0)
+                NborWeight[no].second++;
+        }
+
     private:
         int qsize_, steps_;
         int cur_qid_;
         std::vector<float> ICListQuery;
         // std::vector<float> ICListTotal;
         std::vector<std::vector<float>> InfoContentTable;
+        // uncomputation-insert
+        std::vector<std::pair<size_t, size_t>> NborWeight;
 
         void initTable() {
             InfoContentTable.resize(qsize_);
+            NborWeight.resize(150, std::make_pair(0, 0));
         }
         void initList() {
             std::vector<float>().swap(ICListQuery);

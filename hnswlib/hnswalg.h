@@ -3,6 +3,7 @@
 #include "visited_list_pool.h"
 #include "hnswlib.h"
 #include <atomic>
+#include <queue>
 #include <random>
 #include <stdlib.h>
 #include <assert.h>
@@ -315,6 +316,9 @@ namespace hnswlib {
                 _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
 
+                // if (num_iter > 50)
+                //     size = size * 2 / 3;
+
                 for (size_t j = 1; j <= size; j++) {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
@@ -326,6 +330,10 @@ namespace hnswlib {
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
+#if WALK
+                        if (num_iter >= 59)
+                            RW->addNborWeight(j-1, 1, 0);
+#endif
                         metric_distance_computations++;
 
                         visited_array[candidate_id] = visited_array_tag;
@@ -333,6 +341,10 @@ namespace hnswlib {
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
                         if (top_candidates.size() < ef || lowerBound > dist) {
+#if WALK
+                            if (num_iter >= 59)
+                                RW->addNborWeight(j-1, 0, 1);
+#endif
                             candidate_set.emplace(-dist, candidate_id);
 
 #ifdef USE_SSE
@@ -1875,7 +1887,33 @@ namespace hnswlib {
 
 #endif
 
+        void ResortNbor(){
+            tableint* sorted_nbor = new tableint[maxM0_]();
+            for (tableint ci = 0; ci < max_elements_; ci++) {
+                linklistsizeint *ll_cur = get_linklist0(ci);
+                int size = getListCount(ll_cur);
+                tableint *data = (tableint *) (ll_cur + 1);
+                std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> local_queue;
 
+                for (int i = 0; i < size; i++) {
+                    tableint nbor = *(data + i);
+                    dist_t dist = fstdistfunc_(getDataByInternalId(ci), getDataByInternalId(nbor), dist_func_param_);
+                    local_queue.emplace(-dist, nbor);
+                }
+                int cnt = 0;
+                while (!local_queue.empty()) {
+                    tableint nbor = local_queue.top().second;
+                    sorted_nbor[cnt] = nbor;
+                    cnt++;
+                    local_queue.pop();
+                }
+                if (cnt != size) {
+                    printf("Error in resort\n"); exit(1);
+                }
+                memcpy(data, sorted_nbor, size * sizeof(tableint));
+            }
+            printf("Resort neighbor is done \n");
+        }
 
         void checkIntegrity(){
             int connections_checked=0;
