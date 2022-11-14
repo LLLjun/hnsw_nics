@@ -279,9 +279,7 @@ namespace hnswlib {
             }
 
             visited_array[ep_id] = visited_array_tag;
-#if HD_TRAIN
-            Hotdata->AddTimes(getExternalLabel(ep_id));
-#endif
+
 #if PROEFS
             int num_iter = -1;
             int max_iter = ef_;
@@ -311,7 +309,8 @@ namespace hnswlib {
                     metric_hops++;
                 }
 #if QTRACE
-                Querytrace->addSearchPoint(getExternalLabel(current_node_id));
+                // Querytrace->addSearchPoint(getExternalLabel(current_node_id));
+                Querytrace->addSearchPoint(current_node_id);
 #endif
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -324,7 +323,8 @@ namespace hnswlib {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
 #if QTRACE
-                    Querytrace->addNeighborBeHash(getExternalLabel(candidate_id));
+                    // Querytrace->addNeighborBeHash(getExternalLabel(candidate_id));
+                    Querytrace->addNeighborBeHash(candidate_id);
 #endif
 #ifdef USE_SSE
                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
@@ -333,11 +333,9 @@ namespace hnswlib {
 #endif
 
                     if (!(visited_array[candidate_id] == visited_array_tag)) {
-#if HD_TRAIN
-                        Hotdata->AddTimes(getExternalLabel(candidate_id));
-#endif
 #if QTRACE
-                        Querytrace->addNeighborAfHash(getExternalLabel(candidate_id));
+                        // Querytrace->addNeighborAfHash(getExternalLabel(candidate_id));
+                        Querytrace->addNeighborAfHash(candidate_id);
 #endif
                         metric_distance_computations++;
 
@@ -1208,96 +1206,6 @@ namespace hnswlib {
             return result;
         };
 
-
-        /*
-            分析 hotdata
-        */
-#if HOTDATA
-        HotData* Hotdata = nullptr;
-
-        void hotdataByConnection(int hops, unordered_set<tableint>& Points) {
-            // unordered_set<tableint> Points;
-            unordered_set<tableint> Points_expand;
-            Points.insert(0);
-            Points_expand.insert(0);
-
-            for (int i_r = 0; i_r < hops; i_r++) {
-                unordered_set<tableint> Points_add;
-                for (auto iter = Points_expand.begin(); iter != Points_expand.end(); iter++) {
-                    linklistsizeint *ll_cur = get_linklist0(*iter);
-                    int size = getListCount(ll_cur);
-                    tableint *data = (tableint *) (ll_cur + 1);
-                    for (int j = 0; j < size; j++){
-                        tableint to_point = data[j];
-                        unordered_set<tableint>::iterator iter = Points.find(to_point);
-                        if (iter == Points.end()) {
-                            Points_add.insert(to_point);
-                            Points.insert(to_point);
-                        }
-                    }
-                }
-                // printf("add size: %u, total size: %u\n", Points_add.size(), Points.size());
-
-                if (i_r + 1 != hops) {
-                    Points_expand.clear();
-                    Points_expand.swap(Points_add);
-                }
-            }
-        }
-
-        void hotdataByIndegree(vector<Idtimes> &PointTable){
-            vector<size_t> Times(cur_element_count, 0);
-            // vector<Idtimes> PointTable(cur_element_count, Idtimes(0, 0));
-            PointTable.resize(cur_element_count, Idtimes(0, 0));
-
-            for (int i = 0; i < cur_element_count; i++) {
-                linklistsizeint *ll_cur = get_linklist0(i);
-                int size = getListCount(ll_cur);
-                tableint *data = (tableint *) (ll_cur + 1);
-                for (int j = 0; j < size; j++){
-                    tableint to_point = data[j];
-                    Times[to_point]++;
-                }
-            }
-            for (int i = 0; i < cur_element_count; i++) {
-                PointTable[i].id = i;
-                PointTable[i].times = Times[i];
-            }
-            size_t total = accumulate(Times.begin(), Times.end(), 0);
-
-#if DDEBUG
-            if (total < cur_element_count || total > cur_element_count * maxM0_){
-                printf("total times error\n"); exit(1);
-            }
-
-            printf("Id\tTimes\n");
-            for (int i = 0; i < 5; i++)
-                printf("%d\t%lu\n", PointTable[i].id, PointTable[i].times);
-#endif
-            sort(PointTable.rbegin(), PointTable.rend());
-#if DDEBUG
-            printf("Id\tTimes\n");
-            for (int i = 0; i < 5; i++)
-                printf("%d\t%lu\n", PointTable[i].id, PointTable[i].times);
-#endif
-
-            int n_round = 10;
-            size_t sub = 1.0 * total / n_round;
-            int i_round = 1;
-            size_t psum = 0;
-
-            printf("Degree percent\t Point percent\n");
-            for (int i = 0; i < cur_element_count; i++) {
-                Idtimes & it = PointTable[i];
-                psum += it.times;
-                if (psum >= (i_round * sub)){
-                    printf("%d%%\t %.1f%%\n", i_round * 100 / n_round, 100.0 * i / cur_element_count);
-                    i_round++;
-                }
-            }
-            printf("\n");
-        }
-#endif
 
 #if QTRACE
         QueryTrace* Querytrace = nullptr;

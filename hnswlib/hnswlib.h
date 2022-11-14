@@ -1,6 +1,10 @@
 #pragma once
+#include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <numeric>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -220,319 +224,11 @@ namespace hnswlib {
         }
     };
 
-    struct SubPoint{
-        int graph;
-        int ingraph_id;
-
-        SubPoint() = default;
-        SubPoint(int graph, int ingraph_id) : graph{graph}, ingraph_id{ingraph_id} {}
-    };
-
-    // 分配整张图的点策略
-    class AllocSubGraph {
-    public:
-        AllocSubGraph(string name, int nums_point, int nums_graph) {
-            dataname = name;
-            n_point_total = nums_point;
-            n_subgraph = nums_graph;
-
-            OriginToSubPoint.resize(n_point_total);
-            SubPointToOrigin.resize(n_subgraph);
-            SubCenter.resize(n_subgraph, 0);
-            printf("[SubGraph] num_graph: %d, n_point_total: %d\n", n_subgraph, n_point_total);
-
-#if SG_METIS
-            MetisAlloc();
-#else
-            RandomAlloc();
-#endif
-        }
-
-        // 根据分配后的mapping关系，得到对应subgraph的中心点
-        // 支持no-balance 分配
-        template<typename data_T>
-        void computSubgCenter(const data_T *data_m, size_t dims) {
-            for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
-                int size = SubPointToOrigin[i_sg].size();
-                data_T* data_s = new data_T[size * dims]();
-                for (int i_ig = 0; i_ig < size; i_ig++) {
-                    int origin_id = SubPointToOrigin[i_sg][i_ig];
-                    memcpy(data_s + dims * i_ig, data_m + dims * origin_id, dims * sizeof(data_T));
-                }
-                int ingraph_id = compArrayCenter<data_T>(data_s, size, dims);
-                SubCenter[i_sg] = SubPointToOrigin[i_sg][ingraph_id];
-                // 放在0号位置
-                swapMapByIngraphId(i_sg, 0, ingraph_id);
-                delete[] data_s;
-            }
-            printf("ComputSubgCenter successed\n");
-        }
-
-        int getSubgCenter(int subg) {
-            return SubCenter[subg];
-        }
-
-        int getOriginId(int subg_i, int ingraph_i) {
-            return SubPointToOrigin[subg_i][ingraph_i];
-        }
-
-        size_t getSubgSize(int subg) {
-            return SubPointToOrigin[subg].size();
-        }
-
-    private:
-        string dataname;
-        int n_point_total, n_point_subg;
-        int n_subgraph;
-        std::vector<SubPoint> OriginToSubPoint;
-        std::vector<std::vector<int>> SubPointToOrigin;
-        std::vector<int> SubCenter;
-
-        // 随机分配
-        void RandomAlloc() {
-            if (n_point_total % n_subgraph != 0) {
-                printf("Error, unsupport the n_subgraph\n"); exit(1);
-            }
-            n_point_subg = n_point_total / n_subgraph;
-            for (std::vector<int>& subgraph: SubPointToOrigin)
-                subgraph.resize(n_point_subg, 0);
-
-            srand((unsigned)time(NULL));
-            std::vector<int> random_list(n_point_total);
-            for (int i = 0; i < n_point_total; i++)
-                random_list[i] = i;
-            shuffle_vector<int>(random_list);
-
-            for (int i_sg = 0; i_sg < n_subgraph; i_sg++) {
-                for (int i_ig = 0; i_ig < n_point_subg; i_ig++) {
-                    int origin_id = random_list[i_sg * n_point_subg + i_ig];
-                    SubPointToOrigin[i_sg][i_ig] = origin_id;
-                    OriginToSubPoint[origin_id].graph = i_sg;
-                    OriginToSubPoint[origin_id].ingraph_id = i_ig;
-                }
-            }
-            printf("RandomAlloc successed\n");
-        }
-
-        // 根据METIS的clustering结果分配
-        void MetisAlloc() {
-            vector<int> IdToPart = getIdToPart();
-            vector<int> part_i(n_subgraph, 0);
-            for (int i = 0; i < n_point_total; i++) {
-                int graph = IdToPart[i];
-                OriginToSubPoint[i].graph = graph;
-                OriginToSubPoint[i].ingraph_id = part_i[graph];
-                SubPointToOrigin[graph].push_back(i);
-                part_i[graph]++;
-            }
-
-            for (int pi = 0; pi < n_subgraph; pi++) {
-                if (part_i[pi] != SubPointToOrigin[pi].size()) {
-                    printf("Error, size is error\n"); exit(1);
-                }
-            }
-            printf("MetisAlloc successed\n");
-        }
-
-        vector<int> getIdToPart() {
-            int size_million = n_point_total / 1e6;
-            string path_txt = "/home/ljun/self_data/hnsw_nics/output/part-graph/" + dataname + to_string(size_million) + "m.txt";
-            string metis_file = path_txt + ".part." + to_string(n_subgraph);
-
-            vector<int> IdToPart(n_point_total);
-
-            std::ifstream reader(metis_file.c_str());
-            if (reader) {
-                for (int i = 0; i < n_point_total; i++) {
-                    std::string line;
-                    std::getline(reader, line);
-                    IdToPart[i] = std::stoi(line);
-                }
-                reader.close();
-            } else {
-                printf("Error, file unexist: %s\n", metis_file.c_str());
-                exit(1);
-            }
-            return IdToPart;
-        }
-
-        void swapMapByIngraphId(int subg, int ingraph_id_x, int ingraph_id_y) {
-            int origin_x = SubPointToOrigin[subg][ingraph_id_x];
-            int origin_y = SubPointToOrigin[subg][ingraph_id_y];
-
-            OriginToSubPoint[origin_x].ingraph_id = ingraph_id_y;
-            OriginToSubPoint[origin_y].ingraph_id = ingraph_id_x;
-            SubPointToOrigin[subg][ingraph_id_x] = origin_y;
-            SubPointToOrigin[subg][ingraph_id_y] = origin_x;
-        }
-    };
-
-        /*
-            分析 hotdata
-        */
-#if HOTDATA
-    // internalId-times
-    struct Idtimes{
-        tableint id;
-        size_t   times;
-
-        Idtimes() = default;
-        Idtimes(tableint id, size_t times) : id(id), times(times) {}
-
-        inline bool operator<(const Idtimes &other) const {
-            if (times == other.times)
-                return id > other.id;
-            else
-                return times < other.times;
-        }
-    };
-
-    class HotData {
-    public:
-        HotData(size_t nums_range, size_t nums_point) {
-            range_size = nums_range;
-            base_size = nums_point;
-            printf("[Hotdata] range: %lu, base size: %lu\n", range_size, base_size);
-        }
-
-        void AddTimes(tableint id) {
-            if (isTrain)
-                AccessTimesTrain[id]++;
-            else
-                AccessTimesTest[id]++;
-        }
-
-        void initTrainSample(size_t sample_size, size_t qsize) {
-            setTrainStats(true);
-            train_size = sample_size;
-            test_size = qsize;
-        }
-
-        void setTrainStats(bool is_train) {
-            isTrain = is_train;
-            if (isTrain) {
-                std::vector<size_t>().swap(AccessTimesTrain);
-                AccessTimesTrain.resize(range_size, 0);
-            } else {
-                std::vector<size_t>().swap(AccessTimesTest);
-                AccessTimesTest.resize(range_size, 0);
-            }
-        }
-
-        void processTrain() {
-            std::vector<Idtimes> AccessTdtimesTrain;
-            std::vector<Idtimes> AccessTdtimesTest;
-            transTimesToTdtimes(AccessTimesTrain, AccessTdtimesTrain);
-            transTimesToTdtimes(AccessTimesTest, AccessTdtimesTest);
-
-            size_t accessTotalTrain = std::accumulate(AccessTimesTrain.begin(), AccessTimesTrain.end(), 0);
-            size_t accessTotalTest = std::accumulate(AccessTimesTest.begin(), AccessTimesTest.end(), 0);
-            float ratio_max = 0.5;
-            int n_steps = 10;
-            size_t interval = ratio_max * base_size / n_steps;
-
-            size_t accessCurrent = 0;
-
-            printf("Points(%%)\t Access(%%)\t Freq.Avg\t Max\t Min\t Match(%%)\t M.Access(%%)\n");
-            for (int si = 0; si < n_steps; si++) {
-                size_t begin = si * interval;
-                size_t end = begin + interval;
-
-                // 分析 Train 数据信息
-                size_t accessTmpTrain = 0;
-                for (size_t i = begin; i < end; i++) {
-                    accessTmpTrain += AccessTdtimesTrain[i].times;
-                }
-                accessCurrent += accessTmpTrain;
-                // printf
-                printf("%.1f%%\t %.1f%%\t %.5f\t %.5f\t %.5f\t ",
-                                100.0 * end / base_size,
-                                100.0 * accessCurrent / accessTotalTrain,
-                                1.0 * accessTmpTrain / interval / train_size,
-                                1.0 * AccessTdtimesTrain[begin].times / train_size,
-                                1.0 * AccessTdtimesTrain[end-1].times / train_size);
-
-                // 比较 Test 和 Train 的一致程度
-                size_t n_hit = 0;
-                size_t accessTmpTest = 0;
-                std::unordered_set<tableint> pointSet;
-                for (size_t i = 0; i < end; i++) {
-                    pointSet.emplace(AccessTdtimesTrain[i].id);
-                }
-                for (size_t i = 0; i < end; i++) {
-                    tableint ptest = AccessTdtimesTest[i].id;
-                    if (pointSet.find(ptest) != pointSet.end()) {
-                        n_hit++;
-                        accessTmpTest += AccessTdtimesTest[i].times;
-                    }
-                }
-                printf("%.1f%%\t %.1f%%\n",
-                                100.0 * n_hit / end,
-                                100.0 * accessTmpTest / accessTotalTest);
-
-                if (AccessTdtimesTrain[end-1].times == 0)
-                    break;
-            }
-            printf("\n");
-        }
-
-        // 根据AccessTimesTrain 输出 hot/cold data
-        void writeHotColdId(std::string path_hc, float hot_r=0.3) {
-            std::vector<Idtimes> AccessTdtimesTrain;
-            transTimesToTdtimes(AccessTimesTrain, AccessTdtimesTrain);
-
-            size_t total_size = base_size;
-
-            // output
-            std::ofstream writer(path_hc.c_str());
-            writer << "# " << total_size << "\n";
-            for (size_t i = 0; i < total_size; i++)
-                writer << AccessTdtimesTrain[i].id << "\n";
-            writer.close();
-
-            printf("write hot/cold data to %s done\n", path_hc.c_str());
-        }
-
-    private:
-        size_t range_size, base_size;
-
-        // For Training
-        std::vector<size_t> AccessTimesTrain;
-        std::vector<size_t> AccessTimesTest;
-        bool isTrain;
-        size_t qi_cur;
-        size_t train_size, test_size;
-
-        void transTimesToTdtimes(std::vector<size_t>& timesList, std::vector<Idtimes>& timesPair) {
-            timesPair.resize(range_size, Idtimes(0, 0));
-
-            for (size_t i = 0; i < range_size; i++) {
-                timesPair[i].id = i;
-                timesPair[i].times = timesList[i];
-            }
-
-#if DDEBUG
-            printf("Id\tTimes\n");
-            for (int i = 0; i < 5; i++)
-                printf("%d\t%lu\n", timesPair[i].id, timesPair[i].times);
-#endif
-            sort(timesPair.rbegin(), timesPair.rend());
-#if DDEBUG
-            printf("Id\tTimes\n");
-            for (int i = 0; i < 5; i++)
-                printf("%d\t%lu\n", timesPair[i].id, timesPair[i].times);
-#endif
-        }
-    };
-#endif
 
 #if QTRACE
     class QueryTrace {
     public:
         QueryTrace(int qsize, int nbor_size, int efs) {
-#if HOTDATA
-            printf("Error, During analysis hot data, can't generate query trace\n"); exit(1);
-#endif
             query_size = qsize;
             max_nbor_size = nbor_size;
             num_step = efs;
@@ -557,6 +253,22 @@ namespace hnswlib {
         }
 
         // 根据Query的Trace 输出 相关信息
+        void outputStatInfo(std::string path_file) {
+            std::ofstream writer(path_file.c_str());
+            // global average #nbor
+            float nbor_avg_base = nborGlobalAvg(QueryTraceBeHashSet);
+            float nbor_avg_hash = nborGlobalAvg(QueryTraceAfHashSet);
+            float hit_rate = 1.0 - nbor_avg_hash / nbor_avg_base;
+            float rank_valid = rankValidGlobal(QueryTraceBeHashSet, 8);
+
+            // output
+            writer << "#round " << num_step << "\n";
+            writer << "#nbor_per_round " << nbor_avg_base << "\n";
+            writer << "#r_for_8 " << rank_valid << "\n";
+            writer << "hit_rate " << hit_rate << "\n";
+
+            writer.close();
+        }
         /*
             search_point num_visited
             list of neighbor before hash
@@ -611,6 +323,39 @@ namespace hnswlib {
                 QueryTraceAfHashSet[i].resize(num_step);
                 QueryPointSet[i].resize(num_step);
             }
+        }
+
+        float nborGlobalAvg(std::vector<std::vector<std::vector<tableint>>>& QueryTraceSet) {
+            float nbor_avg = 0;
+            std::vector<float> nbor_avg_query;
+            for (std::vector<std::vector<tableint>>& QT_query: QueryTraceSet) {
+                size_t nbor_all_query = 0;
+                for (std::vector<tableint>& QT_step: QT_query)
+                    nbor_all_query += QT_step.size();
+                nbor_avg_query.push_back(1.0 * nbor_all_query / num_step);
+            }
+            nbor_avg = std::accumulate(nbor_avg_query.begin(), nbor_avg_query.end(), 0.0) / query_size;
+            return nbor_avg;
+        }
+        float rankValidGlobal(std::vector<std::vector<std::vector<tableint>>>& QueryTraceSet, int num_rank) {
+            // todo: internal or external?
+            size_t NDC_total = 0, NDC_rank_max = 0;
+            for (std::vector<std::vector<tableint>>& QT_query: QueryTraceSet) {
+                for (std::vector<tableint>& QT_step: QT_query) {
+                    NDC_total += QT_step.size();
+                    std::vector<size_t> tmp_NDC(num_rank, 0);
+                    for (tableint& id: QT_step)
+                        tmp_NDC[rankMapping(id, num_rank)]++;
+                    int pos_max = std::max_element(tmp_NDC.begin(), tmp_NDC.end()) - tmp_NDC.begin();
+                    NDC_rank_max += tmp_NDC[pos_max];
+                }
+            }
+            float rank_valid = 1.0 * NDC_total / NDC_rank_max;
+            return rank_valid;
+        }
+        // mapping strategy: mod
+        inline int rankMapping(tableint id, int num_rank) {
+            return (int)(id % num_rank);
         }
     };
 #endif
