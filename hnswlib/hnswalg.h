@@ -1208,7 +1208,7 @@ namespace hnswlib {
 
 
 #if QTRACE
-        QueryTrace* Querytrace = nullptr;
+        QueryTrace<set_t>* Querytrace = nullptr;
 #endif
 
 

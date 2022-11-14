@@ -20,7 +20,7 @@
 
 #define PROEFS      true
 
-#define QTRACE      false
+#define QTRACE      true
 
 #if PLATG
 #define SG_METIS    false

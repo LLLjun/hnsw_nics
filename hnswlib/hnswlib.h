@@ -1,10 +1,16 @@
 #pragma once
+#include "mem.h"
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <numeric>
+#include <string>
+#include <sys/stat.h>
+#include <utility>
 #ifndef NO_MANUAL_VECTORIZATION
 #ifdef __SSE__
 #define USE_SSE
@@ -226,13 +232,15 @@ namespace hnswlib {
 
 
 #if QTRACE
+    template<typename data_t>
     class QueryTrace {
     public:
-        QueryTrace(int qsize, int nbor_size, int efs) {
+        QueryTrace(int qsize, int feature_dim, int nbor_size, int efs) {
             query_size = qsize;
             max_nbor_size = nbor_size;
             num_step = efs;
             initQueryTrace();
+            Trace = new MemTrace(feature_dim * sizeof(data_t), nbor_size);
         }
 
         void addSearchPoint(tableint id) {
@@ -253,13 +261,16 @@ namespace hnswlib {
         }
 
         // 根据Query的Trace 输出 相关信息
-        void outputStatInfo(std::string path_file) {
+        void outputStatInfo(std::string path_output, int batch_size) {
+            std::string dir_trace = path_output + "/traces/" + "bs" + to_string(batch_size);
+            createDir(dir_trace);
+            std::string path_file = dir_trace + "/0_stat.csv";
             std::ofstream writer(path_file.c_str());
             // global average #nbor
             float nbor_avg_base = nborGlobalAvg(QueryTraceBeHashSet);
             float nbor_avg_hash = nborGlobalAvg(QueryTraceAfHashSet);
             float hit_rate = 1.0 - nbor_avg_hash / nbor_avg_base;
-            float rank_valid = rankValidGlobal(QueryTraceBeHashSet, 8);
+            float rank_valid = rankValidGlobal(QueryTraceBeHashSet, batch_size, 8);
 
             // output
             writer << "#round " << num_step << "\n";
@@ -269,7 +280,15 @@ namespace hnswlib {
 
             writer.close();
         }
+        void ouputMemTrace(std::string path_output, int batch_size) {
+            std::string dir_trace = path_output + "/traces/" + "bs" + to_string(batch_size);
+            createDir(dir_trace);
+
+            // rankToMemTrace(Trace, dir_trace, batch_size, 8);
+            rankSelectTrace(Trace, dir_trace, batch_size, 8);
+        }
         /*
+            for fpga
             search_point num_visited
             list of neighbor before hash
             list of neighbor after hash
@@ -311,6 +330,7 @@ namespace hnswlib {
         std::vector<std::vector<std::vector<tableint>>> QueryTraceBeHashSet;
         std::vector<std::vector<std::vector<tableint>>> QueryTraceAfHashSet;
         std::vector<std::vector<tableint>> QueryPointSet;
+        MemTrace* Trace = nullptr;
 
         void initQueryTrace() {
             qi_cur = 0;
@@ -337,15 +357,20 @@ namespace hnswlib {
             nbor_avg = std::accumulate(nbor_avg_query.begin(), nbor_avg_query.end(), 0.0) / query_size;
             return nbor_avg;
         }
-        float rankValidGlobal(std::vector<std::vector<std::vector<tableint>>>& QueryTraceSet, int num_rank) {
-            // todo: internal or external?
+        float rankValidGlobal(std::vector<std::vector<std::vector<tableint>>>& QueryTraceSet, int batch_size, int num_rank) {
             size_t NDC_total = 0, NDC_rank_max = 0;
-            for (std::vector<std::vector<tableint>>& QT_query: QueryTraceSet) {
-                for (std::vector<tableint>& QT_step: QT_query) {
-                    NDC_total += QT_step.size();
+            for (int begin = 0; begin < query_size; begin += batch_size) {
+                int end = std::min(query_size, begin + batch_size);
+
+                size_t len_ft = 0;
+                for (int si = 0; si < num_step; si++) {
                     std::vector<size_t> tmp_NDC(num_rank, 0);
-                    for (tableint& id: QT_step)
-                        tmp_NDC[rankMapping(id, num_rank)]++;
+                    for (int qi = begin; qi < end; qi++) {
+                        std::vector<tableint>& nbor_list = QueryTraceSet[qi][si];
+                        NDC_total += nbor_list.size();
+                        for (tableint& id: nbor_list)
+                            tmp_NDC[rankMapping(id, num_rank)]++;
+                    }
                     int pos_max = std::max_element(tmp_NDC.begin(), tmp_NDC.end()) - tmp_NDC.begin();
                     NDC_rank_max += tmp_NDC[pos_max];
                 }
@@ -353,9 +378,110 @@ namespace hnswlib {
             float rank_valid = 1.0 * NDC_total / NDC_rank_max;
             return rank_valid;
         }
+        // select batch query's trace
+        void rankSelectTrace(MemTrace* trace, std::string dir_trace, int batch_size, int num_rank) {
+            // select avg max min
+            int batch_num = query_size / batch_size;
+            std::vector<std::vector<int>> rank_id_round(batch_num, std::vector<int>(num_step, -1));
+            std::vector<size_t> len_all_round(batch_num, 0);
+
+            for (int bi = 0; bi < batch_num; bi++) {
+                int begin = bi * batch_size;
+                int end = begin + batch_size;
+
+                size_t len_ft = 0;
+                for (int si = 0; si < num_step; si++) {
+                    std::vector<size_t> tmp_NDC(num_rank, 0);
+                    for (int qi = begin; qi < end; qi++) {
+                        std::vector<tableint>& nbor_list = QueryTraceAfHashSet[qi][si];
+                        for (tableint& id: nbor_list)
+                            tmp_NDC[rankMapping(id, num_rank)]++;
+                    }
+                    int pos_max = std::max_element(tmp_NDC.begin(), tmp_NDC.end()) - tmp_NDC.begin();
+                    rank_id_round[bi][si] = pos_max;
+                    len_ft += tmp_NDC[pos_max];
+                }
+                len_all_round[bi] = len_ft;
+            }
+
+            // output info
+            std::string file_info = dir_trace + "/0_info.csv";
+            float t_avg = 1.0 * std::accumulate(len_all_round.begin(), len_all_round.end(), 0) / len_all_round.size();
+            int t_avg_i = findNearest(len_all_round, t_avg);
+            int t_max_i = std::max_element(len_all_round.begin(), len_all_round.end()) - len_all_round.begin();
+            int t_min_i = std::min_element(len_all_round.begin(), len_all_round.end()) - len_all_round.begin();
+            ofstream info_writer(file_info.c_str());
+            info_writer << "Type,Value,Range" << "\n";
+            info_writer << "Avg," << len_all_round[t_avg_i] << "," << to_string(t_avg_i * batch_size) + "-" + to_string((t_avg_i+1) * batch_size) << "," << t_avg << "\n";
+            info_writer << "Max," << len_all_round[t_max_i] << "," << to_string(t_max_i * batch_size) + "-" + to_string((t_max_i+1) * batch_size) << "\n";
+            info_writer << "Min," << len_all_round[t_min_i] << "," << to_string(t_min_i * batch_size) + "-" + to_string((t_min_i+1) * batch_size) << "\n";
+            info_writer.close();
+            // output trace
+            std::vector<std::pair<std::string, int>> type_pair(3);
+            type_pair[0] = std::make_pair("avg", t_avg_i);
+            type_pair[1] = std::make_pair("max", t_max_i);
+            type_pair[2] = std::make_pair("min", t_min_i);
+            for (std::pair<std::string, int>& type: type_pair) {
+                std::string file_trace = dir_trace + "/" + type.first + ".txt";
+                int cur_batch = type.second;
+                trace->ResetTrace();
+                for (int si = 0; si < num_step; si++) {
+                    int cur_rank = rank_id_round[cur_batch][si];
+                    for (int qi = cur_batch * batch_size; qi < cur_batch * batch_size + batch_size; qi++) {
+                        std::vector<tableint>& nbor_list = QueryTraceAfHashSet[qi][si];
+                        for (tableint& id: nbor_list) {
+                            if (rankMapping(id, num_rank) == cur_rank)
+                                trace->AddTraceFeature(0, idMapping(id, num_rank));
+                        }
+                    }
+                }
+                trace->WriteTrace(file_trace);
+            }
+        }
+        // all batch query's trace
+        void rankToMemTrace(MemTrace* trace, std::string dir_trace, int batch_size, int num_rank) {
+            for (int begin = 0; begin < query_size; begin += batch_size) {
+                int end = std::min(query_size, begin + batch_size);
+                std::string file_trace = dir_trace + "/" + to_string(begin) + "-" + to_string(end);
+                createDir(file_trace);
+                for (int si = 0; si < num_step; si++) {
+                    std::string trace_name = file_trace + "/" + to_string(si) + ".txt";
+                    trace->ResetTrace();
+                    std::vector<std::vector<tableint>> rankAllocer(num_rank);
+                    for (int qi = begin; qi < end; qi++) {
+                        std::vector<tableint>& nbor_list = QueryTraceAfHashSet[qi][si];
+                        for (tableint& id: nbor_list)
+                            rankAllocer[rankMapping(id, num_rank)].push_back(id);
+                    }
+                    std::vector<size_t> tmp_NDC(num_rank, 0);
+                    for (int i = 0; i < num_rank; i++)
+                        tmp_NDC[i] = rankAllocer[i].size();
+                    int pos_max = std::max_element(tmp_NDC.begin(), tmp_NDC.end()) - tmp_NDC.begin();
+                    // trace
+                    for (tableint& internal_id: rankAllocer[pos_max])
+                        trace->AddTraceFeature(pos_max, idMapping(internal_id, num_rank));
+                    trace->WriteTrace(trace_name);
+                }
+            }
+        }
         // mapping strategy: mod
         inline int rankMapping(tableint id, int num_rank) {
             return (int)(id % num_rank);
+        }
+        inline tableint idMapping(tableint id, int num_rank) {
+            return (id / num_rank);
+        }
+        int findNearest(std::vector<size_t>& list, float value) {
+            int fid = 0;
+            float diff = std::numeric_limits<float>::max();
+            for (size_t i = 0; i < list.size(); i++) {
+                float tmp_diff = std::abs(value - list[i]);
+                if (tmp_diff < diff) {
+                    diff = tmp_diff;
+                    fid = i;
+                }
+            }
+            return fid;
         }
     };
 #endif

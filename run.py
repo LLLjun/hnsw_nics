@@ -1,16 +1,16 @@
 import os
 
 def main():
-    stage = "both"
+    stage = "search"
     Datasets = ["sift", "spacev"]
-    datasize = 50
-    # Sub_graph = [2, 4, 8]
-    Sub_graph = [1]
+    Datasize = [10, 100]
+    Batchsize = [1, 10]
 
     os.system("cd build && make main")
     for dataset in Datasets:
-        for sg in Sub_graph:
-            command = "./main " + stage + " " + dataset + " " + str(datasize) + " " + str(sg)
-            os.system("cd build && " + command)
+        for datasize in Datasize:
+            for batchsize in Batchsize:
+                command = "./main " + stage + " " + dataset + " " + str(datasize) + " " + str(batchsize)
+                os.system("cd build && " + command)
 
 main()

@@ -252,7 +252,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
 
 #if QTRACE
         int nbor_size = appr_alg->maxM0_;
-        appr_alg->Querytrace = new QueryTrace(qsize, nbor_size, MapParameter["efs"]);
+        appr_alg->Querytrace = new QueryTrace<DTset>(qsize, vecdim, nbor_size, MapParameter["efs"]);
 #endif
 
 #if RANKMAP
@@ -263,8 +263,9 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         test_vs_recall(*appr_alg, massQ, massQA, MapParameter);
 
 #if QTRACE
-        string file_simu_info = MapString["simu_dir"] + "/" + MapString["uniquename"] + ".txt";
-        appr_alg->Querytrace->outputStatInfo(file_simu_info);
+        int batch_size = MapParameter["batch_size"];
+        appr_alg->Querytrace->outputStatInfo(MapString["simu_dir"], batch_size);
+        // appr_alg->Querytrace->ouputMemTrace(MapString["simu_dir"], batch_size);
 #endif
 
 #if RANKMAP
@@ -277,7 +278,7 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
     }
 }
 
-void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, size_t num_subgraph){
+void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, size_t batch_size){
     string path_project = "..";
 #if RANKMAP
     string label = "rank-map/";
@@ -319,6 +320,7 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     MapString["index"] = hnsw_index;
 
 #if QTRACE
+    MapParameter["batch_size"] = batch_size;
     string simu_root_dir = "../output/nmp_simulator";
     string unique_name = using_dataset + to_string(data_size_millions) + "m";
     string simu_dir = simu_root_dir + "/" + unique_name;
