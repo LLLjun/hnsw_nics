@@ -147,7 +147,7 @@ test_vs_recall_multi_index(vector<HierarchicalNSW<DTres, DTset>*>& appr_alg_set,
 #if QTRACE || HOTDATA
     efs.push_back(MapParameter["efs"]);
 #else
-    for (int i = 20; i <= 60; i += 2)
+    for (int i = 10; i <= 60; i += 2)
         efs.push_back(i);
 #endif
 
@@ -590,11 +590,11 @@ void search_index(map<string, size_t> &MapParameter, map<string, string> &MapStr
         appr_alg->deleteRankMap();
 #endif
 #if SUBG
-        for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set)
-            appr_alg->~HierarchicalNSW();
+        // for (HierarchicalNSW<DTres, DTset>* appr_alg: appr_alg_set)
+        //     appr_alg->~HierarchicalNSW();
         printf("Search sub index %s is succeed \n", MapString["index_dir"].c_str());
 #else
-        appr_alg->~HierarchicalNSW();
+        // appr_alg->~HierarchicalNSW();
         printf("Search index %s is succeed \n", index.c_str());
 #endif
 
@@ -625,8 +625,18 @@ void hnsw_impl(string stage, string using_dataset, size_t data_size_millions, si
     createDir(pre_index);
 
     // for 1m, 10m, 100m
+    float set_efc_size = 1.0 * 1e6 * data_size_millions / num_subgraph;
+    int set_high, set_low = 0;
+    if ((set_efc_size / 1e6) < 1) {
+        set_high = 1;
+    } else {
+        set_high = (int)(set_efc_size / 1e6);
+        if (set_efc_size > (1.5 * set_high * 1e6))
+            set_low = 1;
+    }
+
     vector<size_t> efcSet = {20, 30, 40};
-    size_t M = (log10(data_size_millions) + 2) * 10;
+    size_t M = (log10(set_high) + 2) * 10 + set_low * 5;
 	size_t efConstruction = M * 10;
     size_t k = 10;
     size_t vecsize = data_size_millions * 1000000;

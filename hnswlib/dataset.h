@@ -104,6 +104,7 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
                 case 2: MapParameter["efs"] = 38; break;
                 case 4: MapParameter["efs"] = 28; break;
                 case 8: MapParameter["efs"] = 22; break;
+                case 16: MapParameter["efs"] = 17; break;
                 default:
                     printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
                     exit(1);
@@ -113,6 +114,7 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
                 case 2: MapParameter["efs"] = 44; break;
                 case 4: MapParameter["efs"] = 34; break;
                 case 8: MapParameter["efs"] = 26; break;
+                case 16: MapParameter["efs"] = 27; break;
                 default:
                     printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
                     exit(1);
@@ -146,6 +148,7 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
                 case 2: MapParameter["efs"] = 56; break;
                 case 4: MapParameter["efs"] = 46; break;
                 case 8: MapParameter["efs"] = 38; break;
+                case 16: MapParameter["efs"] = 32; break;
                 default:
                     printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
                     exit(1);
@@ -155,6 +158,7 @@ void TransEFS(const string &dataname, map<string, size_t> &MapParameter) {
                 case 2: MapParameter["efs"] = 46; break;
                 case 4: MapParameter["efs"] = 40; break;
                 case 8: MapParameter["efs"] = 36; break;
+                case 16: MapParameter["efs"] = 46; break;
                 default:
                     printf("Error, unsupport size: %lu\n", MapParameter["num_subg"]);
                     exit(1);
