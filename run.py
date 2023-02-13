@@ -2,7 +2,7 @@ import os
 
 def main():
     Datasets = ["sift", "spacev"]
-    Datasize = [200, 500]
+    Datasize = [50]
     trans = "no_trans"
 
     os.system("cd build && make main")

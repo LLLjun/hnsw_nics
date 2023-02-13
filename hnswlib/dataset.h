@@ -22,7 +22,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
         MapString["format"] = "Uint8";
         MapString["path_q"] = path_dataset + "query.public.10K.u8bin";
         MapString["path_data"] = path_dataset + dataname + to_string(data_size_millions) + "m/base." + to_string(data_size_millions) + "m.u8bin";
-        MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin_brute";
+        MapString["path_gt"] = path_dataset + dataname + to_string(data_size_millions) + "m/groundtruth." + to_string(data_size_millions) + "m.bin";
     } else if (dataname == "gist"){
         if (data_size_millions > 1){
             printf("error: gist size set error.\n");
@@ -65,7 +65,7 @@ void CheckDataset(const string &dataname, map<string, size_t> &MapParameter, map
     }
 
 #if FROMBILLION
-    MapParameter["gt_maxnum"] = 10;
+    // MapParameter["gt_maxnum"] = 10;
     MapString["path_data"] = "../dataset/billion/" + dataname + "/base";
 #endif
 
